@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight, Hash, Minus, Plus, ShoppingBag, X } from 'lucide-react';
-import { CartLine, CartOption, MENU_ITEMS, MenuItem } from '../data/menu';
+import type { CartLine, CartOption, MenuItem } from '../data/menu';
 
 interface MenuProps {
   cart: CartLine[];
@@ -24,21 +24,31 @@ const normalizeCategory = (category: string) => {
 };
 
 const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) => {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(MENU_ITEMS);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [activeCategory, setActiveCategory] = useState(CATEGORY_TABS[0]);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [isLoadingMenu, setIsLoadingMenu] = useState(true);
+  const [menuError, setMenuError] = useState('');
 
   useEffect(() => {
     let mounted = true;
     fetch('/api/menu')
-      .then(res => res.ok ? res.json() : Promise.reject(new Error('Menu request failed')))
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('菜单读取失败，请检查 Vercel 的 Supabase 环境变量')))
       .then(payload => {
-        if (mounted && payload.success && Array.isArray(payload.items) && payload.items.length > 0) {
+        if (!mounted) return;
+        if (!payload.success || !Array.isArray(payload.items)) {
+          throw new Error(payload.error || '菜单读取失败');
+        }
           setMenuItems(payload.items);
+      })
+      .catch((error) => {
+        if (mounted) {
+          setMenuItems([]);
+          setMenuError(error instanceof Error ? error.message : '菜单读取失败');
         }
       })
-      .catch(() => {
-        if (mounted) setMenuItems(MENU_ITEMS);
+      .finally(() => {
+        if (mounted) setIsLoadingMenu(false);
       });
     return () => {
       mounted = false;
@@ -104,7 +114,26 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) =
       </div>
 
       <div className="px-6 pt-40 pb-8">
-        <div className="grid grid-cols-2 gap-x-5 gap-y-10">
+        {isLoadingMenu && (
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-stone-500 shadow-sm">
+            菜单加载中...
+          </div>
+        )}
+
+        {!isLoadingMenu && menuError && (
+          <div className="rounded-2xl bg-white p-6 text-center text-sm leading-6 text-red-500 shadow-sm">
+            {menuError}
+          </div>
+        )}
+
+        {!isLoadingMenu && !menuError && filteredItems.length === 0 && (
+          <div className="rounded-2xl bg-white p-6 text-center text-sm text-stone-500 shadow-sm">
+            当前分类暂无菜品
+          </div>
+        )}
+
+        {!isLoadingMenu && !menuError && (
+          <div className="grid grid-cols-2 gap-x-5 gap-y-10">
           {filteredItems.map(item => (
             <button
               key={item.id}
@@ -171,7 +200,8 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) =
               </div>
             </button>
           ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {selectedItem && (
