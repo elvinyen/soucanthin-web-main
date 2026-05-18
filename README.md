@@ -17,6 +17,14 @@ npm run dev
 http://localhost:3000/?table=12
 ```
 
+如果要单独测试生产用 Express API：
+
+```bash
+npm run dev:api
+```
+
+默认 API 地址为 `http://127.0.0.1:3001`。
+
 ## 环境变量
 
 复制 `.env.example` 为 `.env.local`，并填入以下配置：
@@ -42,6 +50,19 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 
 `SUPABASE_SERVICE_ROLE_KEY` 只应在服务端 API 使用，不要暴露到前端。
 `VITE_` 开头的变量会打包到前端，只适合放公开链接，不要放密钥。
+
+生产环境建议复制为 `.env.production`。在 VPS 上，以下变量只放在 Node/PM2 后端环境：
+
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `TELEGRAM_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `MOCEAN_API_TOKEN`
+- `SESSION_SECRET`
+- `ADMIN_REVIEW_TOKEN`
+
+前端只允许使用 `VITE_FACEBOOK_URL`、`VITE_WHATSAPP_URL` 这类公开变量。
 
 ## Supabase 建表
 
@@ -72,7 +93,7 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 本地测试 Stripe webhook：
 
 ```bash
-stripe listen --forward-to localhost:3000/api/stripe-webhook
+stripe listen --forward-to localhost:3001/api/stripe-webhook
 ```
 
 把 Stripe CLI 输出的 `whsec_...` 填到 `STRIPE_WEBHOOK_SECRET`。
@@ -86,4 +107,91 @@ npm run build
 
 ## 部署提示
 
-项目保留 `api/order.ts` 作为服务端接口，适合部署到支持 `/api` Serverless Functions 的平台。部署时请在平台环境变量中配置 Supabase 和 Telegram 凭据。
+项目现在支持 VPS 部署：Vite 构建静态前端，Express 提供真实 `/api/*` 路由，Nginx 托管 `dist/` 并反向代理 API 到 PM2。
+
+### 1. VPS 安装基础组件
+
+```bash
+sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pm2
+```
+
+### 2. 构建并启动后端
+
+```bash
+npm ci
+cp .env.example .env.production
+nano .env.production
+npm run build
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup
+```
+
+`ecosystem.config.cjs` 默认让 API 只监听 `127.0.0.1:3001`，公网入口交给 Nginx。
+
+生产环境必须把 `SITE_URL` 改成正式域名，例如：
+
+```bash
+SITE_URL="https://your-domain.com"
+```
+
+### 3. Nginx 配置
+
+把下面配置保存到 `/etc/nginx/sites-available/soucanthin`，并把 `server_name` 和 `root` 改成你的真实域名与项目路径。
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com www.your-domain.com;
+
+    root /var/www/soucanthin-web-main/dist;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+启用站点：
+
+```bash
+sudo ln -s /etc/nginx/sites-available/soucanthin /etc/nginx/sites-enabled/soucanthin
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 4. HTTPS
+
+```bash
+sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+```
+
+证书签发后确认：
+
+- `https://your-domain.com/` 能返回前端页面。
+- `https://your-domain.com/api/health` 返回 `{ "success": true, "status": "ok" }`。
+- `https://your-domain.com/api/menu` 能通过 Nginx 代理到 PM2 后端。
+
+### 5. 常用 PM2 命令
+
+```bash
+pm2 status
+pm2 logs soucanthin-api
+pm2 restart soucanthin-api
+```
