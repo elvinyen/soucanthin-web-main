@@ -71,7 +71,7 @@ export function normalizeMalaysiaPhone(value: string) {
 }
 
 export async function requestMoceanOtp(phone: string) {
-  const apiToken = process.env.MOCEAN_API_TOKEN;
+  const apiToken = getMoceanApiToken();
   const brand = process.env.MOCEAN_BRAND || 'SoupCanThin';
 
   if (!apiToken) throw new Error('Mocean is not configured');
@@ -96,7 +96,7 @@ export async function requestMoceanOtp(phone: string) {
 }
 
 export async function verifyMoceanOtp(reqid: string, code: string) {
-  const apiToken = process.env.MOCEAN_API_TOKEN;
+  const apiToken = getMoceanApiToken();
   if (!apiToken) throw new Error('Mocean is not configured');
 
   const body = new URLSearchParams();
@@ -114,7 +114,7 @@ async function moceanRequest(url: string, body: URLSearchParams, apiToken: strin
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiToken}`,
+      Authorization: apiToken.toLowerCase().startsWith('bearer ') ? apiToken : `Bearer ${apiToken}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body,
@@ -127,6 +127,10 @@ async function moceanRequest(url: string, body: URLSearchParams, apiToken: strin
   }
 
   return payload as { status?: number | string; reqid?: string; err_msg?: string };
+}
+
+function getMoceanApiToken() {
+  return process.env.MOCEAN_API_TOKEN?.replace(/[\r\n]/g, '').trim();
 }
 
 export async function findOrCreateUser(phone: string, displayPhone: string) {
