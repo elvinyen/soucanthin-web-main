@@ -1,0 +1,110 @@
+import path from 'path';
+import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
+import react from '@vitejs/plugin-react';
+
+const apiRoutes: Record<string, string> = {
+  '/api/menu': '/api/menu.ts',
+  '/api/order': '/api/order.ts',
+  '/api/payment-config': '/api/payment-config.ts',
+  '/api/stripe-checkout': '/api/stripe-checkout.ts',
+  '/api/stripe-webhook': '/api/stripe-webhook.ts',
+  '/api/auth/request-otp': '/api/auth-request-otp.ts',
+  '/api/auth/verify-otp': '/api/auth-verify-otp.ts',
+  '/api/auth/me': '/api/auth-me.ts',
+  '/api/auth/logout': '/api/auth-logout.ts',
+  '/api/user/profile': '/api/user-profile.ts',
+  '/api/user/addresses': '/api/user-addresses.ts',
+  '/api/wallet/recharge/stripe': '/api/wallet-recharge-stripe.ts',
+  '/api/wallet/recharge/stripe-cancel': '/api/wallet-recharge-stripe-cancel.ts',
+  '/api/wallet/recharge/tng': '/api/wallet-recharge-tng.ts',
+  '/api/wallet/transactions': '/api/wallet-transactions.ts',
+  '/api/admin/order-payment-review': '/api/admin-order-payment-review.ts',
+  '/api/admin/wallet-recharge-review': '/api/admin-wallet-recharge-review.ts',
+};
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+  Object.assign(process.env, env);
+
+  return {
+    server: {
+      port: 3000,
+      host: '0.0.0.0',
+    },
+    plugins: [react(), localApiPlugin()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      },
+    },
+  };
+});
+
+function localApiPlugin() {
+  return {
+    name: 'local-api-middleware',
+    configureServer(server: ViteDevServer) {
+    Object.entries(apiRoutes).forEach(([route, modulePath]) => {
+      server.middlewares.use(async (req, res, next) => {
+        const requestPath = (req.url || '').split('?')[0];
+        if (requestPath !== route) {
+          return next();
+        }
+
+        try {
+          const mod = await server.ssrLoadModule(modulePath);
+          const body = await readBody(req);
+          const contentType = req.headers['content-type'] || '';
+          const shouldKeepRawBody = route === '/api/stripe-webhook';
+          const request = Object.assign(req, {
+            body: !shouldKeepRawBody && contentType.includes('application/json') && body.length
+              ? JSON.parse(body.toString('utf8'))
+              : body,
+          });
+          const response = createDevResponse(res);
+
+          await mod.default(request, response);
+        } catch (error) {
+          console.error(`[dev-api] ${route}`, error);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: false, error: 'Local API failed' }));
+          }
+        }
+      });
+    });
+  },
+  };
+}
+
+function readBody(req: NodeJS.ReadableStream) {
+  const chunks: Buffer[] = [];
+
+  return new Promise<Buffer>((resolve, reject) => {
+    req.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+function createDevResponse(res: import('node:http').ServerResponse) {
+  return {
+    status(code: number) {
+      res.statusCode = code;
+      return this;
+    },
+    setHeader(name: string, value: string | string[]) {
+      res.setHeader(name, value);
+    },
+    json(body: unknown) {
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', 'application/json');
+      }
+      res.end(JSON.stringify(body));
+    },
+    end(body?: unknown) {
+      res.end(body);
+    },
+  };
+}
