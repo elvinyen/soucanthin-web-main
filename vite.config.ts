@@ -31,7 +31,7 @@ function localApiPlugin() {
         }
 
         try {
-          const mod = await server.ssrLoadModule('/api/[...path].ts');
+          const mod = await server.ssrLoadModule('/api/index.ts');
           const response = createDevResponse(res);
 
           await mod.default(req, response);

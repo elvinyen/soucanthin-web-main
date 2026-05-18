@@ -59,6 +59,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
 function getRequestPath(req: ApiRequest) {
   const url = new URL(req.url || '/', 'http://localhost');
+  const rewrittenPath = url.searchParams.get('path');
+  if (rewrittenPath) {
+    return `/api/${rewrittenPath.replace(/^\/|\/$/g, '')}`;
+  }
+
   return url.pathname.replace(/\/$/, '') || '/';
 }
 
