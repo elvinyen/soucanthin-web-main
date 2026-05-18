@@ -1,4 +1,4 @@
-import type { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
+import type { Order, OrderType, PaymentMethod, ReceiptImage } from '../../types/order';
 
 export type ApiResponse = {
   status: (code: number) => ApiResponse;

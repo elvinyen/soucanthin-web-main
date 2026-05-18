@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, roundMoney, supabaseRequest } from './_order-utils';
-import type { AuthUser, UserAddress, UserCoupon, UserOrderSummary, WalletSummary, WalletTransaction } from '../types/auth';
+import type { AuthUser, UserAddress, UserCoupon, UserOrderSummary, WalletSummary, WalletTransaction } from '../../types/auth';
 
 const SESSION_COOKIE = 'sct_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;

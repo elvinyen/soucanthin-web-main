@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { ReceiptImage } from '../types/order';
+import type { ReceiptImage } from '../../types/order';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, roundMoney, sendTelegramNotification, supabaseRequest, uploadReceipt, validateReceiptImage } from './_order-utils';
 import { getAuthenticatedUser, parseJsonBody } from './_auth-utils';

@@ -2,26 +2,6 @@ import path from 'path';
 import { defineConfig, loadEnv, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 
-const apiRoutes: Record<string, string> = {
-  '/api/menu': '/api/menu.ts',
-  '/api/order': '/api/order.ts',
-  '/api/payment-config': '/api/payment-config.ts',
-  '/api/stripe-checkout': '/api/stripe-checkout.ts',
-  '/api/stripe-webhook': '/api/stripe-webhook.ts',
-  '/api/auth/request-otp': '/api/auth-request-otp.ts',
-  '/api/auth/verify-otp': '/api/auth-verify-otp.ts',
-  '/api/auth/me': '/api/auth-me.ts',
-  '/api/auth/logout': '/api/auth-logout.ts',
-  '/api/user/profile': '/api/user-profile.ts',
-  '/api/user/addresses': '/api/user-addresses.ts',
-  '/api/wallet/recharge/stripe': '/api/wallet-recharge-stripe.ts',
-  '/api/wallet/recharge/stripe-cancel': '/api/wallet-recharge-stripe-cancel.ts',
-  '/api/wallet/recharge/tng': '/api/wallet-recharge-tng.ts',
-  '/api/wallet/transactions': '/api/wallet-transactions.ts',
-  '/api/admin/order-payment-review': '/api/admin-order-payment-review.ts',
-  '/api/admin/wallet-recharge-review': '/api/admin-wallet-recharge-review.ts',
-};
-
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   Object.assign(process.env, env);
@@ -44,28 +24,19 @@ function localApiPlugin() {
   return {
     name: 'local-api-middleware',
     configureServer(server: ViteDevServer) {
-    Object.entries(apiRoutes).forEach(([route, modulePath]) => {
       server.middlewares.use(async (req, res, next) => {
         const requestPath = (req.url || '').split('?')[0];
-        if (requestPath !== route) {
+        if (!requestPath.startsWith('/api/')) {
           return next();
         }
 
         try {
-          const mod = await server.ssrLoadModule(modulePath);
-          const body = await readBody(req);
-          const contentType = req.headers['content-type'] || '';
-          const shouldKeepRawBody = route === '/api/stripe-webhook';
-          const request = Object.assign(req, {
-            body: !shouldKeepRawBody && contentType.includes('application/json') && body.length
-              ? JSON.parse(body.toString('utf8'))
-              : body,
-          });
+          const mod = await server.ssrLoadModule('/api/[...path].ts');
           const response = createDevResponse(res);
 
-          await mod.default(request, response);
+          await mod.default(req, response);
         } catch (error) {
-          console.error(`[dev-api] ${route}`, error);
+          console.error(`[dev-api] ${requestPath}`, error);
           if (!res.headersSent) {
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
@@ -73,19 +44,8 @@ function localApiPlugin() {
           }
         }
       });
-    });
   },
   };
-}
-
-function readBody(req: NodeJS.ReadableStream) {
-  const chunks: Buffer[] = [];
-
-  return new Promise<Buffer>((resolve, reject) => {
-    req.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
 }
 
 function createDevResponse(res: import('node:http').ServerResponse) {

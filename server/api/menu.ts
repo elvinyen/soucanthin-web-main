@@ -1,4 +1,4 @@
-import type { MenuItem, MenuOptionGroup } from '../data/menu';
+import type { MenuItem, MenuOptionGroup } from '../../data/menu';
 import { ApiRequest, ApiResponse, getSupabaseConfig, supabaseRequest } from './_order-utils';
 
 type MenuItemRow = {
