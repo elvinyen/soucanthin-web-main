@@ -19,7 +19,7 @@ const OrderSection: React.FC<OrderSectionProps> = ({ onOrderClick }) => {
 
       <div className="relative z-10 flex flex-col items-center text-center">
         <h3 className="text-xl font-bold serif mb-2 tracking-wide">堂食 & 外卖</h3>
-        <p className="text-stone-400 text-xs mb-6 font-light tracking-widest opacity-80 uppercase">Dine-in & Delivery Available</p>
+        <p className="text-stone-400 text-xs mb-6 font-medium tracking-widest opacity-80 uppercase">Dine-in & Delivery Available</p>
         
         <button 
           onClick={onOrderClick}

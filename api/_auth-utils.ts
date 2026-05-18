@@ -152,12 +152,25 @@ export async function findOrCreateUser(phone: string, displayPhone: string) {
   const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/users', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ phone, display_phone: displayPhone, last_login_at: now }),
+    body: JSON.stringify({
+      phone,
+      display_phone: displayPhone,
+      name: generateMemberName(),
+      last_login_at: now,
+    }),
   });
   const user = Array.isArray(created) ? created[0] as UserRecord : null;
   if (!user?.id) throw new Error('User was not saved');
   await ensureWallet(user.id);
   return user;
+}
+
+function generateMemberName() {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+  const suffix = Array.from(randomBytes(8))
+    .map(byte => alphabet[byte % alphabet.length])
+    .join('');
+  return `member_${suffix}`;
 }
 
 export async function createSession(userId: string) {

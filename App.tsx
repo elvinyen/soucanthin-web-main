@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [session, setSession] = useState<AuthMeResponse>({ success: true, authenticated: false });
   const [tableNumber, setTableNumber] = useState<string | null>(null);
   const [userCenterNotice, setUserCenterNotice] = useState('');
+  const [appNotice, setAppNotice] = useState('');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -39,8 +40,11 @@ const App: React.FC = () => {
     }
     if (walletStatus === 'stripe-success') {
       setUserCenterTab('wallet');
-      setUserCenterNotice('线上转账完成后会自动入账，请稍后刷新钱包余额。');
+      setUserCenterNotice('线上转账已完成，正在更新钱包余额。');
       setIsUserCenterOpen(true);
+      [0, 1500, 4000, 8000].forEach(delay => {
+        window.setTimeout(refreshSession, delay);
+      });
     }
     if (walletStatus === 'stripe-cancel') {
       setUserCenterTab('wallet');
@@ -122,6 +126,11 @@ const App: React.FC = () => {
     setIsUserCenterOpen(false);
   };
 
+  const showAppNotice = (message: string) => {
+    setAppNotice(message);
+    window.setTimeout(() => setAppNotice(''), 2200);
+  };
+
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-xl relative overflow-x-hidden">
       <Header 
@@ -186,13 +195,19 @@ const App: React.FC = () => {
 
       <Footer />
 
+      {appNotice && (
+        <div className="fixed left-1/2 top-20 z-[130] w-[calc(100%-3rem)] max-w-sm -translate-x-1/2 rounded-2xl bg-[#2D2D2D] px-5 py-3 text-center text-sm font-bold text-white shadow-2xl">
+          {appNotice}
+        </div>
+      )}
+
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onAuthenticated={(nextSession) => {
           setSession(nextSession);
-          setUserCenterTab('profile');
-          setIsUserCenterOpen(true);
+          setIsUserMenuOpen(false);
+          showAppNotice('登录成功');
         }}
       />
 

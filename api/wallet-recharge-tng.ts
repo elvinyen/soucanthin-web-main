@@ -52,8 +52,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
 function validateRechargeAmount(value: unknown) {
   const amount = roundMoney(Number(value));
-  if (!Number.isFinite(amount) || amount < 5 || amount > 1000) {
-    throw new Error('充值金额需介于 RM 5 至 RM 1000');
+  if (!Number.isFinite(amount) || amount < 1 || amount > 1000) {
+    throw new Error('充值金额需介于 RM 1 至 RM 1000');
   }
   return amount;
 }

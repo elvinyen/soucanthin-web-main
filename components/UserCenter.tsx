@@ -44,11 +44,14 @@ const tabs: { id: UserCenterTab; label: string; subtitle: string; icon: React.El
   { id: 'settings', label: '设置', subtitle: 'Settings', icon: Settings },
 ];
 
-const quickAmounts = [10, 20, 50, 100];
+const quickAmounts = [1, 5, 10, 20, 50, 100];
+const glassPanel = 'rounded-[1.75rem] border border-white/55 bg-white/55 shadow-[0_18px_55px_rgba(45,45,45,0.12)] backdrop-blur-2xl';
+const glassCard = 'rounded-3xl border border-white/60 bg-white/65 shadow-[0_14px_40px_rgba(45,45,45,0.08)] backdrop-blur-xl';
+const glassInput = 'border border-white/70 bg-white/60 shadow-inner shadow-white/40 backdrop-blur-xl';
 
 const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, onClose, onLogout, onRefresh, externalNotice }) => {
   const [activeTab, setActiveTab] = useState<UserCenterTab>(initialTab);
-  const [amount, setAmount] = useState(20);
+  const [amount, setAmount] = useState(1);
   const [rechargeMethod, setRechargeMethod] = useState<'tng' | 'stripe'>('tng');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState('');
@@ -59,6 +62,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [profileForm, setProfileForm] = useState({ name: '', email: '', birthday: '' });
+  const [profilePhone, setProfilePhone] = useState('');
+  const [phoneReqid, setPhoneReqid] = useState('');
+  const [phoneCode, setPhoneCode] = useState('');
+  const [phoneCooldown, setPhoneCooldown] = useState(0);
+  const [walletBalance, setWalletBalance] = useState(session.wallet?.balance || 0);
   const [addressForm, setAddressForm] = useState({
     label: '默认地址',
     recipientName: '',
@@ -90,14 +98,41 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
       email: session.user?.email || '',
       birthday: session.user?.birthday || '',
     });
+    setProfilePhone(session.user?.displayPhone || '');
+    setPhoneReqid('');
+    setPhoneCode('');
+    setPhoneCooldown(0);
+    setWalletBalance(session.wallet?.balance || 0);
     loadTransactions();
-  }, [isOpen, initialTab, externalNotice]);
+  }, [isOpen, initialTab, externalNotice, session.user?.id]);
+
+  useEffect(() => {
+    if (phoneCooldown <= 0) return;
+    const timer = window.setTimeout(() => setPhoneCooldown(prev => prev - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [phoneCooldown]);
+
+  useEffect(() => {
+    setWalletBalance(session.wallet?.balance || 0);
+  }, [session.wallet?.balance]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'wallet') return;
+    const timer = window.setInterval(() => {
+      loadTransactions();
+      onRefresh();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, activeTab, onRefresh]);
 
   const loadTransactions = async () => {
     try {
       const res = await fetch('/api/wallet/transactions');
       const payload = await res.json();
-      if (payload.success) setTransactions(payload.transactions || []);
+      if (payload.success) {
+        setTransactions(payload.transactions || []);
+        if (payload.wallet) setWalletBalance(Number(payload.wallet.balance || 0));
+      }
     } catch {
       setTransactions([]);
     }
@@ -121,17 +156,50 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   const saveProfile = async () => {
     setIsSubmitting(true);
     try {
+      const phoneChanged = profilePhone.trim() && profilePhone.trim() !== session.user?.displayPhone;
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profileForm),
+        body: JSON.stringify({
+          ...profileForm,
+          ...(phoneChanged ? {
+            phone: profilePhone,
+            phoneReqid,
+            phoneCode,
+          } : {}),
+        }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.success) throw new Error(payload.error || '用户资料保存失败');
       await onRefresh();
+      if (payload.user?.displayPhone) setProfilePhone(payload.user.displayPhone);
+      setPhoneReqid('');
+      setPhoneCode('');
       showNotice('用户资料已保存。');
     } catch (err) {
       showError(err instanceof Error ? err.message : '用户资料保存失败');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const requestProfilePhoneOtp = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: profilePhone }),
+      });
+      const payload = await res.json();
+      if (!res.ok || !payload.success) throw new Error(payload.error || '验证码发送失败');
+      setPhoneReqid(payload.reqid);
+      setProfilePhone(payload.displayPhone);
+      setPhoneCode('');
+      setPhoneCooldown(60);
+      showNotice('验证码已发送至新手机号码。');
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '验证码发送失败');
     } finally {
       setIsSubmitting(false);
     }
@@ -276,8 +344,8 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
     setNotice('');
     setError('');
     try {
-      if (!Number.isFinite(amount) || amount < 5 || amount > 1000) {
-        throw new Error('充值金额需介于 RM 5 至 RM 1000');
+      if (!Number.isFinite(amount) || amount < 1 || amount > 1000) {
+        throw new Error('充值金额需介于 RM 1 至 RM 1000');
       }
       await submit();
     } catch (err) {
@@ -293,15 +361,16 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
   return (
     <div className="fixed inset-0 z-[115] max-w-md mx-auto">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="absolute bottom-0 left-0 right-0 max-h-[94vh] overflow-hidden rounded-t-[2.5rem] bg-[#F5F5F5] shadow-2xl animate-slide-up">
-        <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mt-4 flex-none" />
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-md" onClick={onClose} />
+      <div className="absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.5rem] border border-white/40 bg-[#F4EFE6]/70 shadow-[0_-28px_80px_rgba(0,0,0,0.28)] backdrop-blur-3xl animate-slide-up">
+        <div className="absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_18%_0%,rgba(200,169,126,0.34),transparent_48%),radial-gradient(circle_at_82%_10%,rgba(255,255,255,0.72),transparent_40%)] pointer-events-none" />
+        <div className="relative w-12 h-1.5 bg-white/70 rounded-full mx-auto mt-4 flex-none shadow-sm" />
 
-        <div className="px-8 pt-6 pb-4 flex items-center justify-between flex-none">
+        <div className="relative px-7 pt-6 pb-4 flex items-center justify-between flex-none">
           <div className="flex items-center space-x-3">
             <button
               onClick={onClose}
-              className="p-2 -ml-2 text-stone-400 hover:text-[#2D2D2D] transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
               aria-label="返回"
             >
               <ArrowLeft size={20} />
@@ -311,34 +380,60 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">{activeMeta.subtitle}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 bg-stone-100 text-stone-500 rounded-full hover:bg-stone-200 transition-colors">
-            <X size={20} />
-          </button>
         </div>
 
-        <div className="max-h-[calc(94vh-6.5rem)] overflow-y-auto px-8 pb-10 no-scrollbar">
-          <div className="mb-6 rounded-3xl border border-stone-100 bg-white p-5 shadow-sm">
+        <div className="relative h-[calc(85dvh-6.5rem)] max-h-[calc(85vh-6.5rem)] overflow-y-auto px-7 pb-10 no-scrollbar">
+          <div className={`mb-6 p-5 ${glassPanel}`}>
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FBF7EF] text-[#C8A97E]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-[#2D2D2D] text-[#C8A97E] shadow-lg shadow-black/15">
                 <ActiveIcon size={22} />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-[#2D2D2D]">{session.user.displayPhone}</p>
-                <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-stone-400">Soup Can Thin Member</p>
+                <p className="mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-stone-500">{getDisplayName(session.user.name)}</p>
               </div>
             </div>
           </div>
 
           {activeTab === 'profile' && (
             <section className="space-y-4">
-              <InfoRow label="手机号码" value={session.user.displayPhone} />
-              <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm">
+              <div className={`space-y-3 p-5 ${glassCard}`}>
                 <FormInput
-                  label="账户名称"
+                  label="用户名称"
                   value={profileForm.name}
                   placeholder="深夜食汤会员"
                   onChange={(value) => setProfileForm(prev => ({ ...prev, name: value }))}
                 />
+                <div className="space-y-2">
+                  <FormInput
+                    label="手机号码"
+                    value={profilePhone}
+                    placeholder="例如 0123456789"
+                    type="tel"
+                    onChange={(value) => {
+                      setProfilePhone(value);
+                      setPhoneReqid('');
+                      setPhoneCode('');
+                    }}
+                  />
+                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                    <input
+                      value={phoneCode}
+                      onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      inputMode="numeric"
+                      placeholder="新号码验证码"
+                      className={`min-w-0 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#C8A97E] ${glassInput}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={requestProfilePhoneOtp}
+                      disabled={isSubmitting || phoneCooldown > 0 || !profilePhone.trim() || profilePhone.trim() === session.user.displayPhone}
+                      className="rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-xs font-bold text-stone-600 shadow-sm backdrop-blur-xl disabled:opacity-50"
+                    >
+                      {phoneCooldown > 0 ? `${phoneCooldown}s` : '获取验证码'}
+                    </button>
+                  </div>
+                </div>
                 <FormInput
                   label="邮箱"
                   value={profileForm.email}
@@ -354,14 +449,14 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <button
                   onClick={saveProfile}
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white disabled:bg-stone-200"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15 disabled:bg-stone-200"
                 >
                   <Save size={17} />
                   保存用户资料
                 </button>
               </div>
               <InfoRow label="注册时间" value={formatDate(session.user.createdAt)} />
-              <div className="rounded-3xl bg-white p-5 text-sm leading-6 text-stone-500 shadow-sm">
+              <div className={`p-5 text-sm leading-6 text-stone-500 ${glassCard}`}>
                 登录后可集中查看钱包余额、充值流水、历史订单、地址与优惠券。
               </div>
               {(notice || error) && (
@@ -374,40 +469,51 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
           {activeTab === 'wallet' && (
             <section className="space-y-5">
-              <div className="rounded-[2rem] bg-[#2D2D2D] p-6 text-white shadow-xl shadow-black/20">
+              <div className="rounded-[2rem] border border-white/10 bg-[#2D2D2D]/95 p-6 text-white shadow-2xl shadow-black/25 backdrop-blur-xl">
                 <p className="text-xs uppercase tracking-[0.2em] text-white/50">Wallet Balance</p>
-                <div className="mt-4 text-4xl font-bold serif">RM {(session.wallet?.balance || 0).toFixed(2)}</div>
+                <div className="mt-4 text-4xl font-bold serif">RM {walletBalance.toFixed(2)}</div>
                 <p className="mt-3 text-xs text-white/50">待审核充值 {pendingTransactions} 笔</p>
               </div>
 
-              <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm">
+              <div className={`space-y-3 p-5 ${glassCard}`}>
                 <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">充值金额</h3>
                 <div className="grid grid-cols-4 gap-2">
                   {quickAmounts.map(value => (
                     <button
                       key={value}
                       onClick={() => setAmount(value)}
-                      className={`rounded-2xl py-3 text-xs font-bold ${
-                        amount === value ? 'bg-[#C8A97E] text-white' : 'bg-stone-100 text-stone-500'
+                    className={`rounded-2xl border py-3 text-xs font-bold transition ${
+                        amount === value ? 'border-[#C8A97E] bg-[#C8A97E] text-white shadow-lg shadow-[#C8A97E]/25' : 'border-white/60 bg-white/60 text-stone-500'
                       }`}
                     >
                       RM {value}
                     </button>
                   ))}
                 </div>
-                <input
-                  type="number"
-                  min={5}
-                  max={1000}
-                  value={amount}
-                  onChange={(event) => setAmount(Number(event.target.value))}
-                  className="w-full rounded-2xl border border-stone-100 bg-stone-50 px-4 py-4 text-sm font-bold outline-none focus:border-[#C8A97E]"
-                />
+                <div className={`flex items-center justify-between rounded-2xl p-2 ${glassInput}`}>
+                  <button
+                    type="button"
+                    onClick={() => setAmount(value => Math.max(1, value - 1))}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-stone-500 shadow-sm backdrop-blur-xl"
+                    aria-label="减少充值金额"
+                  >
+                    -
+                  </button>
+                  <div className="text-center text-sm font-bold text-[#2D2D2D]">RM {amount.toFixed(2)}</div>
+                  <button
+                    type="button"
+                    onClick={() => setAmount(value => Math.min(1000, value + 1))}
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-stone-500 shadow-sm backdrop-blur-xl"
+                    aria-label="增加充值金额"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm">
+              <div className={`space-y-3 p-5 ${glassCard}`}>
                 <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">支付方式</h3>
-                <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/60 bg-white/45 p-1 backdrop-blur-xl">
                   <button
                     type="button"
                     onClick={() => setRechargeMethod('tng')}
@@ -432,7 +538,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
                 {rechargeMethod === 'tng' ? (
                   <>
-                    <div className="rounded-2xl border border-[#C8A97E]/20 bg-[#FBF7EF] p-4 space-y-3">
+                    <div className="rounded-2xl border border-[#C8A97E]/25 bg-[#FBF7EF]/70 p-4 space-y-3 backdrop-blur-xl">
                       <div className="flex items-center justify-between gap-4 text-xs">
                         <span className="text-stone-500">TNG 收款人</span>
                         <span className="text-right font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || '请配置 TNG_ACCOUNT_NAME'}</span>
@@ -442,7 +548,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         <span className="text-right font-mono font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountNumber || '请配置 TNG_ACCOUNT_NUMBER'}</span>
                       </div>
                     </div>
-                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/60 bg-[#FBF7EF] px-4 py-4 text-xs font-bold text-[#C8A97E]">
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/60 bg-[#FBF7EF]/70 px-4 py-4 text-xs font-bold text-[#C8A97E] backdrop-blur-xl">
                       <Upload size={16} />
                       <span className="truncate">{receiptFile ? receiptFile.name : '上传 TNG 转账截图'}</span>
                       <input
@@ -456,7 +562,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       <button
                         type="button"
                         onClick={() => setIsReceiptPreviewOpen(true)}
-                        className="h-40 w-full overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 p-2 active:scale-[0.99]"
+                        className="h-40 w-full overflow-hidden rounded-2xl border border-white/60 bg-white/50 p-2 backdrop-blur-xl active:scale-[0.99]"
                         aria-label="查看TNG充值截图"
                       >
                         <img src={receiptPreview} alt="TNG充值截图预览" className="h-full w-full object-contain" />
@@ -473,7 +579,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   </>
                 ) : (
                   <>
-                    <div className="rounded-2xl bg-stone-50 px-4 py-3 text-xs leading-5 text-stone-500">
+                    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-3 text-xs leading-5 text-stone-500 backdrop-blur-xl">
                       线上转账将跳转至安全付款页。付款成功后钱包余额会自动入账。
                     </div>
                     <button
@@ -500,7 +606,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   <EmptyState text="暂无钱包流水" />
                 ) : (
                   transactions.map(item => (
-                    <div key={item.id} className="rounded-3xl bg-white p-4 shadow-sm">
+                    <div key={item.id} className={`p-4 ${glassCard}`}>
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <p className="text-sm font-bold text-[#2D2D2D]">{labelTransaction(item)}</p>
@@ -526,7 +632,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 (session.orders || []).map(order => {
                   const expanded = expandedOrderId === order.id;
                   return (
-                  <div key={order.id} className="rounded-3xl bg-white p-5 shadow-sm">
+                  <div key={order.id} className={`p-5 ${glassCard}`}>
                     <button
                       onClick={() => setExpandedOrderId(expanded ? null : order.id)}
                       className="flex w-full items-center justify-between gap-4 text-left"
@@ -576,7 +682,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
           {activeTab === 'addresses' && (
             <section className="space-y-4">
-              <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm">
+              <div className={`space-y-3 p-5 ${glassCard}`}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
                     {editingAddressId ? '编辑地址' : '新增地址'}
@@ -591,7 +697,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   placeholder="详细地址"
                   onChange={(event) => setAddressForm(prev => ({ ...prev, address: event.target.value }))}
                   rows={3}
-                  className="w-full resize-none rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3 text-sm outline-none focus:border-[#C8A97E]"
+                  className={`w-full resize-none rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#C8A97E] ${glassInput}`}
                 />
                 <label className="flex items-center gap-2 text-xs font-bold text-stone-500">
                   <input
@@ -604,7 +710,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <button
                   onClick={saveAddress}
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white disabled:bg-stone-200"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15 disabled:bg-stone-200"
                 >
                   <Plus size={17} />
                   {editingAddressId ? '保存地址' : '新增地址'}
@@ -614,7 +720,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <EmptyState text="暂无地址" />
               ) : (
                 (session.addresses || []).map(address => (
-                  <div key={address.id} className="rounded-3xl bg-white p-5 shadow-sm">
+                  <div key={address.id} className={`p-5 ${glassCard}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-bold text-[#2D2D2D]">
@@ -648,7 +754,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <EmptyState text="暂无可用优惠券" />
               ) : (
                 (session.coupons || []).map(coupon => (
-                  <div key={coupon.id} className="rounded-3xl bg-white p-5 shadow-sm">
+                  <div key={coupon.id} className={`p-5 ${glassCard}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-bold text-[#2D2D2D]">{coupon.title}</p>
@@ -671,14 +777,14 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             <section className="space-y-4">
               <button
                 onClick={handleLogout}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15"
               >
                 <LogOut size={17} />
                 退出登录
               </button>
               <button
                 onClick={onRefresh}
-                className="w-full rounded-full bg-white py-4 text-sm font-bold text-stone-600 shadow-sm"
+                className="w-full rounded-full border border-white/60 bg-white/60 py-4 text-sm font-bold text-stone-600 shadow-sm backdrop-blur-xl"
               >
                 刷新个人中心
               </button>
@@ -709,7 +815,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 };
 
 const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex items-center justify-between gap-4 rounded-3xl bg-white p-5 text-sm shadow-sm">
+  <div className={`flex items-center justify-between gap-4 p-5 text-sm ${glassCard}`}>
     <span className="text-stone-400">{label}</span>
     <span className="text-right font-bold text-[#2D2D2D]">{value}</span>
   </div>
@@ -736,13 +842,13 @@ const FormInput: React.FC<{
       value={value}
       placeholder={placeholder}
       onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3 text-sm outline-none focus:border-[#C8A97E]"
+      className={`block w-full min-w-0 max-w-full appearance-none rounded-2xl px-4 py-3 text-sm box-border outline-none focus:border-[#C8A97E] ${glassInput}`}
     />
   </label>
 );
 
 const EmptyState: React.FC<{ text: string }> = ({ text }) => (
-  <div className="rounded-3xl bg-white px-5 py-10 text-center text-sm text-stone-400 shadow-sm">
+  <div className={`px-5 py-10 text-center text-sm text-stone-400 ${glassCard}`}>
     {text}
   </div>
 );
@@ -802,6 +908,10 @@ function labelCouponStatus(status: string) {
     expired: '已过期',
   };
   return labels[status] || status;
+}
+
+function getDisplayName(name?: string | null) {
+  return name?.trim() || '深夜食汤会员';
 }
 
 export default UserCenter;

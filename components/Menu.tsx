@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Hash, Minus, Plus, ShoppingBag, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Hash, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { CartLine, CartOption, MENU_ITEMS, MenuItem } from '../data/menu';
 
 interface MenuProps {
@@ -208,7 +208,7 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) =
                 </span>
               </div>
               <div className="flex flex-col text-left">
-                <span className="text-[10px] font-light text-stone-400 leading-none">已选购</span>
+                <span className="text-[10px] font-medium text-stone-400 leading-none">已选购</span>
                 <span className="text-sm font-bold serif leading-tight">{totalItems} 件 · RM {totalPrice.toFixed(2)}</span>
               </div>
             </div>
@@ -289,17 +289,18 @@ function DishDetail({ item, onClose, onAdd }: {
 
   return (
     <div className="fixed inset-0 z-[90] max-w-md mx-auto bg-[#F5F5F5] animate-fade-in">
+      <button
+        onClick={onClose}
+        className="absolute left-5 top-5 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-[#2D2D2D] shadow"
+        aria-label="返回菜单"
+      >
+        <ArrowLeft size={19} />
+      </button>
       <div className="h-full overflow-y-auto pb-32 no-scrollbar">
         <div className="relative aspect-square bg-white">
           <img src={item.image} alt={item.name} className="h-full w-full object-contain" />
           {item.soldOut && <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px]" />}
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-black/45" />
-          <button onClick={onClose} className="absolute left-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-[#2D2D2D] shadow">
-            <ArrowLeft size={19} />
-          </button>
-          <button onClick={onClose} className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-[#2D2D2D] shadow">
-            <X size={19} />
-          </button>
           <div className="absolute bottom-6 left-6 right-6 text-white">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{item.enName}</p>
             <h2 className="mt-2 text-3xl font-bold serif">{item.name}</h2>
