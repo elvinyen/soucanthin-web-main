@@ -1,14 +1,50 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/index.ts": {
+    "api/*.ts": {
       "includeFiles": "server/api/**"
     }
   },
   "rewrites": [
     {
+      "source": "/api/menu",
+      "destination": "/api/menu?path=menu"
+    },
+    {
+      "source": "/api/order",
+      "destination": "/api/order?path=order"
+    },
+    {
+      "source": "/api/payment-config",
+      "destination": "/api/payment?path=payment-config"
+    },
+    {
+      "source": "/api/stripe-checkout",
+      "destination": "/api/payment?path=stripe-checkout"
+    },
+    {
+      "source": "/api/stripe-webhook",
+      "destination": "/api/payment?path=stripe-webhook"
+    },
+    {
+      "source": "/api/auth/:path*",
+      "destination": "/api/auth?path=:path*"
+    },
+    {
+      "source": "/api/user/:path*",
+      "destination": "/api/user?path=:path*"
+    },
+    {
+      "source": "/api/wallet/:path*",
+      "destination": "/api/wallet?path=:path*"
+    },
+    {
+      "source": "/api/admin/:path*",
+      "destination": "/api/admin?path=:path*"
+    },
+    {
       "source": "/api/:path*",
-      "destination": "/api?path=:path*"
+      "destination": "/api/menu?path=:path*"
     }
   ]
 }
