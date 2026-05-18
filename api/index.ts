@@ -1,42 +1,26 @@
 import type { ApiRequest, ApiResponse } from '../server/api/_order-utils';
-import adminOrderPaymentReviewHandler from '../server/api/admin-order-payment-review';
-import adminWalletRechargeReviewHandler from '../server/api/admin-wallet-recharge-review';
-import authLogoutHandler from '../server/api/auth-logout';
-import authMeHandler from '../server/api/auth-me';
-import authRequestOtpHandler from '../server/api/auth-request-otp';
-import authVerifyOtpHandler from '../server/api/auth-verify-otp';
-import menuHandler from '../server/api/menu';
-import orderHandler from '../server/api/order';
-import paymentConfigHandler from '../server/api/payment-config';
-import stripeCheckoutHandler from '../server/api/stripe-checkout';
-import stripeWebhookHandler from '../server/api/stripe-webhook';
-import userAddressesHandler from '../server/api/user-addresses';
-import userProfileHandler from '../server/api/user-profile';
-import walletRechargeStripeCancelHandler from '../server/api/wallet-recharge-stripe-cancel';
-import walletRechargeStripeHandler from '../server/api/wallet-recharge-stripe';
-import walletRechargeTngHandler from '../server/api/wallet-recharge-tng';
-import walletTransactionsHandler from '../server/api/wallet-transactions';
 
 type Handler = (req: ApiRequest, res: ApiResponse) => Promise<void> | void;
+type HandlerLoader = () => Promise<{ default: Handler }>;
 
-const handlers: Record<string, Handler> = {
-  '/api/menu': menuHandler,
-  '/api/order': orderHandler,
-  '/api/payment-config': paymentConfigHandler,
-  '/api/stripe-checkout': stripeCheckoutHandler,
-  '/api/stripe-webhook': stripeWebhookHandler,
-  '/api/auth/request-otp': authRequestOtpHandler,
-  '/api/auth/verify-otp': authVerifyOtpHandler,
-  '/api/auth/me': authMeHandler,
-  '/api/auth/logout': authLogoutHandler,
-  '/api/user/profile': userProfileHandler,
-  '/api/user/addresses': userAddressesHandler,
-  '/api/wallet/recharge/stripe': walletRechargeStripeHandler,
-  '/api/wallet/recharge/stripe-cancel': walletRechargeStripeCancelHandler,
-  '/api/wallet/recharge/tng': walletRechargeTngHandler,
-  '/api/wallet/transactions': walletTransactionsHandler,
-  '/api/admin/order-payment-review': adminOrderPaymentReviewHandler,
-  '/api/admin/wallet-recharge-review': adminWalletRechargeReviewHandler,
+const handlers: Record<string, HandlerLoader> = {
+  '/api/menu': () => import('../server/api/menu'),
+  '/api/order': () => import('../server/api/order'),
+  '/api/payment-config': () => import('../server/api/payment-config'),
+  '/api/stripe-checkout': () => import('../server/api/stripe-checkout'),
+  '/api/stripe-webhook': () => import('../server/api/stripe-webhook'),
+  '/api/auth/request-otp': () => import('../server/api/auth-request-otp'),
+  '/api/auth/verify-otp': () => import('../server/api/auth-verify-otp'),
+  '/api/auth/me': () => import('../server/api/auth-me'),
+  '/api/auth/logout': () => import('../server/api/auth-logout'),
+  '/api/user/profile': () => import('../server/api/user-profile'),
+  '/api/user/addresses': () => import('../server/api/user-addresses'),
+  '/api/wallet/recharge/stripe': () => import('../server/api/wallet-recharge-stripe'),
+  '/api/wallet/recharge/stripe-cancel': () => import('../server/api/wallet-recharge-stripe-cancel'),
+  '/api/wallet/recharge/tng': () => import('../server/api/wallet-recharge-tng'),
+  '/api/wallet/transactions': () => import('../server/api/wallet-transactions'),
+  '/api/admin/order-payment-review': () => import('../server/api/admin-order-payment-review'),
+  '/api/admin/wallet-recharge-review': () => import('../server/api/admin-wallet-recharge-review'),
 };
 
 export const config = {
@@ -47,14 +31,23 @@ export const config = {
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   const requestPath = getRequestPath(req);
-  const routeHandler = handlers[requestPath];
+  const loadRouteHandler = handlers[requestPath];
 
-  if (!routeHandler) {
+  if (!loadRouteHandler) {
     return res.status(404).json({ success: false, error: 'API route not found' });
   }
 
-  req.body = await readRawBody(req);
-  return routeHandler(req, res);
+  try {
+    req.body = await readRawBody(req);
+    const routeHandler = (await loadRouteHandler()).default;
+    return routeHandler(req, res);
+  } catch (error) {
+    console.error(`[api] ${requestPath}`, error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'API route failed',
+    });
+  }
 }
 
 function getRequestPath(req: ApiRequest) {
