@@ -1,4 +1,4 @@
-import type { ApiRequest, ApiResponse } from '../server/api/_order-utils';
+import type { ApiRequest, ApiResponse } from '../server/api/_order-utils.ts';
 
 export type Handler = (req: ApiRequest, res: ApiResponse) => Promise<void> | void;
 

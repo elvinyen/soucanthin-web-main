@@ -1,7 +1,7 @@
-import paymentConfigHandler from '../server/api/payment-config';
-import stripeCheckoutHandler from '../server/api/stripe-checkout';
-import stripeWebhookHandler from '../server/api/stripe-webhook';
-import { dispatchRoute } from './_utils';
+import paymentConfigHandler from '../server/api/payment-config.ts';
+import stripeCheckoutHandler from '../server/api/stripe-checkout.ts';
+import stripeWebhookHandler from '../server/api/stripe-webhook.ts';
+import { dispatchRoute } from './_utils.ts';
 
 export const config = {
   api: {
