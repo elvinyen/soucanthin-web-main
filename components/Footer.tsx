@@ -1,87 +1,43 @@
 
 import React from 'react';
-import { Facebook, MessageCircle } from 'lucide-react';
+import { Home, ReceiptText, ShoppingBag, User } from 'lucide-react';
 
-const SOCIAL_LINKS = {
-  facebook: import.meta.env.VITE_FACEBOOK_URL || '',
-  whatsapp: import.meta.env.VITE_WHATSAPP_URL || '',
-};
+export type BottomTab = 'home' | 'menu' | 'orders' | 'mine';
 
-const Footer: React.FC = () => {
+interface FooterProps {
+  activeTab: BottomTab;
+  onTabChange: (tab: BottomTab) => void;
+}
+
+const tabs: { id: BottomTab; label: string; icon: React.ElementType }[] = [
+  { id: 'home', label: '首页', icon: Home },
+  { id: 'menu', label: '点餐', icon: ShoppingBag },
+  { id: 'orders', label: '订单', icon: ReceiptText },
+  { id: 'mine', label: '我的', icon: User },
+];
+
+const Footer: React.FC<FooterProps> = ({ activeTab, onTabChange }) => {
   return (
-    <footer className="bg-[#1A1A1A] text-white pt-16 pb-5 px-8">
-      <div className="flex flex-col items-center text-center space-y-6">
-        {/* Column 1: Logo */}
-        <div className="flex flex-col items-center">
-          <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center mb-4">
-            <img src="/logo/sct_logo.png" alt="深夜食汤 Logo" className="w-2/3 h-2/3 object-contain" />
-          </div>
-          <h2 className="text-xl font-bold serif tracking-widest">深夜食汤</h2>
-          <p className="text-[10px] text-stone-500 tracking-[0.3em] uppercase mt-1">Soup Can Thin</p>
-        </div>
-
-        {/* Grid for columns 2, 3, 4 */}
-        <div className="grid grid-cols-1 gap-10 w-full">
-          {/* Column 2: Business */}
-          <div className="space-y-3">
-            <h4 className="text-[#C8A97E] text-xs font-bold tracking-widest uppercase">主营业务</h4>
-            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-stone-400 text-sm">
-              <span>小碗炖汤</span>
-              <span className="text-stone-700">|</span>
-              <span>泰式热菜</span>
-              <span className="text-stone-700">|</span>
-              <span>越南美食</span>
-            </div>
-          </div>
-
-          {/* Column 3: Hours & Location */}
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="text-[#C8A97E] text-xs font-bold tracking-widest uppercase">营业时间</h4>
-              <p className="text-stone-400 text-sm">00:00-09:40 & 16:00-23:59</p>
-            </div>
-            <div className="space-y-2">
-              <h4 className="text-[#C8A97E] text-xs font-bold tracking-widest uppercase">地点</h4>
-              <p className="text-stone-400 text-sm">Kuala Lumpur, Malaysia</p>
-            </div>
-          </div>
-
-          {/* Column 4: Socials */}
-          <div className="space-y-4">
-             <h4 className="text-[#C8A97E] text-xs font-bold tracking-widest uppercase">社交媒体</h4>
-             <div className="flex justify-center space-x-6">
-                {SOCIAL_LINKS.facebook && (
-                <a
-                  href={SOCIAL_LINKS.facebook}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="打开深夜食汤 Facebook"
-                  className="p-3 bg-stone-800 rounded-full hover:bg-[#C8A97E] transition-colors"
-                >
-                  <Facebook size={20} />
-                </a>
-                )}
-                {SOCIAL_LINKS.whatsapp && (
-                <a
-                  href={SOCIAL_LINKS.whatsapp}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="打开深夜食汤 WhatsApp"
-                  className="p-3 bg-stone-800 rounded-full hover:bg-[#C8A97E] transition-colors"
-                >
-                  <MessageCircle size={20} />
-                </a>
-                )}
-             </div>
-          </div>
-        </div>
-
-        {/* Bottom */}
-        <div className="pt-5 border-t border-stone-800 w-full">
-          <p className="text-[11px] text-stone-600 tracking-widest uppercase">
-            © 2026 深夜食汤 · All Rights Reserved
-          </p>
-        </div>
+    <footer className="pointer-events-none fixed bottom-4 left-0 right-0 z-50 mx-auto max-w-md px-5 pb-[env(safe-area-inset-bottom)]">
+      <div className="pointer-events-auto grid grid-cols-4 gap-1 rounded-full border border-white/65 bg-white/72 p-1.5 shadow-[0_18px_55px_rgba(45,45,45,0.22)] backdrop-blur-2xl">
+        {tabs.map(tab => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange(tab.id)}
+              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] font-bold transition-all ${
+                active ? 'bg-[#2D2D2D] text-[#C8A97E] shadow-lg shadow-black/15' : 'text-stone-500 active:bg-white/70'
+              }`}
+              aria-label={tab.label}
+            >
+              <Icon size={19} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
       </div>
     </footer>
   );

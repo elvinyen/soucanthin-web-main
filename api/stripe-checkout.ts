@@ -57,7 +57,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { orderRecord } = await createOrderWithItems({
       order,
       orderNo,
-      status: 'awaiting_payment',
+      status: 'pending_confirm',
       paymentStatus: 'awaiting_payment',
       paymentReviewStatus: 'not_required',
       discountAmount,

@@ -57,7 +57,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
 
       await updateOrderByStripeSession(sessionId, {
-        status: 'pending',
+        status: 'pending_confirm',
         payment_status: 'paid',
         payment_review_status: 'not_required',
         stripe_payment_intent_id: session.payment_intent || null,
@@ -68,17 +68,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (order) {
         await markCouponUsed(order.coupon_id || undefined, order.user_id || undefined);
         const items = await getOrderItems(order.id);
-        const notificationStatus = await notifyStaffFromRecord({
+        const notification = await notifyStaffFromRecord({
           ...order,
+          status: 'pending_confirm',
           payment_status: 'paid',
           stripe_payment_intent_id: session.payment_intent || order.stripe_payment_intent_id,
         }, items);
 
         await updateOrderByStripeSession(sessionId, {
-          notification_status: notificationStatus,
-          notified_at: notificationStatus === 'sent' ? new Date().toISOString() : null,
+          notification_status: notification.status,
+          notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
+          telegram_chat_id: notification.chatId || null,
+          telegram_message_id: notification.messageId || null,
         });
-        console.log(`Stripe order ${order.order_no} notification: ${notificationStatus}`);
+        console.log(`Stripe order ${order.order_no} notification: ${notification.status}`);
       } else {
         console.warn(`Stripe webhook could not find order for session: ${sessionId}`);
       }

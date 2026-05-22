@@ -6,6 +6,7 @@ const apiRoutes: Record<string, string> = {
   '/api/menu': '/api/menu.ts',
   '/api/order': '/api/order.ts',
   '/api/payment-config': '/api/payment-config.ts',
+  '/api/telegram/webhook': '/api/telegram-webhook.ts',
   '/api/stripe-checkout': '/api/stripe-checkout.ts',
   '/api/stripe-webhook': '/api/stripe-webhook.ts',
   '/api/auth/request-otp': '/api/auth-request-otp.ts',

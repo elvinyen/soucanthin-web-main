@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { User, Home } from 'lucide-react';
+import { Home } from 'lucide-react';
 
 interface HeaderProps {
   scrolled?: boolean;
@@ -40,18 +40,7 @@ const Header: React.FC<HeaderProps> = ({ scrolled, onLogoClick, showHomeButton, 
         />
       </button>
 
-      <div className="flex-1 flex justify-end">
-        <button
-          onClick={onUserClick}
-          className={`relative p-2 rounded-full transition-colors ${
-            isLoggedIn ? 'bg-[#2D2D2D] text-white' : 'bg-stone-50 text-stone-600 hover:bg-stone-100'
-          }`}
-          aria-label={isLoggedIn ? '打开个人中心' : '登录'}
-        >
-          <User size={22} />
-          {isLoggedIn && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#C8A97E] ring-2 ring-white" />}
-        </button>
-      </div>
+      <div className="flex-1" />
     </header>
   );
 };

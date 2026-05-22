@@ -58,15 +58,18 @@ create table if not exists public.orders (
   delivery_address text,
   note text,
   subtotal numeric(10, 2) not null,
+  delivery_fee numeric(10, 2) not null default 0,
   service_charge numeric(10, 2) not null,
   total numeric(10, 2) not null,
-  status text not null default 'pending',
+  status text not null default 'pending_confirm',
   payment_status text not null default 'pay_at_counter',
   payment_review_status text not null default 'not_required',
   receipt_url text,
   stripe_checkout_session_id text,
   stripe_payment_intent_id text,
   notification_status text not null default 'pending',
+  telegram_chat_id text,
+  telegram_message_id integer,
   notified_at timestamptz,
   paid_at timestamptz,
   source_payload jsonb,
@@ -78,12 +81,15 @@ alter table public.orders add column if not exists payment_review_status text no
 alter table public.orders add column if not exists receipt_url text;
 alter table public.orders add column if not exists stripe_checkout_session_id text;
 alter table public.orders add column if not exists stripe_payment_intent_id text;
+alter table public.orders add column if not exists telegram_chat_id text;
+alter table public.orders add column if not exists telegram_message_id integer;
 alter table public.orders add column if not exists notified_at timestamptz;
 alter table public.orders add column if not exists paid_at timestamptz;
 alter table public.orders add column if not exists user_id uuid;
 alter table public.orders add column if not exists coupon_id uuid;
 alter table public.orders add column if not exists discount_amount numeric(10, 2) not null default 0;
 alter table public.orders add column if not exists payable_total numeric(10, 2);
+alter table public.orders add column if not exists delivery_fee numeric(10, 2) not null default 0;
 alter table public.orders add column if not exists payment_review_token text;
 alter table public.orders add column if not exists reviewed_at timestamptz;
 
@@ -91,9 +97,12 @@ update public.orders set payable_total = total where payable_total is null;
 
 update public.orders set payment_method = 'stripe' where payment_method = 'online';
 update public.orders set payment_method = 'tng' where payment_method = 'ewallet';
+update public.orders set status = 'pending_confirm' where status in ('pending', 'awaiting_payment', 'pending_review');
+update public.orders set status = 'cancelled' where status in ('payment_rejected', 'rejected');
 
 alter table public.orders drop constraint if exists orders_order_type_check;
 alter table public.orders drop constraint if exists orders_payment_method_check;
+alter table public.orders drop constraint if exists orders_status_check;
 alter table public.orders drop constraint if exists orders_payment_status_check;
 alter table public.orders drop constraint if exists orders_payment_review_status_check;
 alter table public.orders drop constraint if exists orders_notification_status_check;
@@ -103,6 +112,9 @@ alter table public.orders
 
 alter table public.orders
   add constraint orders_payment_method_check check (payment_method in ('cash', 'tng', 'stripe', 'wallet'));
+
+alter table public.orders
+  add constraint orders_status_check check (status in ('pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
 
 alter table public.orders
   add constraint orders_payment_status_check check (payment_status in ('pay_at_counter', 'pending_review', 'awaiting_payment', 'paid'));

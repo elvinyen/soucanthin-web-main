@@ -17,8 +17,9 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
+  ChevronRight,
 } from 'lucide-react';
-import type { AuthMeResponse, UserAddress, WalletTransaction } from '../types/auth';
+import type { AuthMeResponse, UserAddress, UserOrderSummary, WalletTransaction } from '../types/auth';
 import type { ReceiptImage } from '../types/order';
 
 export type UserCenterTab = 'profile' | 'wallet' | 'orders' | 'addresses' | 'coupons' | 'settings';
@@ -31,6 +32,7 @@ interface UserCenterProps {
   onLogout: () => void;
   onRefresh: () => Promise<void>;
   externalNotice?: string;
+  mode?: 'sheet' | 'page';
 }
 
 type PaymentConfig = { tng: { accountName: string; accountNumber: string } };
@@ -49,8 +51,9 @@ const glassPanel = 'rounded-[1.75rem] border border-white/55 bg-white/55 shadow-
 const glassCard = 'rounded-3xl border border-white/60 bg-white/65 shadow-[0_14px_40px_rgba(45,45,45,0.08)] backdrop-blur-xl';
 const glassInput = 'border border-white/70 bg-white/60 shadow-inner shadow-white/40 backdrop-blur-xl';
 
-const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, onClose, onLogout, onRefresh, externalNotice }) => {
+const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, onClose, onLogout, onRefresh, externalNotice, mode = 'sheet' }) => {
   const [activeTab, setActiveTab] = useState<UserCenterTab>(initialTab);
+  const [isPageRoot, setIsPageRoot] = useState(mode === 'page' && initialTab === 'profile');
   const [amount, setAmount] = useState(1);
   const [rechargeMethod, setRechargeMethod] = useState<'tng' | 'stripe'>('tng');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -85,6 +88,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   useEffect(() => {
     if (!isOpen) return;
     setActiveTab(initialTab);
+    setIsPageRoot(mode === 'page' && initialTab === 'profile');
     fetch('/api/payment-config')
       .then(res => res.json())
       .then(data => data.success && setPaymentConfig({ tng: data.tng }))
@@ -104,7 +108,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
     setPhoneCooldown(0);
     setWalletBalance(session.wallet?.balance || 0);
     loadTransactions();
-  }, [isOpen, initialTab, externalNotice, session.user?.id]);
+  }, [isOpen, initialTab, externalNotice, session.user?.id, mode]);
 
   useEffect(() => {
     if (phoneCooldown <= 0) return;
@@ -355,34 +359,60 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
     }
   };
 
-  if (!isOpen || !session.user) return null;
+  const isPage = mode === 'page';
+
+  if ((!isOpen && !isPage) || !session.user) return null;
   const activeMeta = tabs.find(tab => tab.id === activeTab) || tabs[0];
   const ActiveIcon = activeMeta.icon;
+  const openPageTab = (tab: UserCenterTab) => {
+    setActiveTab(tab);
+    setIsPageRoot(false);
+  };
 
   return (
-    <div className="fixed inset-0 z-[115] max-w-md mx-auto">
-      <div className="absolute inset-0 bg-black/45 backdrop-blur-md" onClick={onClose} />
-      <div className="absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.5rem] border border-white/40 bg-[#F4EFE6]/70 shadow-[0_-28px_80px_rgba(0,0,0,0.28)] backdrop-blur-3xl animate-slide-up">
+    <div className={isPage ? 'min-h-screen max-w-md mx-auto bg-[#F4EFE6]/80' : 'fixed inset-0 z-[115] max-w-md mx-auto'}>
+      {!isPage && <div className="absolute inset-0 bg-black/45 backdrop-blur-md" onClick={onClose} />}
+      <div className={isPage ? 'relative min-h-screen overflow-hidden bg-[#F4EFE6]/80' : 'absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.5rem] border border-white/40 bg-[#F4EFE6]/70 shadow-[0_-28px_80px_rgba(0,0,0,0.28)] backdrop-blur-3xl animate-slide-up'}>
         <div className="absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_18%_0%,rgba(200,169,126,0.34),transparent_48%),radial-gradient(circle_at_82%_10%,rgba(255,255,255,0.72),transparent_40%)] pointer-events-none" />
-        <div className="relative w-12 h-1.5 bg-white/70 rounded-full mx-auto mt-4 flex-none shadow-sm" />
+        {!isPage && <div className="relative w-12 h-1.5 bg-white/70 rounded-full mx-auto mt-4 flex-none shadow-sm" />}
 
         <div className="relative px-7 pt-6 pb-4 flex items-center justify-between flex-none">
           <div className="flex items-center space-x-3">
-            <button
-              onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
-              aria-label="返回"
-            >
-              <ArrowLeft size={20} />
-            </button>
+            {!isPage && (
+              <button
+                onClick={onClose}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
+                aria-label="返回"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            {isPage && !isPageRoot && (
+              <button
+                onClick={() => setIsPageRoot(true)}
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
+                aria-label="返回我的"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            )}
             <div>
-              <h2 className="text-xl font-bold serif text-[#2D2D2D]">{activeMeta.label}</h2>
-              <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">{activeMeta.subtitle}</p>
+              <h2 className="text-xl font-bold serif text-[#2D2D2D]">{isPage && isPageRoot ? '我的' : activeMeta.label}</h2>
+              <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">{isPage && isPageRoot ? 'Account' : activeMeta.subtitle}</p>
             </div>
           </div>
         </div>
 
-        <div className="relative h-[calc(85dvh-6.5rem)] max-h-[calc(85vh-6.5rem)] overflow-y-auto px-7 pb-10 no-scrollbar">
+        <div className={isPage ? 'relative overflow-y-visible px-6 pb-32 no-scrollbar' : 'relative h-[calc(85dvh-6.5rem)] max-h-[calc(85vh-6.5rem)] overflow-y-auto px-7 pb-10 no-scrollbar'}>
+          {isPage && isPageRoot ? (
+            <AccountHome
+              session={session}
+              walletBalance={walletBalance}
+              pendingTransactions={pendingTransactions}
+              onOpenTab={openPageTab}
+            />
+          ) : (
+          <>
           <div className={`mb-6 p-5 ${glassPanel}`}>
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-[#2D2D2D] text-[#C8A97E] shadow-lg shadow-black/15">
@@ -631,6 +661,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               ) : (
                 (session.orders || []).map(order => {
                   const expanded = expandedOrderId === order.id;
+                  const orderStatus = getOrderStatusMeta(order.status);
                   return (
                   <div key={order.id} className={`p-5 ${glassCard}`}>
                     <button
@@ -640,6 +671,9 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       <div>
                         <p className="font-mono text-sm font-bold text-[#2D2D2D]">{order.orderNo}</p>
                         <p className="mt-1 text-[11px] text-stone-400">{formatDate(order.createdAt)}</p>
+                        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${orderStatus.badgeClass}`}>
+                          {orderStatus.label}
+                        </span>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-[#C8A97E]">RM {(order.payableTotal ?? order.total).toFixed(2)}</p>
@@ -648,6 +682,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     </button>
                     {expanded && (
                       <div className="mt-4 space-y-3 border-t border-stone-100 pt-4 text-xs text-stone-500">
+                        <OrderProgress order={order} />
                         <InfoLine label="订单类型" value={order.orderType === 'takeaway' ? '外卖' : '堂食'} />
                         <InfoLine label={order.orderType === 'takeaway' ? '地址' : '桌号'} value={order.orderType === 'takeaway' ? order.deliveryAddress || '-' : order.tableNo || '-'} />
                         {(order.items || []).map(item => (
@@ -668,6 +703,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         ))}
                         <div className="h-px bg-stone-100" />
                         <InfoLine label="小计" value={`RM ${(order.subtotal || 0).toFixed(2)}`} />
+                        <InfoLine label="配送费" value={`RM ${(order.deliveryFee || 0).toFixed(2)}`} />
                         <InfoLine label="SST 6%" value={`RM ${(order.serviceCharge || 0).toFixed(2)}`} />
                         <InfoLine label="优惠" value={`RM ${(order.discountAmount || 0).toFixed(2)}`} />
                         <InfoLine label="实付" value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
@@ -790,6 +826,8 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               </button>
             </section>
           )}
+          </>
+          )}
         </div>
       </div>
       {receiptPreview && isReceiptPreviewOpen && (
@@ -853,6 +891,117 @@ const EmptyState: React.FC<{ text: string }> = ({ text }) => (
   </div>
 );
 
+const AccountHome: React.FC<{
+  session: AuthMeResponse;
+  walletBalance: number;
+  pendingTransactions: number;
+  onOpenTab: (tab: UserCenterTab) => void;
+}> = ({ session, walletBalance, pendingTransactions, onOpenTab }) => {
+  const summaries: Record<UserCenterTab, string> = {
+    profile: session.user?.displayPhone || '编辑资料',
+    wallet: `RM ${walletBalance.toFixed(2)}${pendingTransactions ? ` · ${pendingTransactions}笔待审` : ''}`,
+    orders: `${(session.orders || []).length} 笔订单`,
+    addresses: `${(session.addresses || []).length} 个地址`,
+    coupons: `${(session.coupons || []).filter(coupon => coupon.status === 'available').length} 张可用`,
+    settings: '刷新与退出',
+  };
+
+  return (
+    <section className="space-y-5">
+      <div className="rounded-[2rem] bg-[#2D2D2D] p-6 text-white shadow-2xl shadow-black/20">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-[#C8A97E]">
+            <User size={25} />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-lg font-bold serif">{getDisplayName(session.user?.name)}</p>
+            <p className="mt-1 truncate text-xs text-white/45">{session.user?.displayPhone}</p>
+          </div>
+        </div>
+        <div className="mt-6 grid grid-cols-3 gap-2 text-center">
+          <AccountMetric label="钱包" value={`RM ${walletBalance.toFixed(2)}`} />
+          <AccountMetric label="订单" value={`${(session.orders || []).length}`} />
+          <AccountMetric label="优惠券" value={`${(session.coupons || []).filter(coupon => coupon.status === 'available').length}`} />
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[2rem] border border-white/60 bg-white/60 shadow-[0_18px_55px_rgba(45,45,45,0.1)] backdrop-blur-2xl">
+        {tabs.map((tab, index) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onOpenTab(tab.id)}
+              className={`flex w-full items-center gap-4 px-5 py-4 text-left transition active:bg-white/70 ${
+                index > 0 ? 'border-t border-white/60' : ''
+              }`}
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F7F1E7] text-[#C8A97E]">
+                <Icon size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-[#2D2D2D]">{tab.label}</p>
+                <p className="mt-1 truncate text-xs text-stone-400">{summaries[tab.id]}</p>
+              </div>
+              <ChevronRight size={18} className="text-stone-300" />
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
+
+const AccountMetric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="rounded-2xl bg-white/10 px-2 py-3">
+    <p className="truncate text-sm font-bold text-[#C8A97E]">{value}</p>
+    <p className="mt-1 text-[10px] text-white/40">{label}</p>
+  </div>
+);
+
+const orderSteps: { status: UserOrderSummary['status']; label: string }[] = [
+  { status: 'pending_confirm', label: '待确认' },
+  { status: 'preparing', label: '制作中' },
+  { status: 'delivering', label: '配送中' },
+  { status: 'delivered', label: '已送达' },
+  { status: 'completed', label: '已完成' },
+];
+
+const OrderProgress: React.FC<{ order: UserOrderSummary }> = ({ order }) => {
+  const meta = getOrderStatusMeta(order.status);
+  const currentIndex = orderSteps.findIndex(step => step.status === order.status);
+  const isCancelled = order.status === 'cancelled';
+
+  return (
+    <div className={`rounded-2xl border p-4 ${isCancelled ? 'border-red-100 bg-red-50/70' : 'border-white/70 bg-white/50'}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className={`text-sm font-bold ${isCancelled ? 'text-red-600' : 'text-[#2D2D2D]'}`}>{meta.label}</p>
+          <p className="mt-1 text-xs leading-5 text-stone-500">{meta.description}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${meta.badgeClass}`}>
+          {meta.label}
+        </span>
+      </div>
+
+      {!isCancelled && (
+        <div className="mt-4 grid grid-cols-5 gap-1">
+          {orderSteps.map((step, index) => {
+            const active = currentIndex >= index;
+            return (
+              <div key={step.status} className="min-w-0">
+                <div className={`h-1.5 rounded-full ${active ? 'bg-[#C8A97E]' : 'bg-stone-200'}`} />
+                <p className={`mt-2 truncate text-center text-[10px] ${active ? 'font-bold text-[#C8A97E]' : 'text-stone-400'}`}>{step.label}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 function formatDate(value?: string | null) {
   if (!value) return '-';
   return new Date(value).toLocaleString('zh-MY', {
@@ -899,6 +1048,43 @@ function labelPaymentStatus(status?: string) {
     paid: '已付款',
   };
   return labels[status || ''] || status || '-';
+}
+
+function getOrderStatusMeta(status?: string) {
+  const fallback = {
+    label: '待确认',
+    description: '订单已提交，等待商家确认',
+    badgeClass: 'bg-[#C8A97E]/15 text-[#9B7848]',
+  };
+  const labels: Record<string, { label: string; description: string; badgeClass: string }> = {
+    pending_confirm: fallback,
+    preparing: {
+      label: '制作中',
+      description: '商家正在制作您的餐品',
+      badgeClass: 'bg-amber-100 text-amber-700',
+    },
+    delivering: {
+      label: '配送中',
+      description: '订单正在配送中，预计 30-45 分钟送达',
+      badgeClass: 'bg-sky-100 text-sky-700',
+    },
+    delivered: {
+      label: '已送达',
+      description: '订单已送达',
+      badgeClass: 'bg-emerald-100 text-emerald-700',
+    },
+    completed: {
+      label: '已完成',
+      description: '订单已完成，感谢支持',
+      badgeClass: 'bg-stone-200 text-stone-600',
+    },
+    cancelled: {
+      label: '已取消',
+      description: '订单已取消',
+      badgeClass: 'bg-red-100 text-red-600',
+    },
+  };
+  return labels[status || ''] || fallback;
 }
 
 function labelCouponStatus(status: string) {

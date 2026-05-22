@@ -1,4 +1,4 @@
-import type { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
+import type { Order, OrderStatus, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
 
 export type ApiResponse = {
   status: (code: number) => ApiResponse;
@@ -18,6 +18,20 @@ export type ApiRequest = {
 export type NotificationStatus = 'sent' | 'failed';
 export type PaymentStatus = 'pay_at_counter' | 'pending_review' | 'awaiting_payment' | 'paid';
 export type PaymentReviewStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
+export type TelegramOrderAction = 'confirm' | 'start_delivery' | 'delivered' | 'complete' | 'cancel';
+
+export type TelegramNotificationResult = {
+  status: NotificationStatus;
+  chatId?: string;
+  messageId?: number;
+};
+
+type InlineKeyboardMarkup = {
+  inline_keyboard: {
+    text: string;
+    callback_data: string;
+  }[][];
+};
 
 export type OrderRecord = {
   id: string;
@@ -31,12 +45,13 @@ export type OrderRecord = {
   delivery_address?: string | null;
   note?: string | null;
   subtotal: number;
+  delivery_fee?: number;
   service_charge: number;
   total: number;
   discount_amount?: number;
   payable_total?: number;
   coupon_id?: string | null;
-  status: string;
+  status: OrderStatus;
   payment_status: PaymentStatus;
   payment_review_status: PaymentReviewStatus;
   receipt_url?: string | null;
@@ -45,6 +60,8 @@ export type OrderRecord = {
   payment_review_token?: string | null;
   reviewed_at?: string | null;
   notification_status: NotificationStatus | 'pending';
+  telegram_chat_id?: string | null;
+  telegram_message_id?: number | null;
   created_at: string;
 };
 
@@ -64,6 +81,7 @@ export type OrderItemRecord = {
 
 const ORDER_TYPES: OrderType[] = ['dinein', 'takeaway'];
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'tng', 'stripe', 'wallet'];
+const TAKEAWAY_DELIVERY_FEE = 12;
 
 export function getSupabaseConfig() {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -121,8 +139,8 @@ export function validateOrder(order: Order | undefined, allowedPaymentMethods = 
 export function validateReceiptImage(receiptImage?: ReceiptImage) {
   if (!receiptImage) return 'TNG receipt image is required';
   if (!receiptImage.fileName?.trim()) return 'Receipt file name is required';
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(receiptImage.mimeType)) {
-    return 'Receipt must be a JPG, PNG, or WEBP image';
+  if (!['image/jpeg', 'image/png'].includes(receiptImage.mimeType)) {
+    return 'Receipt must be a JPG or PNG image';
   }
 
   const byteLength = Buffer.byteLength(receiptImage.dataBase64 || '', 'base64');
@@ -134,17 +152,18 @@ export function validateReceiptImage(receiptImage?: ReceiptImage) {
 
 export function calculateTotals(order: Order) {
   const subtotal = roundMoney(order.items.reduce((sum, item) => sum + item.price * item.qty, 0));
+  const deliveryFee = order.orderType === 'takeaway' ? TAKEAWAY_DELIVERY_FEE : 0;
   const serviceCharge = roundMoney(subtotal * 0.06);
-  const total = roundMoney(subtotal + serviceCharge);
+  const total = roundMoney(subtotal + deliveryFee + serviceCharge);
   const discountAmount = roundMoney(Math.min(Math.max(Number(order.discountAmount || 0), 0), total));
   const payableTotal = roundMoney(Math.max(total - discountAmount, 0));
-  return { subtotal, serviceCharge, total, discountAmount, payableTotal };
+  return { subtotal, deliveryFee, serviceCharge, total, discountAmount, payableTotal };
 }
 
 export async function createOrderWithItems(params: {
   order: Order;
   orderNo: string;
-  status: string;
+  status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentReviewStatus: PaymentReviewStatus;
   receiptUrl?: string | null;
@@ -154,7 +173,7 @@ export async function createOrderWithItems(params: {
 }) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const nextOrder = { ...params.order, discountAmount: params.discountAmount ?? params.order.discountAmount ?? 0 };
-  const { subtotal, serviceCharge, total, discountAmount, payableTotal } = calculateTotals(nextOrder);
+  const { subtotal, deliveryFee, serviceCharge, total, discountAmount, payableTotal } = calculateTotals(nextOrder);
   const createdAt = params.order.createdAt || new Date().toISOString();
 
   const orderRecord = await insertOrder(supabaseUrl, serviceRoleKey, {
@@ -168,6 +187,7 @@ export async function createOrderWithItems(params: {
     delivery_address: params.order.orderType === 'takeaway' ? params.order.takeaway?.address.trim() : null,
     note: params.order.note?.trim() || null,
     subtotal,
+    delivery_fee: deliveryFee,
     service_charge: serviceCharge,
     total,
     coupon_id: params.order.couponId || null,
@@ -183,6 +203,7 @@ export async function createOrderWithItems(params: {
     created_at: createdAt,
     source_payload: {
       ...params.order,
+      deliveryFee,
       discountAmount,
       payableTotal,
       receiptImage: params.order.receiptImage ? {
@@ -206,7 +227,7 @@ export async function createOrderWithItems(params: {
     item_note: item.note?.trim() || null,
   })));
 
-  return { orderRecord, subtotal, serviceCharge, total, discountAmount, payableTotal };
+  return { orderRecord, subtotal, deliveryFee, serviceCharge, total, discountAmount, payableTotal };
 }
 
 export async function insertOrder(supabaseUrl: string, serviceRoleKey: string, payload: Record<string, unknown>) {
@@ -236,6 +257,14 @@ export async function updateOrderById(orderRecordId: string, payload: Record<str
   });
 }
 
+export async function updateOrderByNo(orderNo: string, payload: Record<string, unknown>) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  await supabaseRequest(supabaseUrl, serviceRoleKey, `/orders?order_no=eq.${encodeURIComponent(orderNo)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateOrderByStripeSession(sessionId: string, payload: Record<string, unknown>) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   await supabaseRequest(supabaseUrl, serviceRoleKey, `/orders?stripe_checkout_session_id=eq.${encodeURIComponent(sessionId)}`, {
@@ -250,6 +279,18 @@ export async function findOrderByStripeSession(sessionId: string) {
     supabaseUrl,
     serviceRoleKey,
     `/orders?stripe_checkout_session_id=eq.${encodeURIComponent(sessionId)}&select=*`,
+    { method: 'GET' },
+  );
+
+  return Array.isArray(result) ? result[0] as OrderRecord | undefined : undefined;
+}
+
+export async function findOrderByNo(orderNo: string) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const result = await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/orders?order_no=eq.${encodeURIComponent(orderNo)}&select=*`,
     { method: 'GET' },
   );
 
@@ -365,9 +406,11 @@ export async function supabaseRequest(
 }
 
 export async function notifyStaffFromOrder(order: Order, orderNo: string, extra: Partial<OrderRecord> = {}) {
-  const { subtotal, serviceCharge, total, discountAmount, payableTotal } = calculateTotals(order);
-  return sendTelegramNotification(buildStaffMessage({
+  const { subtotal, deliveryFee, serviceCharge, total, discountAmount, payableTotal } = calculateTotals(order);
+  return sendTelegramOrderNotification(buildStaffMessage({
     orderNo,
+    orderStatus: extra.status || 'pending_confirm',
+    createdAt: extra.created_at,
     orderType: order.orderType,
     paymentMethod: order.paymentMethod,
     paymentStatus: extra.payment_status || paymentStatusFor(order.paymentMethod),
@@ -384,6 +427,7 @@ export async function notifyStaffFromOrder(order: Order, orderNo: string, extra:
       note: item.note,
     })),
     subtotal,
+    deliveryFee,
     serviceCharge,
     total,
     discountAmount,
@@ -394,12 +438,14 @@ export async function notifyStaffFromOrder(order: Order, orderNo: string, extra:
     rejectUrl: (extra as { reject_url?: string }).reject_url,
     stripeCheckoutSessionId: extra.stripe_checkout_session_id,
     stripePaymentIntentId: extra.stripe_payment_intent_id,
-  }));
+  }), buildOrderKeyboard(orderNo, extra.status || 'pending_confirm', extra.payment_status || paymentStatusFor(order.paymentMethod), extra.payment_review_status || reviewStatusFor(order.paymentMethod)));
 }
 
 export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItemRecord[]) {
-  return sendTelegramNotification(buildStaffMessage({
+  return sendTelegramOrderNotification(buildStaffMessage({
     orderNo: order.order_no,
+    orderStatus: order.status,
+    createdAt: order.created_at,
     orderType: order.order_type,
     paymentMethod: order.payment_method,
     paymentStatus: order.payment_status,
@@ -416,6 +462,7 @@ export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItem
       note: item.item_note || undefined,
     })),
     subtotal: Number(order.subtotal),
+    deliveryFee: Number(order.delivery_fee || 0),
     serviceCharge: Number(order.service_charge),
     total: Number(order.total),
     discountAmount: Number(order.discount_amount || 0),
@@ -424,14 +471,108 @@ export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItem
     receiptUrl: order.receipt_url,
     stripeCheckoutSessionId: order.stripe_checkout_session_id,
     stripePaymentIntentId: order.stripe_payment_intent_id,
-  }));
+  }), buildOrderKeyboard(order.order_no, order.status, order.payment_status, order.payment_review_status));
+}
+
+export async function editTelegramOrderMessage(order: OrderRecord, items: OrderItemRecord[]) {
+  const token = process.env.TELEGRAM_TOKEN;
+  const chatId = order.telegram_chat_id;
+  const messageId = order.telegram_message_id;
+
+  if (!token || !chatId || !messageId) return false;
+
+  const message = buildStaffMessage({
+    orderNo: order.order_no,
+    orderStatus: order.status,
+    createdAt: order.created_at,
+    orderType: order.order_type,
+    paymentMethod: order.payment_method,
+    paymentStatus: order.payment_status,
+    paymentReviewStatus: order.payment_review_status,
+    customerName: order.customer_name,
+    customerPhone: order.customer_phone,
+    tableNo: order.table_no,
+    deliveryAddress: order.delivery_address,
+    items: items.map(item => ({
+      name: item.name,
+      quantity: item.quantity,
+      lineTotal: Number(item.line_total),
+      options: item.selected_options || [],
+      note: item.item_note || undefined,
+    })),
+    subtotal: Number(order.subtotal),
+    deliveryFee: Number(order.delivery_fee || 0),
+    serviceCharge: Number(order.service_charge),
+    total: Number(order.total),
+    discountAmount: Number(order.discount_amount || 0),
+    payableTotal: Number(order.payable_total ?? order.total),
+    note: order.note || undefined,
+    receiptUrl: order.receipt_url,
+    stripeCheckoutSessionId: order.stripe_checkout_session_id,
+    stripePaymentIntentId: order.stripe_payment_intent_id,
+  });
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text: message,
+        reply_markup: buildOrderKeyboard(order.order_no, order.status, order.payment_status, order.payment_review_status) || { inline_keyboard: [] },
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Telegram edit failed:', await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Telegram edit error:', error);
+    return false;
+  }
+}
+
+export async function answerTelegramCallback(callbackQueryId: string, text: string, alert = false) {
+  const token = process.env.TELEGRAM_TOKEN;
+  if (!token || !callbackQueryId) return false;
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text,
+        show_alert: alert,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Telegram callback answer failed:', await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Telegram callback answer error:', error);
+    return false;
+  }
 }
 
 export async function sendTelegramNotification(message: string): Promise<NotificationStatus> {
+  const result = await sendTelegramOrderNotification(message);
+  return result.status;
+}
+
+export async function sendTelegramOrderNotification(message: string, replyMarkup?: InlineKeyboardMarkup): Promise<TelegramNotificationResult> {
   const token = process.env.TELEGRAM_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
-  if (!token || !chatId) return 'failed';
+  if (!token || !chatId) return { status: 'failed' };
 
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -440,23 +581,31 @@ export async function sendTelegramNotification(message: string): Promise<Notific
       body: JSON.stringify({
         chat_id: chatId,
         text: message,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
 
     if (!response.ok) {
       console.error('Telegram send failed:', await response.text());
-      return 'failed';
+      return { status: 'failed' };
     }
 
-    return 'sent';
+    const payload = await response.json();
+    return {
+      status: 'sent',
+      chatId: String(payload?.result?.chat?.id || chatId),
+      messageId: Number(payload?.result?.message_id || 0) || undefined,
+    };
   } catch (error) {
     console.error('Telegram notification error:', error);
-    return 'failed';
+    return { status: 'failed' };
   }
 }
 
 function buildStaffMessage(params: {
   orderNo: string;
+  orderStatus: OrderStatus;
+  createdAt?: string | null;
   orderType: OrderType;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
@@ -473,6 +622,7 @@ function buildStaffMessage(params: {
     note?: string;
   }[];
   subtotal: number;
+  deliveryFee?: number;
   serviceCharge: number;
   total: number;
   discountAmount?: number;
@@ -485,19 +635,19 @@ function buildStaffMessage(params: {
   stripePaymentIntentId?: string | null;
 }) {
   const itemsText = params.items
-    .map(item => {
+    .map((item, index) => {
       const optionText = item.options?.length
         ? `\n   选项: ${item.options.map(option => `${option.groupName}-${option.name}${option.priceDelta > 0 ? `(+RM ${Number(option.priceDelta).toFixed(2)})` : ''}`).join(', ')}`
         : '';
       const noteText = item.note ? `\n   单品备注: ${item.note}` : '';
-      return `${item.quantity}x ${item.name}  RM ${Number(item.lineTotal).toFixed(2)}${optionText}${noteText}`;
+      return `${index + 1}. ${item.name} ×${item.quantity}\n   RM ${Number(item.lineTotal).toFixed(2)}${optionText}${noteText}`;
     })
     .join('\n');
 
   const actionText = staffActionFor(params.paymentMethod);
   const locationText = params.orderType === 'dinein'
-    ? `桌号: ${params.tableNo || '-'}`
-    : `地址: ${params.deliveryAddress || '-'}`;
+    ? `桌号：${params.tableNo || '-'}`
+    : `地址：${params.deliveryAddress || '-'}`;
   const receiptText = params.receiptUrl ? `\nTNG截图: ${params.receiptUrl}` : '';
   const reviewText = params.approveUrl && params.rejectUrl
     ? `\n\n[付款审核]\n通过: ${params.approveUrl}\n拒绝: ${params.rejectUrl}`
@@ -505,46 +655,90 @@ function buildStaffMessage(params: {
   const stripeText = params.stripeCheckoutSessionId
     ? `\nStripe Session: ${params.stripeCheckoutSessionId}${params.stripePaymentIntentId ? `\nPayment Intent: ${params.stripePaymentIntentId}` : ''}`
     : '';
+  const orderTime = params.createdAt ? new Date(params.createdAt) : new Date();
 
   return [
-    `[员工订单后台] 新订单`,
+    `📢 新订单通知`,
     ``,
-    `订单号: ${params.orderNo}`,
-    `处理动作: ${actionText}`,
-    `订单类型: ${labelOrderType(params.orderType)}`,
-    `支付方式: ${labelPaymentMethod(params.paymentMethod)}`,
-    `支付状态: ${labelPaymentStatus(params.paymentStatus)}`,
-    `审核状态: ${labelReviewStatus(params.paymentReviewStatus)}`,
+    `订单号：${params.orderNo}`,
+    `下单时间：${formatMalaysiaDate(orderTime)}`,
     ``,
-    `[顾客资料]`,
-    `姓名: ${params.customerName}`,
-    `电话: ${params.customerPhone}`,
+    `🔘 处理状态`,
+    `处理动作：${actionText}`,
+    `订单状态：${labelOrderStatus(params.orderStatus)}`,
+    `订单类型：${labelOrderType(params.orderType)}`,
+    `支付方式：${labelPaymentMethod(params.paymentMethod)}`,
+    `支付状态：${labelPaymentStatus(params.paymentStatus)}`,
+    `审核状态：${labelReviewStatus(params.paymentReviewStatus)}`,
+    ``,
+    `👤 顾客资料`,
+    `姓名：${params.customerName}`,
+    `电话：${params.customerPhone}`,
     locationText,
     ``,
-    `[菜品明细]`,
-    itemsText,
+    `🍲 菜品明细`,
+    `---------------`,
+    itemsText || '无',
+    `---------------`,
     ``,
-    `[金额]`,
-    `小计: RM ${Number(params.subtotal).toFixed(2)}`,
-    `SST 6%: RM ${Number(params.serviceCharge).toFixed(2)}`,
-    `原价总额: RM ${Number(params.total).toFixed(2)}`,
-    `优惠抵扣: RM ${Number(params.discountAmount || 0).toFixed(2)}`,
-    `实付金额: RM ${Number(params.payableTotal ?? params.total).toFixed(2)}`,
+    `💰 金额明细`,
+    `小计：RM ${Number(params.subtotal).toFixed(2)}`,
+    `配送费：RM ${Number(params.deliveryFee || 0).toFixed(2)}`,
+    `SST 6%：RM ${Number(params.serviceCharge).toFixed(2)}`,
+    `原价总额：RM ${Number(params.total).toFixed(2)}`,
+    `优惠抵扣：RM ${Number(params.discountAmount || 0).toFixed(2)}`,
+    `实付金额：RM ${Number(params.payableTotal ?? params.total).toFixed(2)}`,
     ``,
-    `[备注]`,
+    `📝 备注`,
     params.note || '无',
     `${receiptText}${reviewText}${stripeText}`,
     ``,
-    `下单时间: ${new Date().toLocaleString('en-MY', {
-      timeZone: 'Asia/Kuala_Lumpur',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })}`,
+    labelTelegramOperationHint(params.orderStatus, params.paymentStatus, params.paymentReviewStatus),
   ].join('\n').trim();
+}
+
+function buildOrderKeyboard(
+  orderNo: string,
+  status: OrderStatus,
+  paymentStatus: PaymentStatus,
+  paymentReviewStatus: PaymentReviewStatus,
+): InlineKeyboardMarkup | undefined {
+  if (!canOperateOrder(paymentStatus, paymentReviewStatus)) return undefined;
+  const button = (text: string, action: TelegramOrderAction) => ({
+    text,
+    callback_data: `order:${orderNo}:${action}`,
+  });
+
+  if (status === 'pending_confirm') {
+    return { inline_keyboard: [[button('确认订单', 'confirm'), button('取消订单', 'cancel')]] };
+  }
+  if (status === 'preparing') {
+    return { inline_keyboard: [[button('开始配送', 'start_delivery'), button('取消订单', 'cancel')]] };
+  }
+  if (status === 'delivering') {
+    return { inline_keyboard: [[button('已送达', 'delivered')]] };
+  }
+  if (status === 'delivered') {
+    return { inline_keyboard: [[button('完成订单', 'complete')]] };
+  }
+  return undefined;
+}
+
+function canOperateOrder(paymentStatus: PaymentStatus, paymentReviewStatus: PaymentReviewStatus) {
+  return paymentStatus === 'paid' && paymentReviewStatus !== 'pending' && paymentReviewStatus !== 'rejected';
+}
+
+function labelTelegramOperationHint(status: OrderStatus, paymentStatus: PaymentStatus, paymentReviewStatus: PaymentReviewStatus) {
+  if (!canOperateOrder(paymentStatus, paymentReviewStatus)) return '等待付款/审核完成后开放订单操作';
+  if (status === 'pending_confirm') return '可确认或取消订单';
+  if (status === 'preparing') return '可开始配送或取消订单';
+  if (status === 'delivering') return '可标记已送达';
+  if (status === 'delivered') return '可完成订单';
+  return '无需后续操作';
+}
+
+export function isOrderStatus(value: string): value is OrderStatus {
+  return ['pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'].includes(value);
 }
 
 function paymentStatusFor(paymentMethod: PaymentMethod): PaymentStatus {
@@ -563,6 +757,30 @@ function staffActionFor(paymentMethod: PaymentMethod) {
   if (paymentMethod === 'tng') return '先审核TNG付款截图，再处理订单';
   if (paymentMethod === 'wallet') return '钱包已付款，直接处理订单';
   return 'Stripe已付款，直接处理订单';
+}
+
+function labelOrderStatus(status: OrderStatus) {
+  const labels: Record<OrderStatus, string> = {
+    pending_confirm: '待确认',
+    preparing: '制作中',
+    delivering: '配送中',
+    delivered: '已送达',
+    completed: '已完成',
+    cancelled: '已取消',
+  };
+  return labels[status];
+}
+
+function formatMalaysiaDate(value: Date) {
+  return value.toLocaleString('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function labelOrderType(orderType: OrderType) {

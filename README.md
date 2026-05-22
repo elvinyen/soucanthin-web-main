@@ -34,6 +34,7 @@ SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 TELEGRAM_TOKEN="your-telegram-bot-token"
 TELEGRAM_CHAT_ID="your-telegram-chat-id"
+TELEGRAM_ADMIN_IDS="123456789,987654321"
 TNG_ACCOUNT_NAME="Soup Can Thin"
 TNG_ACCOUNT_NUMBER="0123456789"
 STRIPE_SECRET_KEY="sk_test_your-stripe-secret-key"
@@ -56,6 +57,7 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `TELEGRAM_TOKEN`
 - `TELEGRAM_CHAT_ID`
+- `TELEGRAM_ADMIN_IDS`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `MOCEAN_API_TOKEN`
@@ -193,5 +195,14 @@ sudo certbot --nginx -d your-domain.com -d www.your-domain.com
 ```bash
 pm2 status
 pm2 logs soucanthin-api
+pm2 restart soucanthin-api
+```
+
+### 6. 更新代码后vps操作
+```bash
+cd /var/www/soucanthin-web-main
+git pull
+npm ci
+npm run build
 pm2 restart soucanthin-api
 ```

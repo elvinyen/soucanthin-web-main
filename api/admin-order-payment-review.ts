@@ -1,5 +1,5 @@
-import type { ApiRequest, ApiResponse } from './_order-utils';
-import { getSupabaseConfig, markCouponUsed, supabaseRequest } from './_order-utils';
+import type { ApiRequest, ApiResponse, OrderRecord } from './_order-utils';
+import { getOrderItems, getSupabaseConfig, markCouponUsed, notifyStaffFromRecord, supabaseRequest } from './_order-utils';
 import { parseJsonBody } from './_auth-utils';
 
 type ReviewAction = 'approve' | 'reject';
@@ -57,7 +57,7 @@ async function approveOrderPayment(orderId: string, reviewToken: string) {
     {
       method: 'PATCH',
       body: JSON.stringify({
-        status: 'pending',
+        status: 'pending_confirm',
         payment_status: 'paid',
         payment_review_status: 'approved',
         paid_at: new Date().toISOString(),
@@ -66,6 +66,25 @@ async function approveOrderPayment(orderId: string, reviewToken: string) {
     },
   );
   await markCouponUsed(order.coupon_id || undefined, order.user_id || undefined);
+  const approvedOrder = await findOrderById(orderId);
+  if (approvedOrder) {
+    const items = await getOrderItems(approvedOrder.id);
+    const notification = await notifyStaffFromRecord(approvedOrder, items);
+    await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/orders?id=eq.${encodeURIComponent(orderId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          notification_status: notification.status,
+          notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
+          telegram_chat_id: notification.chatId || null,
+          telegram_message_id: notification.messageId || null,
+        }),
+      },
+    );
+  }
   return order;
 }
 
@@ -79,13 +98,24 @@ async function rejectOrderPayment(orderId: string, reviewToken: string) {
     {
       method: 'PATCH',
       body: JSON.stringify({
-        status: 'payment_rejected',
+        status: 'cancelled',
         payment_review_status: 'rejected',
         reviewed_at: new Date().toISOString(),
       }),
     },
   );
   return order;
+}
+
+async function findOrderById(orderId: string) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const existing = await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/orders?id=eq.${encodeURIComponent(orderId)}&select=*`,
+    { method: 'GET' },
+  );
+  return Array.isArray(existing) ? existing[0] as OrderRecord | undefined : undefined;
 }
 
 async function findPendingTngOrder(orderId: string, reviewToken: string) {

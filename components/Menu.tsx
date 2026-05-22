@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Hash, Minus, Plus, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { CartLine, CartOption, MENU_ITEMS, MenuItem } from '../data/menu';
 
 interface MenuProps {
@@ -23,7 +23,7 @@ const normalizeCategory = (category: string) => {
   return categoryMap[category] || category;
 };
 
-const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) => {
+const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(MENU_ITEMS);
   const [activeCategory, setActiveCategory] = useState(CATEGORY_TABS[0]);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -71,21 +71,8 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) =
   const totalPrice = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
 
   return (
-    <div className="bg-[#F5F5F5] min-h-screen pb-32">
-      <div className="fixed top-16 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100/50 shadow-sm max-w-md mx-auto">
-        <div className="px-6 pt-4">
-          <div className="flex items-center justify-between rounded-2xl bg-[#2D2D2D] px-4 py-3 text-white">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.2em] text-stone-400">当前点单</p>
-              <p className="mt-0.5 text-sm font-bold serif">
-                {tableNumber ? `桌号 ${tableNumber}` : '请选择菜品后填写资料'}
-              </p>
-            </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#C8A97E]">
-              <Hash size={17} />
-            </div>
-          </div>
-        </div>
+    <div className="bg-[#F5F5F5] min-h-screen pb-40">
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100/50 shadow-sm max-w-md mx-auto">
         <div className="flex space-x-4 overflow-x-auto no-scrollbar px-6 py-4">
           {CATEGORY_TABS.map(cat => (
             <button
@@ -103,7 +90,7 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) =
         </div>
       </div>
 
-      <div className="px-6 pt-40 pb-8">
+      <div className="px-6 pt-20 pb-8">
         <div className="grid grid-cols-2 gap-x-5 gap-y-10">
           {filteredItems.map(item => (
             <button
@@ -195,7 +182,7 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart, tableNumber }) =
       )}
 
       {totalItems > 0 && (
-        <div className="fixed bottom-6 left-0 right-0 z-50 px-8 max-w-md mx-auto pointer-events-none">
+        <div className="fixed bottom-24 left-0 right-0 z-50 px-8 max-w-md mx-auto pointer-events-none">
           <button
             onClick={onViewCart}
             className="pointer-events-auto w-full flex items-center justify-between bg-[#2D2D2D] text-white p-4 rounded-full shadow-2xl shadow-black/40 border border-white/5 animate-slide-up active:scale-[0.98] transition-all"

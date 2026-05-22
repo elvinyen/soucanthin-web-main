@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, roundMoney, supabaseRequest } from './_order-utils';
+import type { OrderStatus } from '../types/order';
 import type { AuthUser, UserAddress, UserCoupon, UserOrderSummary, WalletSummary, WalletTransaction } from '../types/auth';
 
 const SESSION_COOKIE = 'sct_session';
@@ -271,7 +272,7 @@ export async function getUserOrders(userId: string): Promise<UserOrderSummary[]>
   const rows = await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    `/orders?user_id=eq.${encodeURIComponent(userId)}&select=id,order_no,order_type,payment_method,customer_name,customer_phone,table_no,delivery_address,note,subtotal,service_charge,total,discount_amount,payable_total,status,payment_status,payment_review_status,created_at&order=created_at.desc&limit=20`,
+    `/orders?user_id=eq.${encodeURIComponent(userId)}&select=id,order_no,order_type,payment_method,customer_name,customer_phone,table_no,delivery_address,note,subtotal,delivery_fee,service_charge,total,discount_amount,payable_total,status,payment_status,payment_review_status,created_at&order=created_at.desc&limit=20`,
     { method: 'GET' },
   );
   const orders = Array.isArray(rows) ? rows : [];
@@ -296,10 +297,11 @@ export async function getUserOrders(userId: string): Promise<UserOrderSummary[]>
     orderNo: row.order_no,
     total: Number(row.total || 0),
     subtotal: Number(row.subtotal || 0),
+    deliveryFee: Number(row.delivery_fee || 0),
     serviceCharge: Number(row.service_charge || 0),
     discountAmount: Number(row.discount_amount || 0),
     payableTotal: Number(row.payable_total ?? row.total ?? 0),
-    status: row.status,
+    status: row.status as OrderStatus,
     paymentStatus: row.payment_status,
     paymentMethod: row.payment_method,
     orderType: row.order_type,

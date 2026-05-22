@@ -1,3 +1,5 @@
+import type { OrderStatus } from './order';
+
 export interface AuthUser {
   id: string;
   phone: string;
@@ -31,10 +33,11 @@ export interface UserOrderSummary {
   orderNo: string;
   total: number;
   subtotal?: number;
+  deliveryFee?: number;
   serviceCharge?: number;
   discountAmount?: number;
   payableTotal?: number;
-  status: string;
+  status: OrderStatus;
   paymentStatus: string;
   paymentMethod: string;
   orderType?: string;

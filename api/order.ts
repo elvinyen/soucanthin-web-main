@@ -30,7 +30,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return res.status(400).json({ success: false, error: 'Invalid JSON body' });
   }
 
-  const validationError = validateOrder(order, ['cash', 'tng', 'wallet']);
+  const validationError = validateOrder(order, ['tng', 'wallet']);
   if (validationError) {
     return res.status(400).json({ success: false, error: validationError });
   }
@@ -63,13 +63,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? await uploadReceipt(orderNo, order.receiptImage!)
       : null;
 
-    const paymentStatus = order.paymentMethod === 'cash'
-      ? 'pay_at_counter'
-      : order.paymentMethod === 'wallet'
-        ? 'paid'
-        : 'pending_review';
+    const paymentStatus = order.paymentMethod === 'wallet'
+      ? 'paid'
+      : 'pending_review';
     const paymentReviewStatus = order.paymentMethod === 'tng' ? 'pending' : 'not_required';
-    const status = order.paymentMethod === 'tng' ? 'pending_review' : 'pending';
+    const status = 'pending_confirm';
     const paymentReviewToken = order.paymentMethod === 'tng' ? randomBytes(24).toString('base64url') : null;
 
     const { orderRecord } = await createOrderWithItems({
@@ -90,11 +88,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     } else if (order.paymentMethod === 'wallet' && user) {
       await updateOrderById(orderRecord.id, { paid_at: new Date().toISOString() });
       await markCouponUsed(order.couponId, user.id);
-    } else if (order.paymentMethod === 'cash' && user) {
-      await markCouponUsed(order.couponId, user.id);
     }
 
-    const notificationStatus = await notifyStaffFromOrder(order, orderNo, {
+    const notification = await notifyStaffFromOrder(order, orderNo, {
+      status,
       payment_status: paymentStatus,
       payment_review_status: paymentReviewStatus,
       receipt_url: receiptUrl,
@@ -102,14 +99,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
 
     await updateOrderById(orderRecord.id, {
-      notification_status: notificationStatus,
-      notified_at: notificationStatus === 'sent' ? new Date().toISOString() : null,
+      notification_status: notification.status,
+      notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
+      telegram_chat_id: notification.chatId || null,
+      telegram_message_id: notification.messageId || null,
     });
 
     return res.status(200).json({
       success: true,
       orderId: orderNo,
-      notificationStatus,
+      notificationStatus: notification.status,
       paymentStatus,
       paymentReviewStatus,
       discountAmount,

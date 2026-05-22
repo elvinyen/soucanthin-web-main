@@ -1,6 +1,7 @@
 
 export type OrderType = "dinein" | "takeaway";
 export type PaymentMethod = "cash" | "tng" | "stripe" | "wallet";
+export type OrderStatus = "pending_confirm" | "preparing" | "delivering" | "delivered" | "completed" | "cancelled";
 
 export interface ReceiptImage {
   fileName: string;
@@ -40,6 +41,7 @@ export interface Order {
     note?: string;
   }[];
   subtotal: number;
+  deliveryFee?: number;
   serviceCharge: number;
   total: number;
   couponId?: string;

@@ -6,17 +6,22 @@ import LuckyDraw from './components/LuckyDraw';
 import OrderSection from './components/OrderSection';
 import CharitySection from './components/CharitySection';
 import Footer from './components/Footer';
+import SiteFooter from './components/SiteFooter';
 import Menu from './components/Menu';
 import Cart from './components/Cart';
 import AuthModal from './components/AuthModal';
 import UserCenter, { type UserCenterTab } from './components/UserCenter';
 import UserDropdown from './components/UserDropdown';
+import OrdersPage from './components/OrdersPage';
 import type { AuthMeResponse } from './types/auth';
 import type { CartLine } from './data/menu';
+import type { BottomTab } from './components/Footer';
+
+type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
 const App: React.FC = () => {
   const [scrolled, setScrolled] = useState(false);
-  const [view, setView] = useState<'home' | 'menu'>('home');
+  const [view, setView] = useState<MainView>('home');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -39,17 +44,17 @@ const App: React.FC = () => {
       setView('menu');
     }
     if (walletStatus === 'stripe-success') {
+      setView('mine');
       setUserCenterTab('wallet');
       setUserCenterNotice('线上转账已完成，正在更新钱包余额。');
-      setIsUserCenterOpen(true);
       [0, 1500, 4000, 8000].forEach(delay => {
         window.setTimeout(refreshSession, delay);
       });
     }
     if (walletStatus === 'stripe-cancel') {
+      setView('mine');
       setUserCenterTab('wallet');
       setUserCenterNotice('');
-      setIsUserCenterOpen(true);
       if (walletTransactionId) {
         fetch('/api/wallet/recharge/stripe-cancel', {
           method: 'POST',
@@ -59,8 +64,16 @@ const App: React.FC = () => {
       }
     }
     if (paymentStatus === 'stripe-success') {
-      setView('menu');
+      setView('orders');
+      setUserCenterTab('orders');
       setUserCenterNotice('线上付款成功，订单会在员工端同步。');
+      [0, 1500, 4000, 8000].forEach(delay => {
+        window.setTimeout(refreshSession, delay);
+      });
+    }
+    if (paymentStatus === 'stripe-cancel') {
+      setView('menu');
+      setAppNotice('线上付款已取消，可重新选择支付方式。');
     }
     if (walletStatus || paymentStatus || walletTransactionId || params.get('order')) {
       ['wallet', 'payment', 'tx', 'order'].forEach(key => params.delete(key));
@@ -117,7 +130,7 @@ const App: React.FC = () => {
   const openUserCenter = (tab: UserCenterTab) => {
     setUserCenterTab(tab);
     setIsUserMenuOpen(false);
-    setIsUserCenterOpen(true);
+    setView('mine');
   };
 
   const handleLogout = () => {
@@ -131,18 +144,27 @@ const App: React.FC = () => {
     window.setTimeout(() => setAppNotice(''), 2200);
   };
 
+  const handleTabChange = (tab: BottomTab) => {
+    setIsUserMenuOpen(false);
+    setView(tab);
+    if (tab === 'mine') setUserCenterTab('profile');
+    if (tab === 'orders' || tab === 'mine') refreshSession();
+  };
+
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-xl relative overflow-x-hidden">
-      <Header 
-        scrolled={scrolled} 
-        onLogoClick={() => setView('home')} 
-        showHomeButton={view === 'menu'}
-        onHomeClick={() => setView('home')}
-        onUserClick={handleUserClick}
-        isLoggedIn={session.authenticated}
-      />
+      {view === 'home' && (
+        <Header
+          scrolled={scrolled}
+          onLogoClick={() => setView('home')}
+          showHomeButton={false}
+          onHomeClick={() => setView('home')}
+          onUserClick={handleUserClick}
+          isLoggedIn={session.authenticated}
+        />
+      )}
       
-      <main className="flex-grow pt-16">
+      <main className={`flex-grow ${view === 'home' ? 'pt-16' : ''}`}>
         {view === 'home' && (
           <>
             <Banner />
@@ -165,6 +187,7 @@ const App: React.FC = () => {
                  <CharitySection />
               </section>
             </div>
+            <SiteFooter />
           </>
         )}
 
@@ -175,6 +198,51 @@ const App: React.FC = () => {
             onViewCart={() => setIsCartOpen(true)} 
             tableNumber={tableNumber}
           />
+        )}
+
+        {view === 'orders' && (
+          <OrdersPage
+            session={session}
+            onLogin={() => setIsAuthOpen(true)}
+            onOpenHistory={() => {
+              setUserCenterTab('orders');
+              setView('mine');
+            }}
+          />
+        )}
+
+        {view === 'mine' && (
+          session.authenticated ? (
+            <UserCenter
+              mode="page"
+              isOpen
+              session={session}
+              initialTab={userCenterTab}
+              onClose={() => setView('home')}
+              onLogout={handleLogout}
+              onRefresh={refreshSession}
+              externalNotice={userCenterNotice}
+            />
+          ) : (
+            <div className="min-h-screen bg-[#F4EFE6]/80 px-7 pb-32 pt-8">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-stone-400">Account</p>
+              <h1 className="serif mt-1 text-2xl font-bold text-[#2D2D2D]">我的</h1>
+              <div className="mt-10 rounded-[2rem] border border-white/60 bg-white/65 p-6 text-center shadow-[0_14px_40px_rgba(45,45,45,0.08)] backdrop-blur-xl">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2D2D2D] text-[#C8A97E]">
+                  <img src="/logo/sct_logo.png" alt="深夜食汤 Logo" className="h-8 w-8 object-contain" />
+                </div>
+                <h2 className="serif mt-5 text-lg font-bold text-[#2D2D2D]">登录后进入个人中心</h2>
+                <p className="mt-2 text-sm leading-6 text-stone-500">可查看用户信息、钱包、历史订单、地址、优惠券和设置。</p>
+                <button
+                  type="button"
+                  onClick={() => setIsAuthOpen(true)}
+                  className="mt-6 w-full rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white"
+                >
+                  手机号登录
+                </button>
+              </div>
+            </div>
+          )
         )}
       </main>
 
@@ -189,11 +257,18 @@ const App: React.FC = () => {
         onRefreshSession={refreshSession}
         onOrderSuccess={() => {
           setIsCartOpen(false);
-          setView('menu');
+          setView('orders');
+          setUserCenterTab('orders');
+          refreshSession();
+        }}
+        onWalletRecharge={() => {
+          setIsCartOpen(false);
+          setView('mine');
+          setUserCenterTab('wallet');
         }}
       />
 
-      <Footer />
+      <Footer activeTab={view} onTabChange={handleTabChange} />
 
       {appNotice && (
         <div className="fixed left-1/2 top-20 z-[130] w-[calc(100%-3rem)] max-w-sm -translate-x-1/2 rounded-2xl bg-[#2D2D2D] px-5 py-3 text-center text-sm font-bold text-white shadow-2xl">
