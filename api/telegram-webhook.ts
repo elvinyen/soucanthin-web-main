@@ -37,6 +37,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   let callbackId = '';
+  let callbackAnswered = false;
 
   try {
     const payload = parseJsonBody<TelegramWebhookPayload>(req.body);
@@ -76,18 +77,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return res.status(409).json({ success: false, error: 'Invalid order status transition' });
     }
 
+    await answerTelegramCallback(callbackId, '正在处理订单...');
+    callbackAnswered = true;
+
     await updateOrderByNo(parsed.orderNo, { status: transition.to });
 
     const updatedOrder = await findOrderByNo(parsed.orderNo);
     if (!updatedOrder) throw new Error('Order disappeared after update');
     const items = await getOrderItems(updatedOrder.id);
     await editTelegramOrderMessage(updatedOrder, items);
-    await answerTelegramCallback(callbackId, transition.label);
 
     return res.status(200).json({ success: true, status: transition.to });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Telegram webhook failed';
-    if (callbackId) await answerTelegramCallback(callbackId, message, true);
+    if (callbackId && !callbackAnswered) await answerTelegramCallback(callbackId, message, true);
     return res.status(400).json({ success: false, error: message });
   }
 }
