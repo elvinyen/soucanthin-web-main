@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Check, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CartLine, CartOption, MENU_ITEMS, MenuItem } from '../data/menu';
+import { localizeMenuItems } from '../data/menuTranslations';
+import type { LanguageCode } from '../types/i18n';
+import LanguageSelector from './LanguageSelector';
 
 interface MenuProps {
   cart: CartLine[];
@@ -9,44 +13,50 @@ interface MenuProps {
   tableNumber: string | null;
 }
 
-const CATEGORY_TABS = ['热菜', '暖汤', '饮品', '甜品'];
-
-const normalizeCategory = (category: string) => {
-  const categoryMap: Record<string, string> = {
-    炖汤: '暖汤',
-    泰式菜: '热菜',
-    越南菜: '热菜',
-    饮料: '饮品',
-    甜点: '甜品',
-  };
-
-  return categoryMap[category] || category;
-};
-
 const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(MENU_ITEMS);
-  const [activeCategory, setActiveCategory] = useState(CATEGORY_TABS[0]);
+  const { i18n, t } = useTranslation();
+  const language = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0] as LanguageCode;
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => localizeMenuItems(MENU_ITEMS, language));
+  const [activeCategory, setActiveCategory] = useState('');
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    fetch('/api/menu')
+    fetch(`/api/menu?lang=${encodeURIComponent(language)}`)
       .then(res => res.ok ? res.json() : Promise.reject(new Error('Menu request failed')))
       .then(payload => {
         if (mounted && payload.success && Array.isArray(payload.items) && payload.items.length > 0) {
-          setMenuItems(payload.items);
+          setMenuItems(localizeMenuItems(payload.items, language));
         }
       })
       .catch(() => {
-        if (mounted) setMenuItems(MENU_ITEMS);
+        if (mounted) setMenuItems(localizeMenuItems(MENU_ITEMS, language));
       });
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [language]);
+
+  const categoryTabs = useMemo(() => {
+    return Array.from(new Set(menuItems.map(item => item.category).filter(Boolean)));
+  }, [menuItems]);
+
+  useEffect(() => {
+    if (!categoryTabs.length) {
+      setActiveCategory('');
+      return;
+    }
+    setActiveCategory(current => categoryTabs.includes(current) ? current : categoryTabs[0]);
+  }, [categoryTabs]);
+
+  useEffect(() => {
+    if (!selectedItem) return;
+    const updatedItem = menuItems.find(item => item.id === selectedItem.id);
+    if (updatedItem && updatedItem !== selectedItem) setSelectedItem(updatedItem);
+  }, [menuItems, selectedItem]);
 
   const filteredItems = useMemo(
-    () => menuItems.filter(item => normalizeCategory(item.category) === activeCategory),
+    () => menuItems.filter(item => item.category === activeCategory),
     [activeCategory, menuItems],
   );
 
@@ -73,8 +83,9 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
   return (
     <div className="bg-[#F5F5F5] min-h-screen pb-40">
       <div className="fixed top-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100/50 shadow-sm max-w-md mx-auto">
-        <div className="flex space-x-4 overflow-x-auto no-scrollbar px-6 py-4">
-          {CATEGORY_TABS.map(cat => (
+        <div className="flex items-center gap-3 px-5 py-3">
+          <div className="flex min-w-0 flex-1 space-x-3 overflow-x-auto no-scrollbar">
+          {categoryTabs.map(cat => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
@@ -87,11 +98,18 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
               {cat}
             </button>
           ))}
+          </div>
+          <LanguageSelector className="flex-none" />
         </div>
       </div>
 
       <div className="px-6 pt-20 pb-8">
         <div className="grid grid-cols-2 gap-x-5 gap-y-10">
+          {filteredItems.length === 0 && (
+            <div className="col-span-2 rounded-3xl bg-white p-8 text-center text-sm text-stone-400 shadow-sm">
+              {t('menuPage.emptyCategory')}
+            </div>
+          )}
           {filteredItems.map(item => (
             <button
               key={item.id}
@@ -103,12 +121,12 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
                 <img src={item.image} alt={item.name} className="h-full w-full object-contain" />
                 {item.recommended && !item.soldOut && (
                   <span className="absolute left-2 top-2 rounded-full bg-[#C8A97E] px-2 py-1 text-[10px] font-bold text-white shadow">
-                    推荐
+                    {t('menuPage.recommended')}
                   </span>
                 )}
                 {item.soldOut && (
                   <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-sm font-bold text-stone-700 backdrop-blur-[1px]">
-                    今日售罄
+                    {t('menuPage.soldOut')}
                   </div>
                 )}
               </div>
@@ -195,13 +213,13 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
                 </span>
               </div>
               <div className="flex flex-col text-left">
-                <span className="text-[10px] font-medium text-stone-400 leading-none">已选购</span>
-                <span className="text-sm font-bold serif leading-tight">{totalItems} 件 · RM {totalPrice.toFixed(2)}</span>
+                <span className="text-[10px] font-medium text-stone-400 leading-none">{t('menuPage.selected')}</span>
+                <span className="text-sm font-bold serif leading-tight">{t('common.pieces', { count: totalItems })} · RM {totalPrice.toFixed(2)}</span>
               </div>
             </div>
 
             <div className="flex items-center space-x-2 bg-white text-[#2D2D2D] px-6 py-2.5 rounded-full font-bold text-sm">
-              <span>查看购物车</span>
+              <span>{t('menuPage.viewCart')}</span>
               <ChevronRight size={16} />
             </div>
           </button>
@@ -216,6 +234,7 @@ function DishDetail({ item, onClose, onAdd }: {
   onClose: () => void;
   onAdd: (line: CartLine) => void;
 }) {
+  const { t } = useTranslation();
   const [quantity, setQuantity] = useState(1);
   const [selectedByGroup, setSelectedByGroup] = useState<Record<string, string[]>>({});
   const [note, setNote] = useState('');
@@ -279,7 +298,7 @@ function DishDetail({ item, onClose, onAdd }: {
       <button
         onClick={onClose}
         className="absolute left-5 top-5 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-[#2D2D2D] shadow"
-        aria-label="返回菜单"
+        aria-label={t('menuPage.backToMenu')}
       >
         <ArrowLeft size={19} />
       </button>
@@ -289,8 +308,10 @@ function DishDetail({ item, onClose, onAdd }: {
           {item.soldOut && <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px]" />}
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-black/45" />
           <div className="absolute bottom-6 left-6 right-6 text-white">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{item.enName}</p>
-            <h2 className="mt-2 text-3xl font-bold serif">{item.name}</h2>
+            {item.enName.trim() && (
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{item.enName}</p>
+            )}
+            <h2 className={`${item.enName.trim() ? 'mt-2' : ''} text-3xl font-bold serif`}>{item.name}</h2>
             <div className="mt-3 flex flex-wrap gap-2">
               {item.tags.map(tag => (
                 <span key={tag} className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold backdrop-blur">
@@ -303,12 +324,12 @@ function DishDetail({ item, onClose, onAdd }: {
 
         <div className="space-y-6 px-6 py-6">
           <section>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">商品单价</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">{t('menuPage.unitPrice')}</p>
             <p className="mt-2 text-2xl font-bold serif text-[#C8A97E]">RM {unitPrice.toFixed(2)}</p>
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">菜品介绍</h3>
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">{t('menuPage.dishIntro')}</h3>
             <div className="rounded-3xl bg-white p-5 shadow-sm">
               <p className="text-sm leading-7 text-stone-600">{item.detail || item.description}</p>
             </div>
@@ -318,7 +339,7 @@ function DishDetail({ item, onClose, onAdd }: {
             <section key={group.id} className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">{group.name}</h3>
-                <span className="text-[10px] text-stone-400">{group.required ? '必选' : group.type === 'single' ? '单选' : '可多选'}</span>
+                <span className="text-[10px] text-stone-400">{group.required ? t('menuPage.required') : group.type === 'single' ? t('menuPage.single') : t('menuPage.multiple')}</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {group.options.map(option => {
@@ -347,12 +368,12 @@ function DishDetail({ item, onClose, onAdd }: {
           ))}
 
           <section className="space-y-3">
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">商家备注</h3>
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">{t('menuPage.merchantNote')}</h3>
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
               rows={3}
-              placeholder="如少辣、不要香菜、汤分开等..."
+              placeholder={t('menuPage.notePlaceholder')}
               className="w-full resize-none rounded-3xl border border-stone-100 bg-white px-5 py-4 text-sm outline-none shadow-sm focus:border-[#C8A97E]"
             />
           </section>
@@ -379,7 +400,7 @@ function DishDetail({ item, onClose, onAdd }: {
                 : 'bg-[#C8A97E] text-white shadow-[#C8A97E]/30 active:scale-95'
             }`}
           >
-            {item.soldOut ? '今日售罄' : `加入购物车 · RM ${(unitPrice * quantity).toFixed(2)}`}
+            {item.soldOut ? t('menuPage.soldOut') : `${t('menuPage.addToCart')} · RM ${(unitPrice * quantity).toFixed(2)}`}
           </button>
         </div>
       </div>

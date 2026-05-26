@@ -40,6 +40,15 @@
         .animate-slide-up {
             animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
+
+        @keyframes whatsappPulse {
+            0% { opacity: 0.24; transform: scale(1); }
+            70% { opacity: 0; transform: scale(1.55); }
+            100% { opacity: 0; transform: scale(1.55); }
+        }
+        .animate-whatsapp-pulse {
+            animation: whatsappPulse 3.8s ease-out infinite;
+        }
     </style>
 </head>
 <body class="bg-[#F5F5F5] text-[#2D2D2D]">

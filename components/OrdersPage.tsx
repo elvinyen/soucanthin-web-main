@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight, CookingPot, CreditCard, MapPin, PackageCheck, ReceiptText, Truck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { AuthMeResponse, UserOrderSummary } from '../types/auth';
 
 interface OrdersPageProps {
@@ -11,6 +13,7 @@ interface OrdersPageProps {
 const activeStatuses = new Set(['pending_confirm', 'preparing', 'delivering', 'delivered']);
 
 const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory }) => {
+  const { t, i18n } = useTranslation();
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const orders = session.orders || [];
   const currentOrder = useMemo(
@@ -22,19 +25,19 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
   if (!session.authenticated) {
     return (
       <div className="min-h-screen bg-stone-50 px-7 pb-28 pt-8">
-        <PageTitle />
+        <PageTitle t={t} />
         <div className="mt-10 rounded-[2rem] bg-white p-6 text-center shadow-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2D2D2D] text-[#C8A97E]">
             <ReceiptText size={24} />
           </div>
-          <h2 className="serif mt-5 text-lg font-bold text-[#2D2D2D]">登录后查看订单</h2>
-          <p className="mt-2 text-sm leading-6 text-stone-500">当前订单状态、配送进度和历史订单都会同步到这里。</p>
+          <h2 className="serif mt-5 text-lg font-bold text-[#2D2D2D]">{t('ordersPage.loginTitle')}</h2>
+          <p className="mt-2 text-sm leading-6 text-stone-500">{t('ordersPage.loginDescription')}</p>
           <button
             type="button"
             onClick={onLogin}
             className="mt-6 w-full rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white"
           >
-            手机号登录
+            {t('common.login')}
           </button>
         </div>
       </div>
@@ -43,35 +46,35 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
 
   return (
     <div className="min-h-screen bg-stone-50 px-6 pb-32 pt-7">
-      <PageTitle />
+      <PageTitle t={t} />
 
       {!currentOrder ? (
         <div className="mt-8 rounded-[2rem] bg-white px-6 py-12 text-center text-sm text-stone-400 shadow-sm">
-          暂无订单
+          {t('ordersPage.empty')}
         </div>
       ) : (
         <section className="mt-7 space-y-5">
           <div className="rounded-[2rem] bg-[#2D2D2D] p-6 text-white shadow-xl shadow-black/15">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.22em] text-white/45">Current Order</p>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-white/45">{t('ordersPage.currentOrder')}</p>
                 <h2 className="serif mt-2 text-xl font-bold">{currentOrder.orderNo}</h2>
-                <p className="mt-2 text-xs text-white/50">{formatDate(currentOrder.createdAt)}</p>
+                <p className="mt-2 text-xs text-white/50">{formatDate(currentOrder.createdAt, i18n.language)}</p>
               </div>
               <div className="rounded-full bg-[#C8A97E] px-3 py-1 text-xs font-bold text-white">
-                {labelOrderStatus(currentOrder.status)}
+                {labelOrderStatus(currentOrder.status, t)}
               </div>
             </div>
             <div className="mt-6 grid grid-cols-2 gap-3 text-xs">
-              <StatusStat icon={CreditCard} label="付款状态" value={labelPaymentStatus(currentOrder.paymentStatus)} />
-              <StatusStat icon={currentOrder.orderType === 'takeaway' ? Truck : MapPin} label={currentOrder.orderType === 'takeaway' ? '配送方式' : '堂食桌号'} value={currentOrder.orderType === 'takeaway' ? '外卖配送' : currentOrder.tableNo || '-'} />
+              <StatusStat icon={CreditCard} label={t('ordersPage.paymentStatus')} value={labelPaymentStatus(currentOrder.paymentStatus, t)} />
+              <StatusStat icon={currentOrder.orderType === 'takeaway' ? Truck : MapPin} label={currentOrder.orderType === 'takeaway' ? t('ordersPage.deliveryMethod') : t('ordersPage.tableLabel')} value={currentOrder.orderType === 'takeaway' ? t('ordersPage.takeawayDelivery') : currentOrder.tableNo || '-'} />
             </div>
           </div>
 
           <div className="rounded-[2rem] bg-white p-5 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">订单进度</h3>
+            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{t('ordersPage.progress')}</h3>
             <div className="mt-5 space-y-4">
-              {buildSteps(currentOrder).map((step, index) => {
+              {buildSteps(currentOrder, t).map((step, index) => {
                 const Icon = step.icon;
                 return (
                   <div key={step.label} className="flex gap-3">
@@ -79,7 +82,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
                       <div className={`flex h-9 w-9 items-center justify-center rounded-full ${step.done ? 'bg-[#C8A97E] text-white' : 'bg-stone-100 text-stone-300'}`}>
                         <Icon size={17} />
                       </div>
-                      {index < buildSteps(currentOrder).length - 1 && <div className={`mt-2 h-7 w-px ${step.done ? 'bg-[#C8A97E]/45' : 'bg-stone-100'}`} />}
+                      {index < buildSteps(currentOrder, t).length - 1 && <div className={`mt-2 h-7 w-px ${step.done ? 'bg-[#C8A97E]/45' : 'bg-stone-100'}`} />}
                     </div>
                     <div className="pt-1">
                       <p className={`text-sm font-bold ${step.done ? 'text-[#2D2D2D]' : 'text-stone-300'}`}>{step.label}</p>
@@ -91,7 +94,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
             </div>
           </div>
 
-          <OrderSummary order={currentOrder} expanded={expandedOrderId === currentOrder.id} onToggle={() => setExpandedOrderId(expandedOrderId === currentOrder.id ? null : currentOrder.id)} />
+          <OrderSummary order={currentOrder} expanded={expandedOrderId === currentOrder.id} onToggle={() => setExpandedOrderId(expandedOrderId === currentOrder.id ? null : currentOrder.id)} t={t} language={i18n.language} />
         </section>
       )}
 
@@ -102,8 +105,8 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
           className="flex w-full items-center justify-between rounded-[1.5rem] bg-white px-5 py-4 text-left shadow-sm"
         >
           <div>
-            <p className="text-sm font-bold text-[#2D2D2D]">历史订单</p>
-            <p className="mt-1 text-xs text-stone-400">查看全部订单记录与明细</p>
+            <p className="text-sm font-bold text-[#2D2D2D]">{t('ordersPage.history')}</p>
+            <p className="mt-1 text-xs text-stone-400">{t('ordersPage.historyDescription')}</p>
           </div>
           <ChevronRight className="text-stone-300" size={20} />
         </button>
@@ -115,6 +118,8 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
             compact
             expanded={expandedOrderId === order.id}
             onToggle={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+            t={t}
+            language={i18n.language}
           />
         ))}
       </section>
@@ -122,10 +127,10 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
   );
 };
 
-const PageTitle = () => (
+const PageTitle = ({ t }: { t: TFunction }) => (
   <div>
     <p className="text-[10px] uppercase tracking-[0.24em] text-stone-400">Orders</p>
-    <h1 className="serif mt-1 text-2xl font-bold text-[#2D2D2D]">订单</h1>
+    <h1 className="serif mt-1 text-2xl font-bold text-[#2D2D2D]">{t('common.orders')}</h1>
   </div>
 );
 
@@ -137,16 +142,16 @@ const StatusStat: React.FC<{ icon: React.ElementType; label: string; value: stri
   </div>
 );
 
-const OrderSummary: React.FC<{ order: UserOrderSummary; expanded: boolean; onToggle: () => void; compact?: boolean }> = ({ order, expanded, onToggle, compact }) => (
+const OrderSummary: React.FC<{ order: UserOrderSummary; expanded: boolean; onToggle: () => void; compact?: boolean; t: TFunction; language: string }> = ({ order, expanded, onToggle, compact, t, language }) => (
   <div className="rounded-[1.5rem] bg-white p-5 shadow-sm">
     <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-4 text-left">
       <div>
         <p className="font-mono text-sm font-bold text-[#2D2D2D]">{order.orderNo}</p>
-        <p className="mt-1 text-[11px] text-stone-400">{compact ? labelOrderStatus(order.status) : formatDate(order.createdAt)}</p>
+        <p className="mt-1 text-[11px] text-stone-400">{compact ? labelOrderStatus(order.status, t) : formatDate(order.createdAt, language)}</p>
       </div>
       <div className="text-right">
         <p className="text-sm font-bold text-[#C8A97E]">RM {(order.payableTotal ?? order.total).toFixed(2)}</p>
-        <p className="mt-1 text-[11px] text-stone-400">{labelPaymentStatus(order.paymentStatus)}</p>
+        <p className="mt-1 text-[11px] text-stone-400">{labelPaymentStatus(order.paymentStatus, t)}</p>
       </div>
     </button>
     {expanded && (
@@ -158,9 +163,9 @@ const OrderSummary: React.FC<{ order: UserOrderSummary; expanded: boolean; onTog
           </div>
         ))}
         <div className="h-px bg-stone-100" />
-        <InfoLine label="制作状态" value={labelPreparationStatus(order.status)} />
-        <InfoLine label="配送状态" value={labelDeliveryStatus(order)} />
-        <InfoLine label="实付" value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
+        <InfoLine label={t('ordersPage.preparationStatus')} value={labelPreparationStatus(order.status, t)} />
+        <InfoLine label={t('ordersPage.deliveryStatus')} value={labelDeliveryStatus(order, t)} />
+        <InfoLine label={t('ordersPage.paidAmount')} value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
       </div>
     )}
   </div>
@@ -173,15 +178,15 @@ const InfoLine: React.FC<{ label: string; value: string; strong?: boolean }> = (
   </div>
 );
 
-function buildSteps(order: UserOrderSummary) {
+function buildSteps(order: UserOrderSummary, t: TFunction) {
   const rank = statusRank(order.status);
   const isTakeaway = order.orderType === 'takeaway';
   return [
-    { label: '待确认', description: '订单已提交，等待商家确认', icon: ReceiptText, done: rank >= 1 },
-    { label: '制作中', description: '商家正在制作您的餐品', icon: CookingPot, done: rank >= 2 },
-    { label: isTakeaway ? '配送中' : '待取餐', description: labelDeliveryStatus(order), icon: isTakeaway ? Truck : MapPin, done: rank >= 3 },
-    { label: '已送达', description: '订单已送达', icon: PackageCheck, done: rank >= 4 },
-    { label: '已完成', description: '订单已完成，感谢支持', icon: PackageCheck, done: rank >= 5 },
+    { label: t('ordersPage.steps.submitted'), description: t('ordersPage.steps.submittedDesc'), icon: ReceiptText, done: rank >= 1 },
+    { label: t('ordersPage.steps.preparing'), description: t('ordersPage.steps.preparingDesc'), icon: CookingPot, done: rank >= 2 },
+    { label: isTakeaway ? t('ordersPage.steps.delivering') : t('ordersPage.steps.pickup'), description: labelDeliveryStatus(order, t), icon: isTakeaway ? Truck : MapPin, done: rank >= 3 },
+    { label: t('ordersPage.steps.delivered'), description: t('ordersPage.steps.deliveredDesc'), icon: PackageCheck, done: rank >= 4 },
+    { label: t('ordersPage.steps.completed'), description: t('ordersPage.steps.completedDesc'), icon: PackageCheck, done: rank >= 5 },
   ];
 }
 
@@ -193,45 +198,31 @@ function statusRank(status?: string) {
   return 1;
 }
 
-function labelOrderStatus(status?: string) {
-  const labels: Record<string, string> = {
-    pending_confirm: '待确认',
-    preparing: '制作中',
-    delivering: '配送中',
-    delivered: '已送达',
-    completed: '已完成',
-    cancelled: '已取消',
-  };
-  return labels[status || ''] || status || '-';
+function labelOrderStatus(status: string | undefined, t: TFunction) {
+  return status ? t(`ordersPage.status.${status}`, { defaultValue: status }) : '-';
 }
 
-function labelPreparationStatus(status?: string) {
-  if (status === 'preparing') return '厨房正在制作';
-  if (status === 'delivering' || status === 'delivered' || status === 'completed') return '制作已完成';
-  if (status === 'cancelled') return '订单已取消';
-  return '订单已提交，等待商家确认';
+function labelPreparationStatus(status: string | undefined, t: TFunction) {
+  if (status === 'preparing') return t('ordersPage.prep.preparing');
+  if (status === 'delivering' || status === 'delivered' || status === 'completed') return t('ordersPage.prep.ready');
+  if (status === 'cancelled') return t('ordersPage.prep.cancelled');
+  return t('ordersPage.prep.pending');
 }
 
-function labelDeliveryStatus(order: UserOrderSummary) {
-  if (order.orderType !== 'takeaway') return order.status === 'delivered' || order.status === 'completed' ? '堂食订单已送达' : '堂食无需配送';
-  if (order.status === 'delivering') return '订单正在配送中，预计 30-45 分钟送达';
-  if (order.status === 'delivered' || order.status === 'completed') return '已送达';
-  return '暂未开始配送';
+function labelDeliveryStatus(order: UserOrderSummary, t: TFunction) {
+  if (order.orderType !== 'takeaway') return order.status === 'delivered' || order.status === 'completed' ? t('ordersPage.delivery.dineinDelivered') : t('ordersPage.delivery.dineinNoDelivery');
+  if (order.status === 'delivering') return t('ordersPage.delivery.delivering');
+  if (order.status === 'delivered' || order.status === 'completed') return t('ordersPage.delivery.delivered');
+  return t('ordersPage.delivery.notStarted');
 }
 
-function labelPaymentStatus(status?: string) {
-  const labels: Record<string, string> = {
-    pay_at_counter: '到店/送达付款',
-    pending_review: '待审核',
-    awaiting_payment: '待付款',
-    paid: '已付款',
-  };
-  return labels[status || ''] || status || '-';
+function labelPaymentStatus(status: string | undefined, t: TFunction) {
+  return status ? t(`ordersPage.payment.${status}`, { defaultValue: status }) : '-';
 }
 
-function formatDate(value?: string | null) {
+function formatDate(value?: string | null, language = 'en') {
   if (!value) return '-';
-  return new Date(value).toLocaleString('zh-MY', {
+  return new Date(value).toLocaleString(`${language.split('-')[0]}-MY`, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

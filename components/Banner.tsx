@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const images = [
   '/banner/1.jpg', 
@@ -8,6 +9,7 @@ const images = [
 ];
 
 const Banner: React.FC = () => {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState(0);
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
@@ -73,9 +75,7 @@ const Banner: React.FC = () => {
 
       <div className="absolute inset-0 flex flex-col items-center justify-center text-white text-center px-4">
         <div className="space-y-2 translate-y-4">
-          <h1 className="text-2xl font-medium tracking-widest serif drop-shadow-lg">
-            小碗炖汤｜泰国菜｜越南菜
-          </h1>
+          <h1 className="text-2xl font-medium tracking-widest serif drop-shadow-lg">{t('homePage.bannerTitle')}</h1>
           <div className="w-12 h-[1px] bg-[#C8A97E] mx-auto mt-4"></div>
         </div>
       </div>

@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   ChevronRight,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { AuthMeResponse, UserAddress, UserOrderSummary, WalletTransaction } from '../types/auth';
 import type { ReceiptImage } from '../types/order';
 
@@ -37,21 +39,23 @@ interface UserCenterProps {
 
 type PaymentConfig = { tng: { accountName: string; accountNumber: string } };
 
-const tabs: { id: UserCenterTab; label: string; subtitle: string; icon: React.ElementType }[] = [
-  { id: 'profile', label: '用户信息', subtitle: 'Profile', icon: User },
-  { id: 'wallet', label: '我的钱包', subtitle: 'Wallet', icon: Wallet },
-  { id: 'orders', label: '订单记录', subtitle: 'Orders', icon: ReceiptText },
-  { id: 'addresses', label: '地址管理', subtitle: 'Addresses', icon: MapPin },
-  { id: 'coupons', label: '优惠券', subtitle: 'Coupons', icon: TicketPercent },
-  { id: 'settings', label: '设置', subtitle: 'Settings', icon: Settings },
+const tabs: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React.ElementType }[] = [
+  { id: 'profile', labelKey: 'userCenter.tabs.profile', subtitle: 'Profile', icon: User },
+  { id: 'wallet', labelKey: 'userCenter.tabs.wallet', subtitle: 'Wallet', icon: Wallet },
+  { id: 'orders', labelKey: 'userCenter.tabs.orders', subtitle: 'Orders', icon: ReceiptText },
+  { id: 'addresses', labelKey: 'userCenter.tabs.addresses', subtitle: 'Addresses', icon: MapPin },
+  { id: 'coupons', labelKey: 'userCenter.tabs.coupons', subtitle: 'Coupons', icon: TicketPercent },
+  { id: 'settings', labelKey: 'userCenter.tabs.settings', subtitle: 'Settings', icon: Settings },
 ];
 
 const quickAmounts = [1, 5, 10, 20, 50, 100];
 const glassPanel = 'rounded-[1.75rem] border border-white/55 bg-white/55 shadow-[0_18px_55px_rgba(45,45,45,0.12)] backdrop-blur-2xl';
 const glassCard = 'rounded-3xl border border-white/60 bg-white/65 shadow-[0_14px_40px_rgba(45,45,45,0.08)] backdrop-blur-xl';
 const glassInput = 'border border-white/70 bg-white/60 shadow-inner shadow-white/40 backdrop-blur-xl';
+const ONLINE_PAYMENT_ENABLED = false;
 
 const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, onClose, onLogout, onRefresh, externalNotice, mode = 'sheet' }) => {
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState<UserCenterTab>(initialTab);
   const [isPageRoot, setIsPageRoot] = useState(mode === 'page' && initialTab === 'profile');
   const [amount, setAmount] = useState(1);
@@ -71,7 +75,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   const [phoneCooldown, setPhoneCooldown] = useState(0);
   const [walletBalance, setWalletBalance] = useState(session.wallet?.balance || 0);
   const [addressForm, setAddressForm] = useState({
-    label: '默认地址',
+    label: t('common.default'),
     recipientName: '',
     phone: '',
     address: '',
@@ -174,14 +178,14 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '用户资料保存失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.profileSaveFailed'));
       await onRefresh();
       if (payload.user?.displayPhone) setProfilePhone(payload.user.displayPhone);
       setPhoneReqid('');
       setPhoneCode('');
-      showNotice('用户资料已保存。');
+      showNotice(t('userCenter.profileSaved'));
     } catch (err) {
-      showError(err instanceof Error ? err.message : '用户资料保存失败');
+      showError(err instanceof Error ? err.message : t('userCenter.profileSaveFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -196,14 +200,14 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         body: JSON.stringify({ phone: profilePhone }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '验证码发送失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('auth.sendFailed'));
       setPhoneReqid(payload.reqid);
       setProfilePhone(payload.displayPhone);
       setPhoneCode('');
       setPhoneCooldown(60);
-      showNotice('验证码已发送至新手机号码。');
+      showNotice(t('userCenter.otpSent'));
     } catch (err) {
-      showError(err instanceof Error ? err.message : '验证码发送失败');
+      showError(err instanceof Error ? err.message : t('auth.sendFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -212,7 +216,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   const resetAddressForm = () => {
     setEditingAddressId(null);
     setAddressForm({
-      label: '默认地址',
+      label: t('common.default'),
       recipientName: session.user?.name || '',
       phone: session.user?.displayPhone || '',
       address: '',
@@ -240,12 +244,12 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         body: JSON.stringify({ id: editingAddressId, ...addressForm }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '地址保存失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.addressSaveFailed'));
       await onRefresh();
       resetAddressForm();
-      showNotice('地址已保存。');
+      showNotice(t('userCenter.addressSaved'));
     } catch (err) {
-      showError(err instanceof Error ? err.message : '地址保存失败');
+      showError(err instanceof Error ? err.message : t('userCenter.addressSaveFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -260,12 +264,12 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         body: JSON.stringify({ id }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '地址删除失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.addressDeleteFailed'));
       await onRefresh();
       if (editingAddressId === id) resetAddressForm();
-      showNotice('地址已删除。');
+      showNotice(t('userCenter.addressDeleted'));
     } catch (err) {
-      showError(err instanceof Error ? err.message : '地址删除失败');
+      showError(err instanceof Error ? err.message : t('userCenter.addressDeleteFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -280,11 +284,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         body: JSON.stringify({ ...address, isDefault: true }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '默认地址设置失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.defaultAddressFailed'));
       await onRefresh();
-      showNotice('默认地址已更新。');
+      showNotice(t('userCenter.defaultAddressUpdated'));
     } catch (err) {
-      showError(err instanceof Error ? err.message : '默认地址设置失败');
+      showError(err instanceof Error ? err.message : t('userCenter.defaultAddressFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -297,11 +301,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   };
 
   const buildReceiptImage = async (): Promise<ReceiptImage> => {
-    if (!receiptFile) throw new Error('请上传 TNG 转账截图');
+    if (!receiptFile) throw new Error(t('cart.validation.receipt'));
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error('无法读取付款截图'));
+      reader.onerror = () => reject(new Error(t('cart.validation.readReceipt')));
       reader.readAsDataURL(receiptFile);
     });
     return {
@@ -319,7 +323,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         body: JSON.stringify({ amount }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '线上转账创建失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.stripeCreateFailed'));
       window.location.href = payload.checkoutUrl;
     });
   };
@@ -333,8 +337,8 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         body: JSON.stringify({ amount, receiptImage }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || 'TNG 充值提交失败');
-      setNotice('TNG 充值已提交，员工审核通过后会自动入账。');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.tngSubmitFailed'));
+      setNotice(t('userCenter.tngSubmitted'));
       setReceiptFile(null);
       setReceiptPreview('');
       setIsReceiptPreviewOpen(false);
@@ -349,11 +353,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
     setError('');
     try {
       if (!Number.isFinite(amount) || amount < 1 || amount > 1000) {
-        throw new Error('充值金额需介于 RM 1 至 RM 1000');
+        throw new Error(t('userCenter.topUpRange'));
       }
       await submit();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '充值失败，请稍后重试');
+      setError(err instanceof Error ? err.message : t('userCenter.topUpFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -382,7 +386,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               <button
                 onClick={onClose}
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
-                aria-label="返回"
+                aria-label={t('common.back')}
               >
                 <ArrowLeft size={20} />
               </button>
@@ -391,14 +395,14 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               <button
                 onClick={() => setIsPageRoot(true)}
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
-                aria-label="返回我的"
+                aria-label={t('common.back')}
               >
                 <ArrowLeft size={20} />
               </button>
             )}
             <div>
-              <h2 className="text-xl font-bold serif text-[#2D2D2D]">{isPage && isPageRoot ? '我的' : activeMeta.label}</h2>
-              <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">{isPage && isPageRoot ? 'Account' : activeMeta.subtitle}</p>
+              <h2 className="text-xl font-bold serif text-[#2D2D2D]">{isPage && isPageRoot ? t('common.mine') : t(activeMeta.labelKey)}</h2>
+              <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">{isPage && isPageRoot ? t('user.account') : activeMeta.subtitle}</p>
             </div>
           </div>
         </div>
@@ -410,6 +414,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               walletBalance={walletBalance}
               pendingTransactions={pendingTransactions}
               onOpenTab={openPageTab}
+              t={t}
             />
           ) : (
           <>
@@ -420,7 +425,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-[#2D2D2D]">{session.user.displayPhone}</p>
-                <p className="mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-stone-500">{getDisplayName(session.user.name)}</p>
+                <p className="mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-stone-500">{getDisplayName(session.user.name, t)}</p>
               </div>
             </div>
           </div>
@@ -429,16 +434,16 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             <section className="space-y-4">
               <div className={`space-y-3 p-5 ${glassCard}`}>
                 <FormInput
-                  label="用户名称"
+                  label={t('userCenter.profileName')}
                   value={profileForm.name}
-                  placeholder="深夜食汤会员"
+                  placeholder={t('userCenter.profilePlaceholder')}
                   onChange={(value) => setProfileForm(prev => ({ ...prev, name: value }))}
                 />
                 <div className="space-y-2">
                   <FormInput
-                    label="手机号码"
+                    label={t('userCenter.phone')}
                     value={profilePhone}
-                    placeholder="例如 0123456789"
+                    placeholder={t('userCenter.phonePlaceholder')}
                     type="tel"
                     onChange={(value) => {
                       setProfilePhone(value);
@@ -451,7 +456,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       value={phoneCode}
                       onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                       inputMode="numeric"
-                      placeholder="新号码验证码"
+                      placeholder={t('userCenter.newPhoneOtp')}
                       className={`min-w-0 rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#C8A97E] ${glassInput}`}
                     />
                     <button
@@ -460,18 +465,18 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       disabled={isSubmitting || phoneCooldown > 0 || !profilePhone.trim() || profilePhone.trim() === session.user.displayPhone}
                       className="rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-xs font-bold text-stone-600 shadow-sm backdrop-blur-xl disabled:opacity-50"
                     >
-                      {phoneCooldown > 0 ? `${phoneCooldown}s` : '获取验证码'}
+                      {phoneCooldown > 0 ? `${phoneCooldown}s` : t('userCenter.getOtp')}
                     </button>
                   </div>
                 </div>
                 <FormInput
-                  label="邮箱"
+                  label={t('userCenter.email')}
                   value={profileForm.email}
                   placeholder="name@example.com"
                   onChange={(value) => setProfileForm(prev => ({ ...prev, email: value }))}
                 />
                 <FormInput
-                  label="生日"
+                  label={t('userCenter.birthday')}
                   type="date"
                   value={profileForm.birthday}
                   onChange={(value) => setProfileForm(prev => ({ ...prev, birthday: value }))}
@@ -482,12 +487,12 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15 disabled:bg-stone-200"
                 >
                   <Save size={17} />
-                  保存用户资料
+                  {t('userCenter.saveProfile')}
                 </button>
               </div>
-              <InfoRow label="注册时间" value={formatDate(session.user.createdAt)} />
+              <InfoRow label={t('userCenter.registeredAt')} value={formatDate(session.user.createdAt, i18n.language)} />
               <div className={`p-5 text-sm leading-6 text-stone-500 ${glassCard}`}>
-                登录后可集中查看钱包余额、充值流水、历史订单、地址与优惠券。
+                {t('userCenter.profileHint')}
               </div>
               {(notice || error) && (
                 <div className={`rounded-2xl px-4 py-3 text-xs leading-5 ${error ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
@@ -500,13 +505,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
           {activeTab === 'wallet' && (
             <section className="space-y-5">
               <div className="rounded-[2rem] border border-white/10 bg-[#2D2D2D]/95 p-6 text-white shadow-2xl shadow-black/25 backdrop-blur-xl">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/50">Wallet Balance</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/50">{t('userCenter.walletBalance')}</p>
                 <div className="mt-4 text-4xl font-bold serif">RM {walletBalance.toFixed(2)}</div>
-                <p className="mt-3 text-xs text-white/50">待审核充值 {pendingTransactions} 笔</p>
+                <p className="mt-3 text-xs text-white/50">{t('userCenter.pendingRecharge', { count: pendingTransactions })}</p>
               </div>
 
               <div className={`space-y-3 p-5 ${glassCard}`}>
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">充值金额</h3>
+                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{t('userCenter.rechargeAmount')}</h3>
                 <div className="grid grid-cols-4 gap-2">
                   {quickAmounts.map(value => (
                     <button
@@ -525,7 +530,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     type="button"
                     onClick={() => setAmount(value => Math.max(1, value - 1))}
                     className="flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-stone-500 shadow-sm backdrop-blur-xl"
-                    aria-label="减少充值金额"
+                    aria-label={t('userCenter.decreaseAmount')}
                   >
                     -
                   </button>
@@ -534,7 +539,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     type="button"
                     onClick={() => setAmount(value => Math.min(1000, value + 1))}
                     className="flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-stone-500 shadow-sm backdrop-blur-xl"
-                    aria-label="增加充值金额"
+                    aria-label={t('userCenter.increaseAmount')}
                   >
                     +
                   </button>
@@ -542,8 +547,8 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               </div>
 
               <div className={`space-y-3 p-5 ${glassCard}`}>
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">支付方式</h3>
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/60 bg-white/45 p-1 backdrop-blur-xl">
+                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{t('cart.paymentMethod')}</h3>
+                <div className={`grid gap-2 rounded-2xl border border-white/60 bg-white/45 p-1 backdrop-blur-xl ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <button
                     type="button"
                     onClick={() => setRechargeMethod('tng')}
@@ -552,35 +557,37 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     }`}
                   >
                     <WalletCards size={16} />
-                    TNG 转账
+                    {t('userCenter.tngTransfer')}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setRechargeMethod('stripe')}
-                    className={`flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
-                      rechargeMethod === 'stripe' ? 'bg-[#2D2D2D] text-white shadow-sm' : 'text-stone-500'
-                    }`}
-                  >
-                    <CreditCard size={16} />
-                    线上转账
-                  </button>
+                  {ONLINE_PAYMENT_ENABLED && (
+                    <button
+                      type="button"
+                      onClick={() => setRechargeMethod('stripe')}
+                      className={`flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
+                        rechargeMethod === 'stripe' ? 'bg-[#2D2D2D] text-white shadow-sm' : 'text-stone-500'
+                      }`}
+                    >
+                      <CreditCard size={16} />
+                      {t('userCenter.onlineTransfer')}
+                    </button>
+                  )}
                 </div>
 
-                {rechargeMethod === 'tng' ? (
+                {rechargeMethod === 'tng' || !ONLINE_PAYMENT_ENABLED ? (
                   <>
                     <div className="rounded-2xl border border-[#C8A97E]/25 bg-[#FBF7EF]/70 p-4 space-y-3 backdrop-blur-xl">
                       <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-stone-500">TNG 收款人</span>
-                        <span className="text-right font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || '请配置 TNG_ACCOUNT_NAME'}</span>
+                        <span className="text-stone-500">{t('userCenter.tngPayee')}</span>
+                        <span className="text-right font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || t('userCenter.configTngName')}</span>
                       </div>
                       <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-stone-500">TNG 账号</span>
-                        <span className="text-right font-mono font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountNumber || '请配置 TNG_ACCOUNT_NUMBER'}</span>
+                        <span className="text-stone-500">{t('cart.tngAccount')}</span>
+                        <span className="text-right font-mono font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountNumber || t('userCenter.configTngNumber')}</span>
                       </div>
                     </div>
                     <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/60 bg-[#FBF7EF]/70 px-4 py-4 text-xs font-bold text-[#C8A97E] backdrop-blur-xl">
                       <Upload size={16} />
-                      <span className="truncate">{receiptFile ? receiptFile.name : '上传 TNG 转账截图'}</span>
+                      <span className="truncate">{receiptFile ? receiptFile.name : t('cart.uploadReceipt')}</span>
                       <input
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
@@ -593,9 +600,9 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         type="button"
                         onClick={() => setIsReceiptPreviewOpen(true)}
                         className="h-40 w-full overflow-hidden rounded-2xl border border-white/60 bg-white/50 p-2 backdrop-blur-xl active:scale-[0.99]"
-                        aria-label="查看TNG充值截图"
+                        aria-label={t('userCenter.viewTngRecharge')}
                       >
-                        <img src={receiptPreview} alt="TNG充值截图预览" className="h-full w-full object-contain" />
+                        <img src={receiptPreview} alt={t('userCenter.tngRechargeAlt')} className="h-full w-full object-contain" />
                       </button>
                     )}
                     <button
@@ -604,13 +611,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       className="flex w-full items-center justify-center gap-2 rounded-full bg-[#C8A97E] py-4 text-sm font-bold text-white disabled:bg-stone-200"
                     >
                       <WalletCards size={17} />
-                      提交 TNG 审核
+                      {t('userCenter.submitTngReview')}
                     </button>
                   </>
                 ) : (
                   <>
                     <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-3 text-xs leading-5 text-stone-500 backdrop-blur-xl">
-                      线上转账将跳转至安全付款页。付款成功后钱包余额会自动入账。
+                      {t('userCenter.onlineRechargeHint')}
                     </div>
                     <button
                       onClick={rechargeStripe}
@@ -618,7 +625,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white disabled:bg-stone-200"
                     >
                       <CreditCard size={17} />
-                      前往线上转账
+                      {t('userCenter.goOnlineTransfer')}
                     </button>
                   </>
                 )}
@@ -631,20 +638,20 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               )}
 
               <div className="space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">钱包流水</h3>
+                <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{t('userCenter.walletTransactions')}</h3>
                 {transactions.length === 0 ? (
-                  <EmptyState text="暂无钱包流水" />
+                  <EmptyState text={t('userCenter.emptyWallet')} />
                 ) : (
                   transactions.map(item => (
                     <div key={item.id} className={`p-4 ${glassCard}`}>
                       <div className="flex items-center justify-between gap-4">
                         <div>
-                          <p className="text-sm font-bold text-[#2D2D2D]">{labelTransaction(item)}</p>
-                          <p className="mt-1 text-[11px] text-stone-400">{formatDate(item.createdAt)}</p>
+                          <p className="text-sm font-bold text-[#2D2D2D]">{labelTransaction(item, t)}</p>
+                          <p className="mt-1 text-[11px] text-stone-400">{formatDate(item.createdAt, i18n.language)}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-bold text-[#C8A97E]">RM {item.amount.toFixed(2)}</p>
-                          <p className="mt-1 text-[11px] text-stone-400">{labelStatus(item)}</p>
+                          <p className="mt-1 text-[11px] text-stone-400">{labelStatus(item, t)}</p>
                         </div>
                       </div>
                     </div>
@@ -657,11 +664,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
           {activeTab === 'orders' && (
             <section className="space-y-3">
               {(session.orders || []).length === 0 ? (
-                <EmptyState text="暂无登录订单记录" />
+                <EmptyState text={t('userCenter.emptyOrders')} />
               ) : (
                 (session.orders || []).map(order => {
                   const expanded = expandedOrderId === order.id;
-                  const orderStatus = getOrderStatusMeta(order.status);
+                  const orderStatus = getOrderStatusMeta(order.status, t);
                   return (
                   <div key={order.id} className={`p-5 ${glassCard}`}>
                     <button
@@ -670,21 +677,21 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     >
                       <div>
                         <p className="font-mono text-sm font-bold text-[#2D2D2D]">{order.orderNo}</p>
-                        <p className="mt-1 text-[11px] text-stone-400">{formatDate(order.createdAt)}</p>
+                        <p className="mt-1 text-[11px] text-stone-400">{formatDate(order.createdAt, i18n.language)}</p>
                         <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${orderStatus.badgeClass}`}>
                           {orderStatus.label}
                         </span>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-[#C8A97E]">RM {(order.payableTotal ?? order.total).toFixed(2)}</p>
-                        <p className="mt-1 text-[11px] text-stone-400">{labelPayment(order.paymentMethod)} · {labelPaymentStatus(order.paymentStatus)}</p>
+                        <p className="mt-1 text-[11px] text-stone-400">{labelPayment(order.paymentMethod, t)} · {labelPaymentStatus(order.paymentStatus, t)}</p>
                       </div>
                     </button>
                     {expanded && (
                       <div className="mt-4 space-y-3 border-t border-stone-100 pt-4 text-xs text-stone-500">
-                        <OrderProgress order={order} />
-                        <InfoLine label="订单类型" value={order.orderType === 'takeaway' ? '外卖' : '堂食'} />
-                        <InfoLine label={order.orderType === 'takeaway' ? '地址' : '桌号'} value={order.orderType === 'takeaway' ? order.deliveryAddress || '-' : order.tableNo || '-'} />
+                        <OrderProgress order={order} t={t} />
+                        <InfoLine label={t('userCenter.orderType')} value={order.orderType === 'takeaway' ? t('cart.takeaway') : t('cart.dineIn')} />
+                        <InfoLine label={order.orderType === 'takeaway' ? t('userCenter.fullAddress') : t('ordersPage.tableLabel')} value={order.orderType === 'takeaway' ? order.deliveryAddress || '-' : order.tableNo || '-'} />
                         {(order.items || []).map(item => (
                           <div key={item.id || item.name} className="flex justify-between gap-3">
                             <span className="text-[#2D2D2D]">
@@ -695,19 +702,19 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                                 </span>
                               ) : null}
                               {item.note ? (
-                                <span className="mt-1 block text-[11px] font-normal leading-4 text-stone-400">备注：{item.note}</span>
+                                <span className="mt-1 block text-[11px] font-normal leading-4 text-stone-400">{t('common.note')}：{item.note}</span>
                               ) : null}
                             </span>
                             <span>RM {item.lineTotal.toFixed(2)}</span>
                           </div>
                         ))}
                         <div className="h-px bg-stone-100" />
-                        <InfoLine label="小计" value={`RM ${(order.subtotal || 0).toFixed(2)}`} />
-                        <InfoLine label="配送费" value={`RM ${(order.deliveryFee || 0).toFixed(2)}`} />
+                        <InfoLine label={t('common.subtotal')} value={`RM ${(order.subtotal || 0).toFixed(2)}`} />
+                        <InfoLine label={t('common.deliveryFee')} value={`RM ${(order.deliveryFee || 0).toFixed(2)}`} />
                         <InfoLine label="SST 6%" value={`RM ${(order.serviceCharge || 0).toFixed(2)}`} />
-                        <InfoLine label="优惠" value={`RM ${(order.discountAmount || 0).toFixed(2)}`} />
-                        <InfoLine label="实付" value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
-                        {order.note && <InfoLine label="备注" value={order.note} />}
+                        <InfoLine label={t('common.discount')} value={`RM ${(order.discountAmount || 0).toFixed(2)}`} />
+                        <InfoLine label={t('common.payable')} value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
+                        {order.note && <InfoLine label={t('common.note')} value={order.note} />}
                       </div>
                     )}
                   </div>
@@ -721,16 +728,16 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
               <div className={`space-y-3 p-5 ${glassCard}`}>
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
-                    {editingAddressId ? '编辑地址' : '新增地址'}
+                    {editingAddressId ? t('userCenter.editAddress') : t('userCenter.newAddress')}
                   </h3>
-                  <button onClick={resetAddressForm} className="text-xs font-bold text-[#C8A97E]">清空</button>
+                  <button onClick={resetAddressForm} className="text-xs font-bold text-[#C8A97E]">{t('common.clear')}</button>
                 </div>
-                <FormInput label="标签" value={addressForm.label} onChange={(value) => setAddressForm(prev => ({ ...prev, label: value }))} />
-                <FormInput label="收件人" value={addressForm.recipientName} onChange={(value) => setAddressForm(prev => ({ ...prev, recipientName: value }))} />
-                <FormInput label="电话" value={addressForm.phone} onChange={(value) => setAddressForm(prev => ({ ...prev, phone: value }))} />
+                <FormInput label={t('userCenter.label')} value={addressForm.label} onChange={(value) => setAddressForm(prev => ({ ...prev, label: value }))} />
+                <FormInput label={t('userCenter.recipient')} value={addressForm.recipientName} onChange={(value) => setAddressForm(prev => ({ ...prev, recipientName: value }))} />
+                <FormInput label={t('userCenter.phone')} value={addressForm.phone} onChange={(value) => setAddressForm(prev => ({ ...prev, phone: value }))} />
                 <textarea
                   value={addressForm.address}
-                  placeholder="详细地址"
+                  placeholder={t('userCenter.fullAddress')}
                   onChange={(event) => setAddressForm(prev => ({ ...prev, address: event.target.value }))}
                   rows={3}
                   className={`w-full resize-none rounded-2xl px-4 py-3 text-sm outline-none focus:border-[#C8A97E] ${glassInput}`}
@@ -741,7 +748,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     checked={addressForm.isDefault}
                     onChange={(event) => setAddressForm(prev => ({ ...prev, isDefault: event.target.checked }))}
                   />
-                  设为默认地址
+                  {t('userCenter.setDefaultAddress')}
                 </label>
                 <button
                   onClick={saveAddress}
@@ -749,18 +756,18 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15 disabled:bg-stone-200"
                 >
                   <Plus size={17} />
-                  {editingAddressId ? '保存地址' : '新增地址'}
+                  {editingAddressId ? t('userCenter.saveAddress') : t('userCenter.addAddress')}
                 </button>
               </div>
               {(session.addresses || []).length === 0 ? (
-                <EmptyState text="暂无地址" />
+                <EmptyState text={t('userCenter.emptyAddress')} />
               ) : (
                 (session.addresses || []).map(address => (
                   <div key={address.id} className={`p-5 ${glassCard}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-bold text-[#2D2D2D]">
-                          {address.label} {address.isDefault && <span className="text-[10px] text-[#C8A97E]">默认</span>}
+                          {address.label} {address.isDefault && <span className="text-[10px] text-[#C8A97E]">{t('common.default')}</span>}
                         </p>
                         <p className="mt-1 text-xs text-stone-400">{address.recipientName} · {address.phone}</p>
                       </div>
@@ -787,7 +794,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
           {activeTab === 'coupons' && (
             <section className="space-y-3">
               {(session.coupons || []).length === 0 ? (
-                <EmptyState text="暂无可用优惠券" />
+                <EmptyState text={t('userCenter.emptyCoupons')} />
               ) : (
                 (session.coupons || []).map(coupon => (
                   <div key={coupon.id} className={`p-5 ${glassCard}`}>
@@ -798,11 +805,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-[#C8A97E]">- RM {coupon.discountAmount.toFixed(2)}</p>
-                        <p className="mt-1 text-[11px] text-stone-400">{labelCouponStatus(coupon.status)}</p>
+                        <p className="mt-1 text-[11px] text-stone-400">{labelCouponStatus(coupon.status, t)}</p>
                       </div>
                     </div>
                     {coupon.description && <p className="mt-2 text-xs text-stone-500">{coupon.description}</p>}
-                    <p className="mt-2 text-[11px] text-stone-400">有效期：{coupon.expiresAt ? formatDate(coupon.expiresAt) : '长期有效'}</p>
+                    <p className="mt-2 text-[11px] text-stone-400">{t('userCenter.expiry')}：{coupon.expiresAt ? formatDate(coupon.expiresAt, i18n.language) : t('common.longTerm')}</p>
                   </div>
                 ))
               )}
@@ -816,13 +823,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15"
               >
                 <LogOut size={17} />
-                退出登录
+                {t('common.logout')}
               </button>
               <button
                 onClick={onRefresh}
                 className="w-full rounded-full border border-white/60 bg-white/60 py-4 text-sm font-bold text-stone-600 shadow-sm backdrop-blur-xl"
               >
-                刷新个人中心
+                {t('common.refresh')}
               </button>
             </section>
           )}
@@ -836,13 +843,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             type="button"
             className="absolute right-5 top-5 rounded-full bg-white/10 p-3 text-white"
             onClick={() => setIsReceiptPreviewOpen(false)}
-            aria-label="关闭截图预览"
+            aria-label={t('common.close')}
           >
             <X size={22} />
           </button>
           <img
             src={receiptPreview}
-            alt="TNG充值截图大图"
+            alt={t('userCenter.tngRechargeAlt')}
             className="max-h-full max-w-full rounded-2xl object-contain"
             onClick={(event) => event.stopPropagation()}
           />
@@ -896,14 +903,15 @@ const AccountHome: React.FC<{
   walletBalance: number;
   pendingTransactions: number;
   onOpenTab: (tab: UserCenterTab) => void;
-}> = ({ session, walletBalance, pendingTransactions, onOpenTab }) => {
+  t: TFunction;
+}> = ({ session, walletBalance, pendingTransactions, onOpenTab, t }) => {
   const summaries: Record<UserCenterTab, string> = {
-    profile: session.user?.displayPhone || '编辑资料',
-    wallet: `RM ${walletBalance.toFixed(2)}${pendingTransactions ? ` · ${pendingTransactions}笔待审` : ''}`,
-    orders: `${(session.orders || []).length} 笔订单`,
-    addresses: `${(session.addresses || []).length} 个地址`,
-    coupons: `${(session.coupons || []).filter(coupon => coupon.status === 'available').length} 张可用`,
-    settings: '刷新与退出',
+    profile: session.user?.displayPhone || t('userCenter.summaryEdit'),
+    wallet: `RM ${walletBalance.toFixed(2)}${pendingTransactions ? ` · ${t('userCenter.pendingReview', { count: pendingTransactions })}` : ''}`,
+    orders: t('userCenter.ordersCount', { count: (session.orders || []).length }),
+    addresses: t('userCenter.addressesCount', { count: (session.addresses || []).length }),
+    coupons: t('userCenter.couponsCount', { count: (session.coupons || []).filter(coupon => coupon.status === 'available').length }),
+    settings: t('userCenter.settingsSummary'),
   };
 
   return (
@@ -914,14 +922,14 @@ const AccountHome: React.FC<{
             <User size={25} />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-lg font-bold serif">{getDisplayName(session.user?.name)}</p>
+            <p className="truncate text-lg font-bold serif">{getDisplayName(session.user?.name, t)}</p>
             <p className="mt-1 truncate text-xs text-white/45">{session.user?.displayPhone}</p>
           </div>
         </div>
         <div className="mt-6 grid grid-cols-3 gap-2 text-center">
-          <AccountMetric label="钱包" value={`RM ${walletBalance.toFixed(2)}`} />
-          <AccountMetric label="订单" value={`${(session.orders || []).length}`} />
-          <AccountMetric label="优惠券" value={`${(session.coupons || []).filter(coupon => coupon.status === 'available').length}`} />
+          <AccountMetric label={t('userCenter.metricsWallet')} value={`RM ${walletBalance.toFixed(2)}`} />
+          <AccountMetric label={t('userCenter.metricsOrders')} value={`${(session.orders || []).length}`} />
+          <AccountMetric label={t('userCenter.metricsCoupons')} value={`${(session.coupons || []).filter(coupon => coupon.status === 'available').length}`} />
         </div>
       </div>
 
@@ -941,7 +949,7 @@ const AccountHome: React.FC<{
                 <Icon size={20} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-[#2D2D2D]">{tab.label}</p>
+                <p className="text-sm font-bold text-[#2D2D2D]">{t(tab.labelKey)}</p>
                 <p className="mt-1 truncate text-xs text-stone-400">{summaries[tab.id]}</p>
               </div>
               <ChevronRight size={18} className="text-stone-300" />
@@ -960,16 +968,16 @@ const AccountMetric: React.FC<{ label: string; value: string }> = ({ label, valu
   </div>
 );
 
-const orderSteps: { status: UserOrderSummary['status']; label: string }[] = [
-  { status: 'pending_confirm', label: '待确认' },
-  { status: 'preparing', label: '制作中' },
-  { status: 'delivering', label: '配送中' },
-  { status: 'delivered', label: '已送达' },
-  { status: 'completed', label: '已完成' },
+const orderSteps: { status: UserOrderSummary['status']; labelKey: string }[] = [
+  { status: 'pending_confirm', labelKey: 'ordersPage.status.pending_confirm' },
+  { status: 'preparing', labelKey: 'ordersPage.status.preparing' },
+  { status: 'delivering', labelKey: 'ordersPage.status.delivering' },
+  { status: 'delivered', labelKey: 'ordersPage.status.delivered' },
+  { status: 'completed', labelKey: 'ordersPage.status.completed' },
 ];
 
-const OrderProgress: React.FC<{ order: UserOrderSummary }> = ({ order }) => {
-  const meta = getOrderStatusMeta(order.status);
+const OrderProgress: React.FC<{ order: UserOrderSummary; t: TFunction }> = ({ order, t }) => {
+  const meta = getOrderStatusMeta(order.status, t);
   const currentIndex = orderSteps.findIndex(step => step.status === order.status);
   const isCancelled = order.status === 'cancelled';
 
@@ -992,7 +1000,7 @@ const OrderProgress: React.FC<{ order: UserOrderSummary }> = ({ order }) => {
             return (
               <div key={step.status} className="min-w-0">
                 <div className={`h-1.5 rounded-full ${active ? 'bg-[#C8A97E]' : 'bg-stone-200'}`} />
-                <p className={`mt-2 truncate text-center text-[10px] ${active ? 'font-bold text-[#C8A97E]' : 'text-stone-400'}`}>{step.label}</p>
+                <p className={`mt-2 truncate text-center text-[10px] ${active ? 'font-bold text-[#C8A97E]' : 'text-stone-400'}`}>{t(step.labelKey)}</p>
               </div>
             );
           })}
@@ -1002,9 +1010,9 @@ const OrderProgress: React.FC<{ order: UserOrderSummary }> = ({ order }) => {
   );
 };
 
-function formatDate(value?: string | null) {
+function formatDate(value?: string | null, language = 'en') {
   if (!value) return '-';
-  return new Date(value).toLocaleString('zh-MY', {
+  return new Date(value).toLocaleString(`${language.split('-')[0]}-MY`, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -1013,91 +1021,74 @@ function formatDate(value?: string | null) {
   });
 }
 
-function labelTransaction(item: WalletTransaction) {
-  if (item.method === 'stripe') return '线上转账充值';
-  if (item.method === 'tng') return 'TNG 充值';
-  if (item.type === 'payment') return '钱包支付';
-  return '钱包调整';
+function labelTransaction(item: WalletTransaction, t: TFunction) {
+  if (item.method === 'stripe') return t('userCenter.transaction.stripe');
+  if (item.method === 'tng') return t('userCenter.transaction.tng');
+  if (item.type === 'payment') return t('userCenter.transaction.payment');
+  return t('userCenter.transaction.adjustment');
 }
 
-function labelStatus(item: WalletTransaction) {
-  if (item.method === 'stripe' && item.status === 'pending') return '待付款';
-  if (item.method === 'tng' && item.status === 'pending') return '待审核';
-  const labels: Record<WalletTransaction['status'], string> = {
-    pending: '处理中',
-    succeeded: '已完成',
-    rejected: '已拒绝',
-    failed: '失败',
-  };
-  return labels[item.status];
+function labelStatus(item: WalletTransaction, t: TFunction) {
+  if (item.method === 'stripe' && item.status === 'pending') return t('userCenter.transactionStatus.awaitingPayment');
+  if (item.method === 'tng' && item.status === 'pending') return t('userCenter.transactionStatus.pendingReview');
+  return t(`userCenter.transactionStatus.${item.status}`);
 }
 
-function labelPayment(method?: string) {
-  if (method === 'cash') return '现金';
+function labelPayment(method: string | undefined, t: TFunction) {
+  if (method === 'cash') return t('userCenter.payment.cash');
   if (method === 'tng') return 'TNG';
-  if (method === 'stripe') return '线上付款';
-  if (method === 'wallet') return '钱包';
+  if (method === 'stripe') return t('userCenter.payment.stripe');
+  if (method === 'wallet') return t('userCenter.payment.wallet');
   return method || '-';
 }
 
-function labelPaymentStatus(status?: string) {
-  const labels: Record<string, string> = {
-    pay_at_counter: '到店/送达付款',
-    pending_review: '待审核',
-    awaiting_payment: '待付款',
-    paid: '已付款',
-  };
-  return labels[status || ''] || status || '-';
+function labelPaymentStatus(status: string | undefined, t: TFunction) {
+  return status ? t(`ordersPage.payment.${status}`, { defaultValue: status }) : '-';
 }
 
-function getOrderStatusMeta(status?: string) {
+function getOrderStatusMeta(status: string | undefined, t: TFunction) {
   const fallback = {
-    label: '待确认',
-    description: '订单已提交，等待商家确认',
+    label: t('ordersPage.status.pending_confirm'),
+    description: t('ordersPage.steps.submittedDesc'),
     badgeClass: 'bg-[#C8A97E]/15 text-[#9B7848]',
   };
   const labels: Record<string, { label: string; description: string; badgeClass: string }> = {
     pending_confirm: fallback,
     preparing: {
-      label: '制作中',
-      description: '商家正在制作您的餐品',
+      label: t('ordersPage.status.preparing'),
+      description: t('ordersPage.steps.preparingDesc'),
       badgeClass: 'bg-amber-100 text-amber-700',
     },
     delivering: {
-      label: '配送中',
-      description: '订单正在配送中，预计 30-45 分钟送达',
+      label: t('ordersPage.status.delivering'),
+      description: t('ordersPage.delivery.delivering'),
       badgeClass: 'bg-sky-100 text-sky-700',
     },
     delivered: {
-      label: '已送达',
-      description: '订单已送达',
+      label: t('ordersPage.status.delivered'),
+      description: t('ordersPage.steps.deliveredDesc'),
       badgeClass: 'bg-emerald-100 text-emerald-700',
     },
     completed: {
-      label: '已完成',
-      description: '订单已完成，感谢支持',
+      label: t('ordersPage.status.completed'),
+      description: t('ordersPage.steps.completedDesc'),
       badgeClass: 'bg-stone-200 text-stone-600',
     },
     cancelled: {
-      label: '已取消',
-      description: '订单已取消',
+      label: t('ordersPage.status.cancelled'),
+      description: t('ordersPage.steps.cancelledDesc'),
       badgeClass: 'bg-red-100 text-red-600',
     },
   };
   return labels[status || ''] || fallback;
 }
 
-function labelCouponStatus(status: string) {
-  const labels: Record<string, string> = {
-    available: '可使用',
-    used: '已使用',
-    expired: '已过期',
-  };
-  return labels[status] || status;
+function labelCouponStatus(status: string, t: TFunction) {
+  return t(`userCenter.couponStatus.${status}`, { defaultValue: status });
 }
 
-function getDisplayName(name?: string | null) {
-  return name?.trim() || '深夜食汤会员';
+function getDisplayName(name: string | undefined | null, t: TFunction) {
+  return name?.trim() || t('common.memberFallback');
 }
 
 export default UserCenter;

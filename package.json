@@ -1,5 +1,5 @@
 {
-  "name": "深夜食汤-(midnight-soup)",
+  "name": "Soup Can Thin Web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,9 +14,12 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "i18next": "^26.3.0",
+    "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^0.564.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-i18next": "^17.0.8"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

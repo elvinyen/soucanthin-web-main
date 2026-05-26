@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Phone, ShieldCheck, ArrowRight, ArrowLeft, MessageCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AuthMeResponse } from '../types/auth';
 
 interface AuthModalProps {
@@ -9,6 +10,7 @@ interface AuthModalProps {
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated }) => {
+  const { t } = useTranslation();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [reqid, setReqid] = useState('');
@@ -40,13 +42,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
         body: JSON.stringify({ phone }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '验证码发送失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('auth.sendFailed'));
       setReqid(payload.reqid);
       setDisplayPhone(payload.displayPhone);
       setStep('otp');
       setCooldown(60);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '验证码发送失败');
+      setError(err instanceof Error ? err.message : t('auth.sendFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -71,12 +73,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
         body: JSON.stringify({ phone, reqid, code }),
       });
       const payload = await res.json();
-      if (!res.ok || !payload.success) throw new Error(payload.error || '登录失败');
+      if (!res.ok || !payload.success) throw new Error(payload.error || t('auth.loginFailed'));
       onAuthenticated(payload);
       setCode('');
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '登录失败，请重试');
+      setError(err instanceof Error ? err.message : t('auth.loginRetry'));
     } finally {
       setIsLoading(false);
     }
@@ -98,9 +100,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
               </button>
             )}
             <div>
-              <h2 className="text-xl font-bold serif text-[#2D2D2D]">手机登录</h2>
+              <h2 className="text-xl font-bold serif text-[#2D2D2D]">{t('auth.title')}</h2>
               <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">
-                {step === 'phone' ? 'Phone Verification' : 'Enter OTP Code'}
+                {step === 'phone' ? t('auth.phoneStep') : t('auth.otpStep')}
               </p>
             </div>
           </div>
@@ -117,12 +119,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
               </div>
               <div>
                 <p className="text-sm font-bold text-[#2D2D2D]">
-                  {step === 'phone' ? '输入手机号接收验证码' : '查看短信并输入验证码'}
+                  {step === 'phone' ? t('auth.phoneTitle') : t('auth.otpTitle')}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-stone-400">
                   {step === 'phone'
-                    ? '支持马来西亚手机号，例如 0123456789 或 60123456789。'
-                    : `验证码已发送至 ${displayPhone}，通常会在数秒内送达。`}
+                    ? t('auth.phoneHint')
+                    : t('auth.otpHint', { phone: displayPhone })}
                 </p>
               </div>
             </div>
@@ -136,7 +138,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
                 onChange={(event) => setPhone(event.target.value)}
                 disabled={step === 'otp'}
                 type="tel"
-                placeholder="例如 0123456789"
+                placeholder={t('auth.phonePlaceholder')}
                 className="w-full rounded-2xl border border-stone-100 bg-stone-50 py-4 pl-11 pr-4 text-sm outline-none transition focus:border-[#C8A97E] disabled:text-stone-400"
               />
             </div>
@@ -149,7 +151,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
                     value={code}
                     onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
                     inputMode="numeric"
-                    placeholder="输入 6 位验证码"
+                    placeholder={t('auth.otpPlaceholder')}
                     className="w-full rounded-2xl border border-stone-100 bg-stone-50 py-4 pl-11 pr-4 text-center text-lg font-bold tracking-[0.3em] outline-none transition focus:border-[#C8A97E]"
                   />
                 </div>
@@ -159,14 +161,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
                     disabled={isLoading}
                     className="rounded-2xl bg-stone-100 py-3 text-xs font-bold text-stone-500 disabled:opacity-60"
                   >
-                    修改号码
+                    {t('auth.changePhone')}
                   </button>
                   <button
                     onClick={requestOtp}
                     disabled={isLoading || cooldown > 0}
                     className="rounded-2xl bg-stone-100 py-3 text-xs font-bold text-stone-500 disabled:opacity-60"
                   >
-                    {cooldown > 0 ? `${cooldown}s 后重发` : '重新发送'}
+                    {cooldown > 0 ? t('auth.resendAfter', { seconds: cooldown }) : t('auth.resend')}
                   </button>
                 </div>
               </div>
@@ -187,7 +189,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
                 <span className="h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
               ) : (
                 <>
-                  <span>{step === 'phone' ? '发送验证码' : '确认登录'}</span>
+                  <span>{step === 'phone' ? t('auth.sendOtp') : t('auth.confirmLogin')}</span>
                   <ArrowRight size={16} />
                 </>
               )}

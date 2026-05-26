@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Minus, Plus, ShoppingBag, User, Phone, MapPin, Hash, MessageSquare, ArrowLeft, ChevronRight, Upload, WalletCards, CreditCard, Copy, CheckCircle2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CartLine } from '../data/menu';
 import { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
 import type { AuthMeResponse } from '../types/auth';
@@ -28,8 +29,10 @@ type PaymentConfig = {
 
 const isValidPhone = (value: string) => /^[0-9+\-\s()]{8,20}$/.test(value.trim());
 const TAKEAWAY_DELIVERY_FEE = 12;
+const ONLINE_PAYMENT_ENABLED = false;
 
 const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber, session, onOrderSuccess, onRefreshSession, onWalletRecharge }) => {
+  const { t } = useTranslation();
   const hasScannedTable = Boolean(tableNumber?.trim());
   const [step, setStep] = useState<CheckoutStep>('summary');
   const [orderType, setOrderType] = useState<OrderType>('takeaway');
@@ -139,14 +142,14 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
   const walletInsufficient = paymentMethod === 'wallet' && session.authenticated && walletBalance < payableTotal;
 
   const getValidationMessage = () => {
-    if (cartItems.length === 0) return '请先选择至少一件商品';
-    if (!name.trim()) return '请填写姓名';
-    if (!phone.trim()) return '请填写联系电话';
-    if (!isValidPhone(phone)) return '联系电话格式不正确';
-    if (orderType === 'dinein' && !tableNo.trim()) return '请填写桌号';
-    if (orderType === 'takeaway' && !address.trim()) return '请填写外卖地址';
-    if (paymentMethod === 'tng' && !receiptFile) return '请上传 TNG 转账截图';
-    if (paymentMethod === 'wallet' && !session.authenticated) return '请先登录后使用钱包支付';
+    if (cartItems.length === 0) return t('cart.validation.minItem');
+    if (!name.trim()) return t('cart.validation.name');
+    if (!phone.trim()) return t('cart.validation.phone');
+    if (!isValidPhone(phone)) return t('cart.validation.phoneFormat');
+    if (orderType === 'dinein' && !tableNo.trim()) return t('cart.validation.table');
+    if (orderType === 'takeaway' && !address.trim()) return t('cart.validation.address');
+    if (paymentMethod === 'tng' && !receiptFile) return t('cart.validation.receipt');
+    if (paymentMethod === 'wallet' && !session.authenticated) return t('cart.validation.walletLogin');
     return '';
   };
 
@@ -188,7 +191,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error('无法读取付款截图'));
+      reader.onerror = () => reject(new Error(t('cart.validation.readReceipt')));
       reader.readAsDataURL(receiptFile);
     });
 
@@ -236,7 +239,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
     try {
       receiptImage = await buildReceiptImage();
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : '无法读取付款截图');
+      setSubmitError(error instanceof Error ? error.message : t('cart.validation.readReceipt'));
       return;
     }
 
@@ -301,11 +304,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
         await onRefreshSession();
         // onOrderSuccess will be called when user closes the success modal
       } else {
-        setSubmitError(response.error || `订单提交失败 (${res.status})，请稍后重试。`);
+        setSubmitError(response.error || t('cart.validation.submitFailed', { status: res.status }));
       }
     } catch (error) {
       console.error('Order submission error:', error);
-      setSubmitError(error instanceof SyntaxError ? '服务器返回格式异常，请检查本地 API 或后端日志。' : '网络连接异常，请检查后重试。');
+      setSubmitError(error instanceof SyntaxError ? t('cart.validation.serverFormat') : t('cart.validation.network'));
     } finally {
       setIsOrdering(false);
     }
@@ -342,28 +345,28 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
               </div>
             </div>
             
-            <h2 className="text-2xl font-bold serif text-[#2D2D2D] mb-2">订单提交成功！</h2>
+            <h2 className="text-2xl font-bold serif text-[#2D2D2D] mb-2">{t('cart.successTitle')}</h2>
             <p className="text-stone-400 text-sm mb-8">
               {successPaymentMethod === 'tng'
-                ? `尊敬的 ${successName || '顾客'}，订单已提交，员工将审核您的 TNG 付款截图。`
-                : `尊敬的 ${successName || '顾客'}，已收到您的订单。`}
+                ? t('cart.successTng', { name: successName || t('common.fallbackCustomer') })
+                : t('cart.successDefault', { name: successName || t('common.fallbackCustomer') })}
             </p>
             
             <div className="w-full bg-stone-50 rounded-3xl p-6 border border-stone-100 space-y-4 mb-10">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-stone-400 uppercase tracking-widest">订单编号</span>
+                <span className="text-stone-400 uppercase tracking-widest">{t('cart.orderNo')}</span>
                 <span className="font-mono font-bold text-[#2D2D2D]">{lastOrderId}</span>
               </div>
               <div className="h-px bg-stone-200/50" />
               <div className="flex justify-between items-center text-xs">
-                <span className="text-stone-400 uppercase tracking-widest">预计时间</span>
-                <span className="font-bold text-[#C8A97E]">15-25 分钟</span>
+                <span className="text-stone-400 uppercase tracking-widest">{t('cart.estimatedTime')}</span>
+                <span className="font-bold text-[#C8A97E]">{t('cart.estimatedMinutes')}</span>
               </div>
               {notificationStatus === 'failed' && (
                 <>
                   <div className="h-px bg-stone-200/50" />
                   <p className="text-left text-[11px] leading-5 text-amber-600">
-                    订单已保存，店员通知暂时未送达。请向柜台出示订单编号。
+                    {t('cart.notificationFailed')}
                   </p>
                 </>
               )}
@@ -373,7 +376,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
               onClick={handleCloseSuccess}
               className="w-full py-5 bg-[#2D2D2D] text-white rounded-full font-bold text-base tracking-widest shadow-xl active:scale-95 transition-all"
             >
-              查看我的订单 · MY ORDERS
+              {t('cart.viewMyOrders')}
             </button>
           </div>
         ) : (
@@ -392,10 +395,10 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                 )}
                 <div>
                   <h2 className="text-xl font-bold serif text-[#2D2D2D]">
-                    {step === 'summary' ? '购物车' : '确认订单'}
+                    {step === 'summary' ? t('cart.cart') : t('cart.checkout')}
                   </h2>
                   <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">
-                    {step === 'summary' ? 'Cart Summary' : 'Checkout'}
+                    {step === 'summary' ? t('cart.cartSummary') : t('cart.confirmOrder')}
                   </p>
                 </div>
               </div>
@@ -413,13 +416,13 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                   <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center text-stone-300">
                     <ShoppingBag size={32} />
                   </div>
-                  <p className="text-stone-400 text-sm">购物车已清空</p>
+                  <p className="text-stone-400 text-sm">{t('cart.empty')}</p>
                 </div>
               ) : (
                 <div className="space-y-8 py-4">
                   {step === 'summary' ? (
                     <section className="space-y-6 animate-fade-in">
-                      <h3 className="text-xs font-bold text-stone-400 tracking-[0.2em] uppercase">已选明细 ( {totalItems} )</h3>
+                      <h3 className="text-xs font-bold text-stone-400 tracking-[0.2em] uppercase">{t('cart.selectedDetails')} ( {totalItems} )</h3>
                       <div className="space-y-6">
                         {cartItems.map(item => (
                           <div key={item.lineId} className="flex items-center space-x-4 group">
@@ -452,11 +455,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
 
                       <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-sm space-y-3 mt-8">
                         <div className="flex justify-between text-xs text-stone-400">
-                          <span>小计 (Subtotal)</span>
+                          <span>{t('common.subtotal')}</span>
                           <span className="text-[#2D2D2D] font-medium">RM {subtotal.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-xs text-stone-400">
-                          <span>配送费</span>
+                          <span>{t('common.deliveryFee')}</span>
                           <span className="text-[#2D2D2D] font-medium">RM {deliveryFee.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-xs text-stone-400">
@@ -465,13 +468,13 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                         </div>
                         {discountAmount > 0 && (
                           <div className="flex justify-between text-xs text-emerald-600">
-                            <span>优惠券</span>
+                            <span>{t('cart.coupon')}</span>
                             <span className="font-medium">- RM {discountAmount.toFixed(2)}</span>
                           </div>
                         )}
                         <div className="h-px bg-stone-50 my-1" />
                         <div className="flex justify-between items-center pt-1">
-                          <span className="text-sm font-bold serif text-[#2D2D2D]">实付金额</span>
+                          <span className="text-sm font-bold serif text-[#2D2D2D]">{t('common.payable')}</span>
                           <span className="text-xl font-bold text-[#C8A97E] serif">RM {payableTotal.toFixed(2)}</span>
                         </div>
                       </div>
@@ -480,8 +483,8 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                     <section className="space-y-6 animate-fade-in">
                       <div className="rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
                         <div className="mb-4 flex items-center justify-between">
-                          <h3 className="text-sm font-bold serif text-[#2D2D2D]">订单内容</h3>
-                          <span className="rounded-full bg-stone-100 px-3 py-1 text-[11px] font-bold text-[#C8A97E]">{totalItems} 件</span>
+                          <h3 className="text-sm font-bold serif text-[#2D2D2D]">{t('cart.orderContent')}</h3>
+                          <span className="rounded-full bg-stone-100 px-3 py-1 text-[11px] font-bold text-[#C8A97E]">{t('common.pieces', { count: totalItems })}</span>
                         </div>
                         <div className="space-y-4">
                           {cartItems.map(item => (
@@ -500,19 +503,19 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                           ))}
                         </div>
                         <div className="mt-5 space-y-2 border-t border-stone-200/60 pt-4 text-xs">
-                          <PriceLine label="商品" value={subtotal} />
-                          <PriceLine label="配送费" value={deliveryFee} muted={orderType === 'dinein' ? '仅外卖' : undefined} />
-                          <PriceLine label="税费" value={serviceCharge} />
-                          {discountAmount > 0 && <PriceLine label="优惠" value={-discountAmount} highlight />}
+                          <PriceLine label={t('common.subtotal')} value={subtotal} />
+                          <PriceLine label={t('common.deliveryFee')} value={deliveryFee} muted={orderType === 'dinein' ? t('cart.takeaway') : undefined} />
+                          <PriceLine label={t('common.tax')} value={serviceCharge} />
+                          {discountAmount > 0 && <PriceLine label={t('common.discount')} value={-discountAmount} highlight />}
                           <div className="flex items-center justify-between pt-2">
-                            <span className="font-bold text-[#2D2D2D]">总计</span>
+                            <span className="font-bold text-[#2D2D2D]">{t('common.total')}</span>
                             <span className="text-2xl font-bold serif text-[#C8A97E]">RM {payableTotal.toFixed(2)}</span>
                           </div>
                         </div>
                       </div>
 
                       <div className="rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">点单方式</h3>
+                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">{t('cart.orderMethod')}</h3>
                         <div className="grid grid-cols-2 gap-2 rounded-full bg-stone-100/80 p-1">
                           <button
                             onClick={() => setOrderType('dinein')}
@@ -523,7 +526,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 : 'text-stone-500'
                             }`}
                           >
-                            🍽 堂食 Dine-in
+                            🍽 {t('cart.dineIn')}
                           </button>
                           <button
                             onClick={() => setOrderType('takeaway')}
@@ -534,40 +537,40 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 : 'text-stone-500'
                             }`}
                           >
-                            🥡 外卖 Takeaway
+                            🥡 {t('cart.takeaway')}
                           </button>
                         </div>
                         {hasScannedTable && orderType === 'dinein' && (
-                          <p className="mt-3 text-[11px] leading-5 text-stone-500">已从桌面二维码识别桌号，可在下方修改。</p>
+                          <p className="mt-3 text-[11px] leading-5 text-stone-500">{t('cart.tableDetected')}</p>
                         )}
                       </div>
 
                       <div className="rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">填写订单资料</h3>
+                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">{t('cart.detailsTitle')}</h3>
                         <div className="space-y-3">
                           <div className="relative group">
                             <User className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
                             <input
                               type="text"
-                              placeholder="姓名"
+                              placeholder={t('cart.name')}
                               value={name}
                               onChange={(e) => setName(e.target.value)}
                               className="w-full rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
                             />
                           </div>
-                          {attemptedSubmit && !name.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">请填写姓名</p>}
+                          {attemptedSubmit && !name.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.name')}</p>}
                           <div className="relative group">
                             <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
                             <input
                               type="tel"
-                              placeholder="手机号（必填）"
+                              placeholder={t('cart.phone')}
                               value={phone}
                               onChange={(e) => setPhone(e.target.value)}
                               className="w-full rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
                             />
                           </div>
-                          {attemptedSubmit && phone.trim() && !isValidPhone(phone) && <p className="-mt-1 px-2 text-[11px] text-red-500">联系电话格式不正确</p>}
-                          {attemptedSubmit && !phone.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">请填写联系电话</p>}
+                          {attemptedSubmit && phone.trim() && !isValidPhone(phone) && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.phoneFormat')}</p>}
+                          {attemptedSubmit && !phone.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.phone')}</p>}
                           {orderType === 'dinein' ? (
                             <>
                               <div className="relative group animate-fade-in">
@@ -575,7 +578,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 <div className="flex gap-2">
                                   <input
                                     type="text"
-                                    placeholder="请输入桌号"
+                                    placeholder={t('cart.tableNo')}
                                     value={tableNo}
                                     onChange={(e) => setTableNo(e.target.value)}
                                     disabled={isTableLocked}
@@ -589,39 +592,39 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                       onClick={() => setIsTableLocked(false)}
                                       className="flex-none rounded-2xl bg-stone-100 px-4 text-xs font-bold text-stone-500 transition-colors active:scale-[0.98]"
                                     >
-                                      修改
+                                      {t('common.edit')}
                                     </button>
                                   )}
                                 </div>
                               </div>
-                              {attemptedSubmit && !tableNo.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">请填写桌号</p>}
+                              {attemptedSubmit && !tableNo.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.table')}</p>}
                             </>
                           ) : (
                             <>
                               <div className="relative group animate-fade-in">
                                 <MapPin className="absolute left-4 top-4 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
                                 <textarea
-                                  placeholder="地址（必填）"
+                                  placeholder={t('cart.address')}
                                   value={address}
                                   onChange={(e) => setAddress(e.target.value)}
                                   rows={3}
                                   className="w-full resize-none rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
                                 />
                               </div>
-                              {attemptedSubmit && !address.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">请填写外卖地址</p>}
+                              {attemptedSubmit && !address.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.address')}</p>}
                               {!isDeliveryInstructionOpen ? (
                                 <button
                                   type="button"
                                   onClick={() => setIsDeliveryInstructionOpen(true)}
                                   className="text-xs font-bold text-[#C8A97E]"
                                 >
-                                  + 添加配送说明
+                                  {t('cart.addDeliveryInstruction')}
                                 </button>
                               ) : (
                                 <div className="relative group animate-fade-in">
                                   <MessageSquare className="absolute left-4 top-4 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
                                   <textarea
-                                    placeholder="配送说明（选填），例如：放门口、无需餐具、先电话联系"
+                                    placeholder={t('cart.deliveryInstructionPlaceholder')}
                                     value={deliveryInstruction}
                                     maxLength={100}
                                     onChange={(e) => setDeliveryInstruction(e.target.value.slice(0, 100))}
@@ -637,19 +640,21 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                       </div>
 
                       <div className="rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">支付方式</h3>
-                        <div className="grid grid-cols-3 gap-2">
+                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">{t('cart.paymentMethod')}</h3>
+                        <div className={`grid gap-2 ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
                           <PaymentTab active={paymentMethod === 'wallet'} icon={<WalletCards size={16} />} label="Wallet" onClick={() => setPaymentMethod('wallet')} />
                           <PaymentTab active={paymentMethod === 'tng'} icon={<WalletCards size={16} />} label="TNG" onClick={() => setPaymentMethod('tng')} />
-                          <PaymentTab active={paymentMethod === 'stripe'} icon={<CreditCard size={16} />} label="在线支付" onClick={() => setPaymentMethod('stripe')} />
+                          {ONLINE_PAYMENT_ENABLED && (
+                            <PaymentTab active={paymentMethod === 'stripe'} icon={<CreditCard size={16} />} label={t('cart.onlinePayment')} onClick={() => setPaymentMethod('stripe')} />
+                          )}
                         </div>
 
                         {paymentMethod === 'wallet' && (
                           <div className="mt-4 space-y-3 rounded-3xl border border-stone-100 bg-stone-50/80 p-4">
-                            <PriceLine label="钱包余额" value={walletBalance} />
-                            <PriceLine label="本次消费" value={payableTotal} />
-                            <PriceLine label="支付后余额" value={Math.max(walletAfterPayment, 0)} highlight={walletInsufficient} />
-                            {walletInsufficient && <p className="text-[11px] leading-5 text-amber-700">余额不足，点击底部按钮前往充值。</p>}
+                            <PriceLine label={t('cart.walletBalance')} value={walletBalance} />
+                            <PriceLine label={t('cart.thisPayment')} value={payableTotal} />
+                            <PriceLine label={t('cart.balanceAfter')} value={Math.max(walletAfterPayment, 0)} highlight={walletInsufficient} />
+                            {walletInsufficient && <p className="text-[11px] leading-5 text-amber-700">{t('cart.walletInsufficient')}</p>}
                           </div>
                         )}
 
@@ -657,11 +662,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                           <div className="mt-4 space-y-3 rounded-3xl border border-stone-100 bg-stone-50/80 p-4">
                             <div className="space-y-2 text-xs">
                               <div className="flex justify-between gap-4">
-                                <span className="text-stone-500">收款人</span>
+                                <span className="text-stone-500">{t('cart.payee')}</span>
                                 <span className="font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || 'Soup Can Thin'}</span>
                               </div>
                               <div className="flex items-center justify-between gap-4">
-                                <span className="text-stone-500">TNG账号</span>
+                                <span className="text-stone-500">{t('cart.tngAccount')}</span>
                                 <button
                                   type="button"
                                   onClick={() => navigator.clipboard?.writeText(paymentConfig?.tng.accountNumber || '0123456789')}
@@ -674,7 +679,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                             </div>
                             <label className="flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/70 bg-white/80 px-4 py-5 text-xs font-bold text-[#C8A97E] active:scale-[0.99]">
                               {receiptFile ? <CheckCircle2 size={16} /> : <Upload size={16} />}
-                              <span className="min-w-0 truncate">{receiptFile ? receiptFile.name : '上传 TNG 转账截图'}</span>
+                              <span className="min-w-0 truncate">{receiptFile ? receiptFile.name : t('cart.uploadReceipt')}</span>
                               <input
                                 type="file"
                                 accept="image/png,image/jpeg"
@@ -682,26 +687,26 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 onChange={(event) => handleReceiptChange(event.target.files?.[0] || null)}
                               />
                             </label>
-                            <p className="text-[11px] leading-5 text-stone-500">转账成功后上传截图，订单确认后开始制作。</p>
-                            {!receiptFile && <p className="text-[11px] text-amber-700">请上传转账截图</p>}
+                            <p className="text-[11px] leading-5 text-stone-500">{t('cart.receiptHint')}</p>
+                            {!receiptFile && <p className="text-[11px] text-amber-700">{t('cart.receiptRequired')}</p>}
                             {receiptPreview && (
                               <button
                                 type="button"
                                 onClick={() => setIsReceiptPreviewOpen(true)}
                                 className="h-40 w-full overflow-hidden rounded-2xl border border-white bg-white/80 p-2 active:scale-[0.99]"
-                                aria-label="查看TNG付款截图"
+                                aria-label={t('cart.receiptPreviewAria')}
                               >
-                                <img src={receiptPreview} alt="TNG付款截图预览" className="h-full w-full object-contain" />
+                                <img src={receiptPreview} alt={t('cart.receiptPreviewAlt')} className="h-full w-full object-contain" />
                               </button>
                             )}
                           </div>
                         )}
 
-                        {paymentMethod === 'stripe' && (
+                        {ONLINE_PAYMENT_ENABLED && paymentMethod === 'stripe' && (
                           <div className="mt-4 rounded-3xl border border-stone-100 bg-stone-50/80 p-4">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="text-sm font-bold text-[#2D2D2D]">在线支付</p>
+                                <p className="text-sm font-bold text-[#2D2D2D]">{t('cart.onlinePayment')}</p>
                                 <p className="mt-1 text-[11px] text-stone-500">Powered by Stripe</p>
                               </div>
                               <CreditCard className="text-[#C8A97E]" size={22} />
@@ -712,13 +717,13 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
 
                       {availableCoupons.length > 0 && (
                         <div className="space-y-4">
-                          <h3 className="text-[10px] font-bold text-stone-400 tracking-[0.2em] uppercase">优惠券</h3>
+                          <h3 className="text-[10px] font-bold text-stone-400 tracking-[0.2em] uppercase">{t('cart.coupon')}</h3>
                           <select
                             value={selectedCouponId}
                             onChange={(event) => setSelectedCouponId(event.target.value)}
                             className="w-full rounded-2xl border border-stone-100 bg-white px-4 py-4 text-sm outline-none focus:border-[#C8A97E] shadow-sm"
                           >
-                            <option value="">不使用优惠券</option>
+                            <option value="">{t('cart.noCoupon')}</option>
                             {availableCoupons.map(coupon => (
                               <option key={coupon.id} value={coupon.id}>
                                 {coupon.title} - RM {coupon.discountAmount.toFixed(2)}
@@ -727,7 +732,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                           </select>
                           {discountAmount > 0 && (
                             <p className="text-[11px] leading-5 text-emerald-600">
-                              已抵扣 RM {discountAmount.toFixed(2)}，实付 RM {payableTotal.toFixed(2)}
+                              {t('cart.couponApplied', { discount: discountAmount.toFixed(2), total: payableTotal.toFixed(2) })}
                             </p>
                           )}
                         </div>
@@ -756,13 +761,13 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                       : 'bg-[#2D2D2D] text-white active:scale-95 shadow-black/30'
                   }`}
                 >
-                  <span>填写资料 · CHECKOUT</span>
+                  <span>{t('cart.continueCheckout')}</span>
                   <ChevronRight size={18} />
                 </button>
               ) : (
                 <div className="flex items-center gap-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">总计</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">{t('common.total')}</p>
                     <p className="text-xl font-bold serif text-[#2D2D2D]">RM {payableTotal.toFixed(2)}</p>
                   </div>
                   <button
@@ -779,14 +784,14 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                     ) : (
                       <span>
                         {!isFormValid
-                          ? '填写信息继续'
+                          ? t('cart.fillInfoContinue')
                           : walletInsufficient
-                            ? '余额不足，去充值'
+                            ? t('cart.topUp')
                             : paymentMethod === 'wallet'
-                              ? '使用钱包支付'
+                              ? t('cart.payWithWallet')
                               : paymentMethod === 'stripe'
-                                ? `支付 RM ${payableTotal.toFixed(2)}`
-                                : '确认下单'}
+                                ? t('cart.payAmount', { amount: payableTotal.toFixed(2) })
+                                : t('cart.placeOrder')}
                       </span>
                     )}
                   </button>
@@ -802,13 +807,13 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
             type="button"
             className="absolute right-5 top-5 rounded-full bg-white/10 p-3 text-white"
             onClick={() => setIsReceiptPreviewOpen(false)}
-            aria-label="关闭截图预览"
+            aria-label={t('common.close')}
           >
             <X size={22} />
           </button>
           <img
             src={receiptPreview}
-            alt="TNG付款截图大图"
+            alt={t('cart.receiptLargeAlt')}
             className="max-h-full max-w-full rounded-2xl object-contain"
             onClick={(event) => event.stopPropagation()}
           />
@@ -849,6 +854,7 @@ function PaymentTab({ active, icon, label, onClick }: { active: boolean; icon: R
 }
 
 function ItemCustomization({ item }: { item: CartLine }) {
+  const { t } = useTranslation();
   const optionText = item.selectedOptions.length
     ? item.selectedOptions.map(option => `${option.groupName}: ${option.name}`).join(' · ')
     : '';
@@ -858,7 +864,7 @@ function ItemCustomization({ item }: { item: CartLine }) {
   return (
     <div className="mt-1 space-y-0.5 text-[11px] leading-4 text-stone-400">
       {optionText && <p className="line-clamp-2">{optionText}</p>}
-      {item.note && <p className="line-clamp-2">备注：{item.note}</p>}
+      {item.note && <p className="line-clamp-2">{t('common.note')}：{item.note}</p>}
     </div>
   );
 }

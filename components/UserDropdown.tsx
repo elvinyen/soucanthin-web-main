@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronRight, MapPin, ReceiptText, Settings, TicketPercent, User, Wallet } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { AuthMeResponse } from '../types/auth';
 import type { UserCenterTab } from './UserCenter';
 
@@ -10,18 +11,19 @@ interface UserDropdownProps {
   onSelect: (tab: UserCenterTab) => void;
 }
 
-const menuItems: { id: UserCenterTab; label: string; subtitle: string; icon: React.ElementType }[] = [
-  { id: 'profile', label: '用户信息', subtitle: 'Profile', icon: User },
-  { id: 'wallet', label: '钱包', subtitle: 'Wallet', icon: Wallet },
-  { id: 'orders', label: '订单', subtitle: 'Orders', icon: ReceiptText },
-  { id: 'addresses', label: '地址', subtitle: 'Addresses', icon: MapPin },
-  { id: 'coupons', label: '优惠券', subtitle: 'Coupons', icon: TicketPercent },
-  { id: 'settings', label: '设置', subtitle: 'Settings', icon: Settings },
+const menuItems: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React.ElementType }[] = [
+  { id: 'profile', labelKey: 'user.menu.profile', subtitle: 'Profile', icon: User },
+  { id: 'wallet', labelKey: 'user.menu.wallet', subtitle: 'Wallet', icon: Wallet },
+  { id: 'orders', labelKey: 'user.menu.orders', subtitle: 'Orders', icon: ReceiptText },
+  { id: 'addresses', labelKey: 'user.menu.addresses', subtitle: 'Addresses', icon: MapPin },
+  { id: 'coupons', labelKey: 'user.menu.coupons', subtitle: 'Coupons', icon: TicketPercent },
+  { id: 'settings', labelKey: 'user.menu.settings', subtitle: 'Settings', icon: Settings },
 ];
 
 const UserDropdown: React.FC<UserDropdownProps> = ({ isOpen, session, onClose, onSelect }) => {
+  const { t } = useTranslation();
   if (!isOpen || !session.user) return null;
-  const displayName = session.user.name?.trim() || '深夜食汤会员';
+  const displayName = session.user.name?.trim() || t('common.memberFallback');
 
   return (
     <div className="fixed inset-0 z-[90] max-w-md mx-auto bg-black/5" onClick={onClose}>
@@ -32,7 +34,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ isOpen, session, onClose, o
         <div className="relative overflow-hidden rounded-[1.55rem] border border-white/10 bg-[#2D2D2D]/95 px-5 py-4 text-white shadow-xl shadow-black/20">
           <div className="absolute inset-x-0 top-0 h-20 bg-[radial-gradient(circle_at_18%_0%,rgba(200,169,126,0.38),transparent_52%),radial-gradient(circle_at_82%_8%,rgba(255,255,255,0.16),transparent_44%)]" />
           <div className="relative">
-            <p className="text-xs uppercase tracking-[0.22em] text-white/45">Personal Center</p>
+            <p className="text-xs uppercase tracking-[0.22em] text-white/45">{t('user.menu.personalCenter')}</p>
             <p className="mt-2 truncate text-base font-bold">{displayName}</p>
             <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-white/55">
               <span className="truncate">{session.user.displayPhone}</span>
@@ -56,7 +58,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ isOpen, session, onClose, o
                   <Icon size={18} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold text-[#2D2D2D]">{item.label}</span>
+                  <span className="block text-sm font-bold text-[#2D2D2D]">{t(item.labelKey)}</span>
                   <span className="mt-0.5 block text-[10px] uppercase tracking-[0.16em] text-stone-500">{item.subtitle}</span>
                 </span>
                 <ChevronRight size={16} className="text-stone-400 transition group-hover:translate-x-0.5 group-hover:text-[#C8A97E]" />

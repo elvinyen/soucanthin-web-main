@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Home } from 'lucide-react';
+import LanguageSelector from './LanguageSelector';
 
 interface HeaderProps {
   scrolled?: boolean;
@@ -35,12 +36,14 @@ const Header: React.FC<HeaderProps> = ({ scrolled, onLogoClick, showHomeButton, 
       >
         <img 
           src="/logo/logo.png" 
-          alt="深夜食汤 Logo"
+          alt="Soup Can Thin Logo"
           className="w-full h-10 object-contain"
         />
       </button>
 
-      <div className="flex-1" />
+      <div className="flex flex-1 justify-end">
+        <LanguageSelector />
+      </div>
     </header>
   );
 };
