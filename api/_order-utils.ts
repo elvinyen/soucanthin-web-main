@@ -26,6 +26,12 @@ export type TelegramNotificationResult = {
   messageId?: number;
 };
 
+type TelegramSendResult = {
+  ok: boolean;
+  chatId?: string;
+  messageId?: number;
+};
+
 export type InlineKeyboardMarkup = {
   inline_keyboard: {
     text: string;
@@ -570,31 +576,19 @@ export async function sendTelegramNotification(message: string): Promise<Notific
 
 export async function sendTelegramOrderNotification(message: string, replyMarkup?: InlineKeyboardMarkup): Promise<TelegramNotificationResult> {
   const token = process.env.TELEGRAM_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const chatIds = await getTelegramOrderNotificationChatIds();
 
-  if (!token || !chatId) return { status: 'failed' };
+  if (!token || chatIds.length === 0) return { status: 'failed' };
 
   try {
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-      }),
-    });
+    const results = await Promise.all(chatIds.map(chatId => sendTelegramMessageToChat(token, chatId, message, replyMarkup)));
+    const firstSuccess = results.find(result => result.ok);
 
-    if (!response.ok) {
-      console.error('Telegram send failed:', await response.text());
-      return { status: 'failed' };
-    }
-
-    const payload = await response.json();
+    if (!firstSuccess) return { status: 'failed' };
     return {
       status: 'sent',
-      chatId: String(payload?.result?.chat?.id || chatId),
-      messageId: Number(payload?.result?.message_id || 0) || undefined,
+      chatId: firstSuccess.chatId,
+      messageId: firstSuccess.messageId,
     };
   } catch (error) {
     console.error('Telegram notification error:', error);
@@ -606,6 +600,11 @@ export async function sendTelegramMessage(chatId: string, message: string, reply
   const token = process.env.TELEGRAM_TOKEN;
   if (!token || !chatId) return false;
 
+  const result = await sendTelegramMessageToChat(token, chatId, message, replyMarkup);
+  return result.ok;
+}
+
+async function sendTelegramMessageToChat(token: string, chatId: string, message: string, replyMarkup?: InlineKeyboardMarkup): Promise<TelegramSendResult> {
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
@@ -619,14 +618,47 @@ export async function sendTelegramMessage(chatId: string, message: string, reply
 
     if (!response.ok) {
       console.error('Telegram message send failed:', await response.text());
-      return false;
+      return { ok: false };
     }
 
-    return true;
+    const payload = await response.json();
+    return {
+      ok: true,
+      chatId: String(payload?.result?.chat?.id || chatId),
+      messageId: Number(payload?.result?.message_id || 0) || undefined,
+    };
   } catch (error) {
     console.error('Telegram message send error:', error);
-    return false;
+    return { ok: false };
   }
+}
+
+async function getTelegramOrderNotificationChatIds() {
+  const chatIds = [
+    process.env.TELEGRAM_CHAT_ID || '',
+    ...(process.env.TELEGRAM_ADMIN_IDS || '').split(','),
+  ].map(value => value.trim()).filter(Boolean);
+
+  try {
+    const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+    const result = await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      '/telegram_users?is_admin=eq.true&select=telegram_user_id',
+      { method: 'GET' },
+    );
+
+    if (Array.isArray(result)) {
+      for (const row of result) {
+        const userId = String((row as { telegram_user_id?: string }).telegram_user_id || '').trim();
+        if (userId) chatIds.push(userId);
+      }
+    }
+  } catch (error) {
+    console.error('Telegram admin notification lookup failed:', error);
+  }
+
+  return [...new Set(chatIds)];
 }
 
 function buildStaffMessage(params: {
