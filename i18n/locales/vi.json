@@ -111,6 +111,7 @@
     "walletInsufficient": "Số dư không đủ. Nhấn nút dưới để nạp tiền.",
     "payee": "Người nhận",
     "tngAccount": "Tài khoản TNG",
+    "tngQrCode": "Mã QR nhận TNG",
     "uploadReceipt": "Tải ảnh chuyển khoản TNG",
     "receiptHint": "Sau khi chuyển khoản, tải ảnh lên. Đơn sẽ được chuẩn bị sau khi xác nhận.",
     "receiptRequired": "Vui lòng tải ảnh chuyển khoản",

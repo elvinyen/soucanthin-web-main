@@ -111,6 +111,7 @@
     "walletInsufficient": "余额不足，点击底部按钮前往充值。",
     "payee": "收款人",
     "tngAccount": "TNG账号",
+    "tngQrCode": "TNG收款二维码",
     "uploadReceipt": "上传 TNG 转账截图",
     "receiptHint": "转账成功后上传截图，订单确认后开始制作。",
     "receiptRequired": "请上传转账截图",

@@ -24,6 +24,7 @@ type PaymentConfig = {
   tng: {
     accountName: string;
     accountNumber: string;
+    qrImageUrl: string;
   };
 };
 
@@ -111,7 +112,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
         }
       })
       .catch(() => {
-        setPaymentConfig({ tng: { accountName: '', accountNumber: '' } });
+        setPaymentConfig({ tng: { accountName: '', accountNumber: '', qrImageUrl: '' } });
       });
   }, [isOpen]);
 
@@ -665,7 +666,17 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 <span className="text-stone-500">{t('cart.payee')}</span>
                                 <span className="font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || 'Soup Can Thin'}</span>
                               </div>
-                              <div className="flex items-center justify-between gap-4">
+                            </div>
+                            {paymentConfig?.tng.qrImageUrl ? (
+                              <div className="rounded-2xl border border-white bg-white/90 p-3">
+                                <img
+                                  src={paymentConfig.tng.qrImageUrl}
+                                  alt={t('cart.tngQrCode')}
+                                  className="mx-auto aspect-square w-full max-w-56 object-contain"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between gap-4 text-xs">
                                 <span className="text-stone-500">{t('cart.tngAccount')}</span>
                                 <button
                                   type="button"
@@ -676,7 +687,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                   <Copy size={13} className="text-[#C8A97E]" />
                                 </button>
                               </div>
-                            </div>
+                            )}
                             <label className="flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/70 bg-white/80 px-4 py-5 text-xs font-bold text-[#C8A97E] active:scale-[0.99]">
                               {receiptFile ? <CheckCircle2 size={16} /> : <Upload size={16} />}
                               <span className="min-w-0 truncate">{receiptFile ? receiptFile.name : t('cart.uploadReceipt')}</span>

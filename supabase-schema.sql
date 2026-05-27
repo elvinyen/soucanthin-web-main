@@ -469,3 +469,43 @@ using (bucket_id = 'payment-receipts');
 create policy "Public read menu item images"
 on storage.objects for select
 using (bucket_id = 'menu-items');
+
+create table if not exists public.payment_settings (
+  id text primary key default 'default',
+  tng_account_name text not null default '',
+  tng_account_number text not null default '',
+  tng_qr_image_url text not null default '',
+  updated_at timestamptz not null default now(),
+  constraint payment_settings_singleton check (id = 'default'),
+  constraint payment_settings_tng_qr_url_check check (
+    tng_qr_image_url = ''
+    or tng_qr_image_url ~ '^https?://'
+    or tng_qr_image_url ~ '^/'
+  )
+);
+
+alter table public.payment_settings enable row level security;
+
+drop policy if exists "Payment settings are publicly readable" on public.payment_settings;
+create policy "Payment settings are publicly readable"
+on public.payment_settings for select
+using (id = 'default');
+
+grant select on public.payment_settings to anon, authenticated;
+
+insert into public.payment_settings (id)
+values ('default')
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'payment-assets',
+  'payment-assets',
+  true,
+  5242880,
+  array['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']::text[]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;

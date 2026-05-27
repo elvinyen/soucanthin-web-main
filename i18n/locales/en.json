@@ -111,6 +111,7 @@
     "walletInsufficient": "Insufficient balance. Tap the bottom button to top up.",
     "payee": "Payee",
     "tngAccount": "TNG account",
+    "tngQrCode": "TNG payment QR code",
     "uploadReceipt": "Upload TNG transfer screenshot",
     "receiptHint": "Upload the screenshot after transfer. We will start preparing after order confirmation.",
     "receiptRequired": "Please upload the transfer screenshot",

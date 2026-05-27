@@ -37,7 +37,7 @@ interface UserCenterProps {
   mode?: 'sheet' | 'page';
 }
 
-type PaymentConfig = { tng: { accountName: string; accountNumber: string } };
+type PaymentConfig = { tng: { accountName: string; accountNumber: string; qrImageUrl: string } };
 
 const tabs: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React.ElementType }[] = [
   { id: 'profile', labelKey: 'userCenter.tabs.profile', subtitle: 'Profile', icon: User },
@@ -580,10 +580,20 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         <span className="text-stone-500">{t('userCenter.tngPayee')}</span>
                         <span className="text-right font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || t('userCenter.configTngName')}</span>
                       </div>
-                      <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-stone-500">{t('cart.tngAccount')}</span>
-                        <span className="text-right font-mono font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountNumber || t('userCenter.configTngNumber')}</span>
-                      </div>
+                      {paymentConfig?.tng.qrImageUrl ? (
+                        <div className="rounded-2xl border border-white/70 bg-white/80 p-3">
+                          <img
+                            src={paymentConfig.tng.qrImageUrl}
+                            alt={t('cart.tngQrCode')}
+                            className="mx-auto aspect-square w-full max-w-52 object-contain"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-4 text-xs">
+                          <span className="text-stone-500">{t('cart.tngAccount')}</span>
+                          <span className="text-right font-mono font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountNumber || t('userCenter.configTngNumber')}</span>
+                        </div>
+                      )}
                     </div>
                     <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/60 bg-[#FBF7EF]/70 px-4 py-4 text-xs font-bold text-[#C8A97E] backdrop-blur-xl">
                       <Upload size={16} />

@@ -111,6 +111,7 @@
     "walletInsufficient": "ยอดไม่พอ แตะปุ่มด้านล่างเพื่อเติมเงิน",
     "payee": "ผู้รับเงิน",
     "tngAccount": "บัญชี TNG",
+    "tngQrCode": "QR รับชำระ TNG",
     "uploadReceipt": "อัปโหลดสลิปโอน TNG",
     "receiptHint": "อัปโหลดสลิปหลังโอนเงิน เราจะเริ่มทำอาหารหลังยืนยันออเดอร์",
     "receiptRequired": "กรุณาอัปโหลดสลิปโอนเงิน",
