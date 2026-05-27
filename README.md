@@ -84,6 +84,13 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - TNG：用户看到 `TNG_ACCOUNT_NAME` / `TNG_ACCOUNT_NUMBER`，转账后上传截图；订单状态为 `pending_review`，员工在 Telegram 里查看截图并人工审核。
 - Stripe：前端调用 `/api/stripe-checkout` 创建沙盒 Checkout Session 并跳转 Stripe；只有 `/api/stripe-webhook` 收到 `checkout.session.completed` 后，订单才会标记为 `paid` 并通知员工。
 
+## Telegram 管理员
+
+- `TELEGRAM_ADMIN_IDS` 是初始管理员白名单，至少保留一个老板/负责人 Telegram 数字 ID。
+- 其他人先私聊订单机器人并发送 `/start`，系统会把他登记到 `telegram_users` 表。
+- 已有管理员在机器人里发送 `/admin_users`，可以从已登记用户列表里点击按钮设置或取消订单管理员。
+- 被设为管理员后，可以在订单通知按钮里确认订单、开始配送、标记送达、完成或取消订单。
+
 ## 会员与钱包
 
 - Header 右侧用户图标会打开手机号 OTP 登录；OTP 通过 Mocean Verify API 发送和校验。

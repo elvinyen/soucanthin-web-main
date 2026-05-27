@@ -248,6 +248,28 @@ create index if not exists orders_user_id_idx on public.orders (user_id);
 create index if not exists orders_coupon_id_idx on public.orders (coupon_id);
 create index if not exists order_items_order_id_idx on public.order_items (order_id);
 
+create table if not exists public.telegram_users (
+  telegram_user_id text primary key,
+  username text,
+  first_name text,
+  last_name text,
+  is_admin boolean not null default false,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.telegram_users add column if not exists username text;
+alter table public.telegram_users add column if not exists first_name text;
+alter table public.telegram_users add column if not exists last_name text;
+alter table public.telegram_users add column if not exists is_admin boolean not null default false;
+alter table public.telegram_users add column if not exists first_seen_at timestamptz not null default now();
+alter table public.telegram_users add column if not exists last_seen_at timestamptz not null default now();
+alter table public.telegram_users add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists telegram_users_is_admin_idx on public.telegram_users (is_admin);
+create index if not exists telegram_users_last_seen_idx on public.telegram_users (last_seen_at desc);
+
 create table if not exists public.users (
   id uuid primary key default gen_random_uuid(),
   phone text not null unique,

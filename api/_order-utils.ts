@@ -26,7 +26,7 @@ export type TelegramNotificationResult = {
   messageId?: number;
 };
 
-type InlineKeyboardMarkup = {
+export type InlineKeyboardMarkup = {
   inline_keyboard: {
     text: string;
     callback_data: string;
@@ -599,6 +599,33 @@ export async function sendTelegramOrderNotification(message: string, replyMarkup
   } catch (error) {
     console.error('Telegram notification error:', error);
     return { status: 'failed' };
+  }
+}
+
+export async function sendTelegramMessage(chatId: string, message: string, replyMarkup?: InlineKeyboardMarkup) {
+  const token = process.env.TELEGRAM_TOKEN;
+  if (!token || !chatId) return false;
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Telegram message send failed:', await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Telegram message send error:', error);
+    return false;
   }
 }
 
