@@ -185,6 +185,9 @@ alter table public.orders add column if not exists payable_total numeric(10, 2);
 alter table public.orders add column if not exists delivery_fee numeric(10, 2) not null default 0;
 alter table public.orders add column if not exists payment_review_token text;
 alter table public.orders add column if not exists reviewed_at timestamptz;
+alter table public.orders add column if not exists last_operator_telegram_user_id text;
+alter table public.orders add column if not exists last_operator_name text;
+alter table public.orders add column if not exists last_status_changed_at timestamptz;
 
 update public.orders set payable_total = total where payable_total is null;
 
@@ -247,6 +250,45 @@ create index if not exists orders_stripe_checkout_session_idx on public.orders (
 create index if not exists orders_user_id_idx on public.orders (user_id);
 create index if not exists orders_coupon_id_idx on public.orders (coupon_id);
 create index if not exists order_items_order_id_idx on public.order_items (order_id);
+
+create table if not exists public.order_status_events (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  order_no text not null,
+  action text not null,
+  from_status text not null,
+  to_status text not null,
+  operator_telegram_user_id text not null,
+  operator_username text,
+  operator_name text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.order_status_events add column if not exists order_no text;
+alter table public.order_status_events add column if not exists action text;
+alter table public.order_status_events add column if not exists from_status text;
+alter table public.order_status_events add column if not exists to_status text;
+alter table public.order_status_events add column if not exists operator_telegram_user_id text;
+alter table public.order_status_events add column if not exists operator_username text;
+alter table public.order_status_events add column if not exists operator_name text;
+alter table public.order_status_events add column if not exists created_at timestamptz not null default now();
+
+alter table public.order_status_events drop constraint if exists order_status_events_action_check;
+alter table public.order_status_events drop constraint if exists order_status_events_from_status_check;
+alter table public.order_status_events drop constraint if exists order_status_events_to_status_check;
+
+alter table public.order_status_events
+  add constraint order_status_events_action_check check (action in ('confirm', 'start_delivery', 'delivered', 'complete', 'cancel'));
+
+alter table public.order_status_events
+  add constraint order_status_events_from_status_check check (from_status in ('pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
+
+alter table public.order_status_events
+  add constraint order_status_events_to_status_check check (to_status in ('pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
+
+create index if not exists order_status_events_order_id_idx on public.order_status_events (order_id, created_at desc);
+create index if not exists order_status_events_order_no_idx on public.order_status_events (order_no, created_at desc);
+create index if not exists order_status_events_operator_idx on public.order_status_events (operator_telegram_user_id, created_at desc);
 
 create table if not exists public.telegram_users (
   telegram_user_id text primary key,

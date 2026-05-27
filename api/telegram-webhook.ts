@@ -2,11 +2,12 @@ import {
   answerTelegramCallback,
   ApiRequest,
   ApiResponse,
-  editTelegramOrderMessage,
   findOrderByNo,
   getSupabaseConfig,
   getOrderItems,
   InlineKeyboardMarkup,
+  notifyStaffFromRecord,
+  recordOrderStatusEvent,
   sendTelegramMessage,
   supabaseRequest,
   updateOrderByNo,
@@ -20,9 +21,7 @@ type TelegramAdminAction = 'add' | 'remove';
 type TelegramWebhookPayload = {
   callback_query?: {
     id?: string;
-    from?: {
-      id?: number;
-    };
+    from?: TelegramUser;
     message?: {
       chat?: {
         id?: number | string;
@@ -129,12 +128,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     await answerTelegramCallback(callbackId, '正在处理订单...');
     callbackAnswered = true;
 
-    await updateOrderByNo(parsed.orderNo, { status: transition.to });
+    const operatorName = formatTelegramUserName(callback.from);
+    await updateOrderByNo(parsed.orderNo, {
+      status: transition.to,
+      last_operator_telegram_user_id: adminId,
+      last_operator_name: operatorName,
+      last_status_changed_at: new Date().toISOString(),
+    });
+    await recordOrderStatusEvent({
+      orderId: order.id,
+      orderNo: parsed.orderNo,
+      action: parsed.action,
+      fromStatus: order.status,
+      toStatus: transition.to,
+      operatorTelegramUserId: adminId,
+      operatorUsername: callback.from?.username || null,
+      operatorName,
+    });
 
     const updatedOrder = await findOrderByNo(parsed.orderNo);
     if (!updatedOrder) throw new Error('Order disappeared after update');
     const items = await getOrderItems(updatedOrder.id);
-    await editTelegramOrderMessage(updatedOrder, items);
+    const notification = await notifyStaffFromRecord(updatedOrder, items);
+    await updateOrderByNo(parsed.orderNo, {
+      notification_status: notification.status,
+      notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
+      telegram_chat_id: notification.chatId || null,
+      telegram_message_id: notification.messageId || null,
+    });
 
     return res.status(200).json({ success: true, status: transition.to });
   } catch (error) {
@@ -296,4 +317,10 @@ async function getStoredTelegramUsers() {
 function formatTelegramUserLabel(user: TelegramUserRecord) {
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
   return user.username ? `@${user.username}` : name || user.telegram_user_id;
+}
+
+function formatTelegramUserName(user?: TelegramUser) {
+  if (!user) return null;
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+  return user.username ? `@${user.username}` : name || (user.id ? String(user.id) : null);
 }

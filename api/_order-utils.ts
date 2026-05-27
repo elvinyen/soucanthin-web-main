@@ -68,6 +68,9 @@ export type OrderRecord = {
   notification_status: NotificationStatus | 'pending';
   telegram_chat_id?: string | null;
   telegram_message_id?: number | null;
+  last_operator_telegram_user_id?: string | null;
+  last_operator_name?: string | null;
+  last_status_changed_at?: string | null;
   created_at: string;
 };
 
@@ -271,6 +274,32 @@ export async function updateOrderByNo(orderNo: string, payload: Record<string, u
   });
 }
 
+export async function recordOrderStatusEvent(params: {
+  orderId: string;
+  orderNo: string;
+  action: TelegramOrderAction;
+  fromStatus: OrderStatus;
+  toStatus: OrderStatus;
+  operatorTelegramUserId: string;
+  operatorUsername?: string | null;
+  operatorName?: string | null;
+}) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  await supabaseRequest(supabaseUrl, serviceRoleKey, '/order_status_events', {
+    method: 'POST',
+    body: JSON.stringify({
+      order_id: params.orderId,
+      order_no: params.orderNo,
+      action: params.action,
+      from_status: params.fromStatus,
+      to_status: params.toStatus,
+      operator_telegram_user_id: params.operatorTelegramUserId,
+      operator_username: params.operatorUsername || null,
+      operator_name: params.operatorName || null,
+    }),
+  });
+}
+
 export async function updateOrderByStripeSession(sessionId: string, payload: Record<string, unknown>) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   await supabaseRequest(supabaseUrl, serviceRoleKey, `/orders?stripe_checkout_session_id=eq.${encodeURIComponent(sessionId)}`, {
@@ -456,6 +485,8 @@ export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItem
     paymentMethod: order.payment_method,
     paymentStatus: order.payment_status,
     paymentReviewStatus: order.payment_review_status,
+    lastOperatorName: order.last_operator_name,
+    lastStatusChangedAt: order.last_status_changed_at,
     customerName: order.customer_name,
     customerPhone: order.customer_phone,
     tableNo: order.table_no,
@@ -495,6 +526,8 @@ export async function editTelegramOrderMessage(order: OrderRecord, items: OrderI
     paymentMethod: order.payment_method,
     paymentStatus: order.payment_status,
     paymentReviewStatus: order.payment_review_status,
+    lastOperatorName: order.last_operator_name,
+    lastStatusChangedAt: order.last_status_changed_at,
     customerName: order.customer_name,
     customerPhone: order.customer_phone,
     tableNo: order.table_no,
@@ -669,6 +702,8 @@ function buildStaffMessage(params: {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   paymentReviewStatus: PaymentReviewStatus;
+  lastOperatorName?: string | null;
+  lastStatusChangedAt?: string | null;
   customerName: string;
   customerPhone: string;
   tableNo?: string | null;
@@ -715,6 +750,9 @@ function buildStaffMessage(params: {
     ? `\nStripe Session: ${params.stripeCheckoutSessionId}${params.stripePaymentIntentId ? `\nPayment Intent: ${params.stripePaymentIntentId}` : ''}`
     : '';
   const orderTime = params.createdAt ? new Date(params.createdAt) : new Date();
+  const operatorText = params.lastOperatorName
+    ? [`最后操作人：${params.lastOperatorName}`, params.lastStatusChangedAt ? `操作时间：${formatMalaysiaDate(new Date(params.lastStatusChangedAt))}` : ''].filter(Boolean)
+    : [];
 
   return [
     `📢 新订单通知`,
@@ -729,6 +767,7 @@ function buildStaffMessage(params: {
     `支付方式：${labelPaymentMethod(params.paymentMethod)}`,
     `支付状态：${labelPaymentStatus(params.paymentStatus)}`,
     `审核状态：${labelReviewStatus(params.paymentReviewStatus)}`,
+    ...operatorText,
     ``,
     `👤 顾客资料`,
     `姓名：${params.customerName}`,
