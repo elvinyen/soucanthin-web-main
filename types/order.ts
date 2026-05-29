@@ -26,6 +26,7 @@ export interface Order {
   };
   items: {
     id: string;
+    code?: string;
     name: string;
     basePrice?: number;
     optionsTotal?: number;

@@ -5,6 +5,7 @@ import { ApiRequest, ApiResponse, getSupabaseConfig, supabaseRequest } from './_
 
 type MenuItemRow = {
   id: number;
+  item_code?: string | null;
   name: string;
   en_name: string;
   description: string;
@@ -34,7 +35,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const rows = await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      '/menu_items?active=eq.true&select=id,name,en_name,description,detail,price,category,image_url,tags,recommended,sold_out,option_groups,translations&order=sort_order.asc,id.asc',
+      '/menu_items?active=eq.true&select=id,item_code,name,en_name,description,detail,price,category,image_url,tags,recommended,sold_out,option_groups,translations&order=sort_order.asc,id.asc',
       { method: 'GET' },
     );
 
@@ -54,6 +55,7 @@ function mapMenuItem(row: MenuItemRow, lang: LanguageCode): MenuItem {
   const translation = getTranslation(row.translations, lang);
   return {
     id: Number(row.id),
+    code: row.item_code || undefined,
     name: translation?.name || row.name,
     enName: translation?.enName ?? row.en_name,
     description: translation?.description || row.description,

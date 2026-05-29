@@ -132,7 +132,14 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
               </div>
 
               <div className="mt-4 flex flex-1 flex-col items-center text-center">
-                <h4 className="text-sm font-bold text-[#2D2D2D] serif">{item.name}</h4>
+                <h4 className="flex items-center justify-center gap-1.5 text-sm font-bold text-[#2D2D2D] serif">
+                  {item.code && (
+                    <span className="rounded-full bg-[#2D2D2D] px-2 py-0.5 text-[10px] font-bold leading-4 text-white">
+                      {item.code}
+                    </span>
+                  )}
+                  <span>{item.name}</span>
+                </h4>
                 <div className="mt-2 flex min-h-6 flex-wrap items-center justify-center gap-1">
                   {item.tags.map(tag => (
                     <span key={tag} className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-stone-500 shadow-sm">
@@ -282,6 +289,7 @@ function DishDetail({ item, onClose, onAdd }: {
     onAdd({
       lineId: `${item.id}__${optionKey || 'plain'}__${encodeURIComponent(normalizedNote)}`,
       itemId: item.id,
+      code: item.code,
       name: item.name,
       image: item.image,
       basePrice: item.price,
@@ -311,7 +319,14 @@ function DishDetail({ item, onClose, onAdd }: {
             {item.enName.trim() && (
               <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{item.enName}</p>
             )}
-            <h2 className={`${item.enName.trim() ? 'mt-2' : ''} text-3xl font-bold serif`}>{item.name}</h2>
+            <h2 className={`${item.enName.trim() ? 'mt-2' : ''} flex flex-wrap items-center gap-2 text-3xl font-bold serif`}>
+              {item.code && (
+                <span className="rounded-full bg-white/20 px-3 py-1 text-sm font-bold leading-5 backdrop-blur">
+                  {item.code}
+                </span>
+              )}
+              <span>{item.name}</span>
+            </h2>
             <div className="mt-3 flex flex-wrap gap-2">
               {item.tags.map(tag => (
                 <span key={tag} className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold backdrop-blur">

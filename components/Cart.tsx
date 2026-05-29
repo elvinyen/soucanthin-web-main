@@ -257,6 +257,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       ),
       items: cartItems.map(item => ({
         id: item.itemId.toString(),
+        code: item.code,
         name: item.name,
         basePrice: item.basePrice,
         optionsTotal: item.optionsTotal,
@@ -431,7 +432,14 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                               <img src={item.image} className="w-full h-full object-cover" alt={item.name} />
                             </div>
                             <div className="flex-grow">
-                              <h4 className="text-sm font-bold text-[#2D2D2D] serif">{item.name}</h4>
+                              <h4 className="flex flex-wrap items-center gap-1.5 text-sm font-bold text-[#2D2D2D] serif">
+                                {item.code && (
+                                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold leading-4 text-stone-600">
+                                    {item.code}
+                                  </span>
+                                )}
+                                <span>{item.name}</span>
+                              </h4>
                               <ItemCustomization item={item} />
                               <div className="text-xs font-bold text-[#C8A97E] mt-1">RM {item.unitPrice.toFixed(2)}</div>
                             </div>
@@ -495,7 +503,9 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex justify-between gap-3">
-                                  <p className="truncate text-sm font-bold text-[#2D2D2D]">{item.name} ×{item.quantity}</p>
+                                  <p className="truncate text-sm font-bold text-[#2D2D2D]">
+                                    {item.code ? `[${item.code}] ` : ''}{item.name} ×{item.quantity}
+                                  </p>
                                   <p className="flex-none text-sm font-bold text-[#2D2D2D]">RM {(item.unitPrice * item.quantity).toFixed(2)}</p>
                                 </div>
                                 <ItemCustomization item={item} />

@@ -78,6 +78,7 @@ export type OrderItemRecord = {
   id?: string;
   order_id: string;
   menu_item_id: string;
+  item_code?: string | null;
   name: string;
   unit_base_price?: number;
   unit_options_total?: number;
@@ -226,6 +227,7 @@ export async function createOrderWithItems(params: {
   await insertOrderItems(supabaseUrl, serviceRoleKey, params.order.items.map(item => ({
     order_id: orderRecord.id,
     menu_item_id: item.id,
+    item_code: item.code || null,
     name: item.name,
     unit_base_price: roundMoney(item.basePrice ?? item.price),
     unit_options_total: roundMoney(item.optionsTotal ?? 0),
@@ -455,6 +457,7 @@ export async function notifyStaffFromOrder(order: Order, orderNo: string, extra:
     tableNo: order.orderType === 'dinein' ? order.dineIn?.tableNo : null,
     deliveryAddress: order.orderType === 'takeaway' ? order.takeaway?.address : null,
     items: order.items.map(item => ({
+      code: item.code,
       name: item.name,
       quantity: item.qty,
       lineTotal: roundMoney(item.price * item.qty),
@@ -492,6 +495,7 @@ export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItem
     tableNo: order.table_no,
     deliveryAddress: order.delivery_address,
     items: items.map(item => ({
+      code: item.item_code || undefined,
       name: item.name,
       quantity: item.quantity,
       lineTotal: Number(item.line_total),
@@ -533,6 +537,7 @@ export async function editTelegramOrderMessage(order: OrderRecord, items: OrderI
     tableNo: order.table_no,
     deliveryAddress: order.delivery_address,
     items: items.map(item => ({
+      code: item.item_code || undefined,
       name: item.name,
       quantity: item.quantity,
       lineTotal: Number(item.line_total),
@@ -709,6 +714,7 @@ function buildStaffMessage(params: {
   tableNo?: string | null;
   deliveryAddress?: string | null;
   items: {
+    code?: string;
     name: string;
     quantity: number;
     lineTotal: number;
@@ -730,11 +736,12 @@ function buildStaffMessage(params: {
 }) {
   const itemsText = params.items
     .map((item, index) => {
+      const itemName = item.code ? `[${item.code}] ${item.name}` : item.name;
       const optionText = item.options?.length
         ? `\n   选项: ${item.options.map(option => `${option.groupName}-${option.name}${option.priceDelta > 0 ? `(+RM ${Number(option.priceDelta).toFixed(2)})` : ''}`).join(', ')}`
         : '';
       const noteText = item.note ? `\n   单品备注: ${item.note}` : '';
-      return `${index + 1}. ${item.name} ×${item.quantity}\n   RM ${Number(item.lineTotal).toFixed(2)}${optionText}${noteText}`;
+      return `${index + 1}. ${itemName} ×${item.quantity}\n   RM ${Number(item.lineTotal).toFixed(2)}${optionText}${noteText}`;
     })
     .join('\n');
 

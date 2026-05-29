@@ -1,5 +1,6 @@
 create table if not exists public.menu_items (
   id integer primary key,
+  item_code text,
   name text not null,
   en_name text not null,
   description text not null,
@@ -21,6 +22,8 @@ create table if not exists public.menu_items (
 
 create index if not exists menu_items_active_sort_idx on public.menu_items (active, sort_order, id);
 create index if not exists menu_items_category_idx on public.menu_items (category);
+alter table public.menu_items add column if not exists item_code text;
+create unique index if not exists menu_items_item_code_unique_idx on public.menu_items (item_code) where item_code is not null;
 alter table public.menu_items add column if not exists translations jsonb not null default '{}'::jsonb;
 
 insert into public.menu_items (
@@ -140,6 +143,40 @@ from (
 ) as seed(id, translations)
 where item.id = seed.id;
 
+update public.menu_items as item
+set item_code = seed.item_code,
+    updated_at = now()
+from (
+  values
+    ('原味燕窝', 'Y1'),
+    ('泡参燕窝', 'Y2'),
+    ('冬瓜罗汉果', 'D3'),
+    ('豆豉咸鱼蒸花腩', 'N1'),
+    ('冬菇滑鸡', 'N3'),
+    ('豆豉蒸排骨', 'N4'),
+    ('红烧牛肉', 'N5'),
+    ('红烧五花肉', 'N6'),
+    ('咖喱排骨', 'N7'),
+    ('辣味啤酒鸭', 'N9'),
+    ('石磨黑芝麻糊', 'W3'),
+    ('香滑花生糊', 'W5'),
+    ('绿豆沙西米露', 'W6'),
+    ('紫薯银耳羹', 'W9'),
+    ('卤猪脚', 'B1'),
+    ('猪脚醋', 'B2'),
+    ('肉骨茶', 'B3'),
+    ('胡椒猪肚鸡汤', 'B4'),
+    ('莲花汤', 'S12'),
+    ('老黄瓜汤', 'S13'),
+    ('药材乌鸡汤', 'S15'),
+    ('胡椒猪肚汤', 'S16'),
+    ('参须鸡汤', 'S17'),
+    ('ABC汤', 'S18'),
+    ('十全大补汤', 'S19'),
+    ('西洋菜汤', 'S20')
+) as seed(name, item_code)
+where item.name = seed.name;
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_no text not null unique,
@@ -225,6 +262,7 @@ create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
   menu_item_id text not null,
+  item_code text,
   name text not null,
   unit_base_price numeric(10, 2),
   unit_options_total numeric(10, 2) not null default 0,
@@ -237,6 +275,7 @@ create table if not exists public.order_items (
 );
 
 alter table public.order_items add column if not exists unit_base_price numeric(10, 2);
+alter table public.order_items add column if not exists item_code text;
 alter table public.order_items add column if not exists unit_options_total numeric(10, 2) not null default 0;
 alter table public.order_items add column if not exists selected_options jsonb not null default '[]'::jsonb;
 alter table public.order_items add column if not exists item_note text;

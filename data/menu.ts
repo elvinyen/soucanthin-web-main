@@ -1,5 +1,6 @@
 export interface MenuItem {
   id: number;
+  code?: string;
   name: string;
   enName: string;
   description: string;
@@ -38,6 +39,7 @@ export interface CartOption {
 export interface CartLine {
   lineId: string;
   itemId: number;
+  code?: string;
   name: string;
   image: string;
   basePrice: number;
@@ -51,6 +53,7 @@ export interface CartLine {
 export const MENU_ITEMS: MenuItem[] = [
   {
     id: 1,
+    code: 'S19',
     name: '十全大补汤',
     enName: 'Herbal Pork Stew',
     description: '温润药材慢炖汤底，适合夜宵后补气暖胃。',
