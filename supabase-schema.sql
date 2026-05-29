@@ -34,7 +34,7 @@ insert into public.menu_items (
   (4, '泰式罗勒叶炒肉', 'Pad Krapow Moo', '罗勒香气浓郁，适合配饭的热炒主菜。', '大火快炒猪肉碎、罗勒叶、蒜末与泰式酱汁，香气浓郁，默认微辣，适合作为配饭主菜。', 22, '泰式菜', 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/4-dish.jpg', array['热炒', '微辣'], false, false, '[{"id":"add-on","name":"加料","type":"multiple","options":[{"id":"egg","name":"加煎蛋","priceDelta":3},{"id":"rice","name":"加白饭","priceDelta":3}]}]'::jsonb, 30, true),
   (5, '越南牛肉粉', 'Beef Pho', '清香牛骨汤底，搭配河粉和牛肉片。', '牛骨汤底长时间熬煮，配河粉、牛肉片、香草与青柠。汤感清爽，适合想吃主食但不想太重口味的顾客。', 26, '越南菜', 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/5-dish.jpg', array['汤粉', '清爽'], false, false, '[{"id":"add-on","name":"加料","type":"multiple","options":[{"id":"beef","name":"加牛肉片","priceDelta":7},{"id":"noodle","name":"加河粉","priceDelta":4}]}]'::jsonb, 40, true),
   (6, '越南春卷', 'Fresh Spring Rolls', '清爽蔬菜与米纸卷，适合分享的小食。', '米纸包裹新鲜蔬菜、香草与爽口配料，搭配蘸酱食用。适合多人分享或作为清爽前菜。', 18, '越南菜', 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/6-dish.jpg', array['小食', '清爽'], false, false, '[{"id":"sauce","name":"蘸酱","type":"single","options":[{"id":"peanut","name":"花生酱","priceDelta":0},{"id":"fish","name":"鱼露酸甜酱","priceDelta":0}]}]'::jsonb, 50, true),
-  (7, '泰式奶茶', 'Thai Milk Tea', '经典泰茶香气，甜度浓郁顺口。', '经典泰式红茶搭配炼奶，茶香明显，口感浓郁。可选择甜度和冰量。', 12, '饮料', 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/7-dish.jpg', array['冰饮'], true, false, '[{"id":"sweetness","name":"甜度","type":"single","options":[{"id":"less","name":"少甜","priceDelta":0},{"id":"regular","name":"正常甜","priceDelta":0}]},{"id":"ice","name":"冰量","type":"single","options":[{"id":"less","name":"少冰","priceDelta":0},{"id":"regular","name":"正常冰","priceDelta":0}]}]'::jsonb, 60, true),
+  (7, '红毛榴莲水', 'Soursop Drink', '红毛榴莲果香清甜，调成清爽果饮，入口顺滑不腻。', '以红毛榴莲果肉风味调制，带自然热带果香与柔和甜感，冰饮更清爽，适合搭配热菜或饭后解腻。', 12, '饮料', 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/hong-mao-liu-lian-shui.jpg', array['果香', '清爽'], true, false, '[]'::jsonb, 60, true),
   (8, '咸柠七', 'Salted Lime 7-Up', '咸柠檬配汽水，解腻醒胃。', '咸柠檬与七喜调制，咸香带酸甜，适合搭配重口味热炒或酸辣汤。', 9, '饮料', 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/8-dish.jpg', array['冰饮', '清爽'], false, false, '[{"id":"ice","name":"冰量","type":"single","options":[{"id":"less","name":"少冰","priceDelta":0},{"id":"regular","name":"正常冰","priceDelta":0}]}]'::jsonb, 70, true)
 on conflict (id) do update set
   name = excluded.name,
@@ -131,9 +131,9 @@ from (
       "vi": {"name":"Gỏi cuốn","enName":"","description":"Rau tươi cuốn bánh tráng, món nhẹ phù hợp để chia sẻ.","detail":"Bánh tráng cuốn rau tươi, rau thơm và nhân thanh mát, dùng cùng nước chấm. Phù hợp để chia sẻ hoặc làm món khai vị nhẹ.","category":"Món Việt","tags":["Món nhẹ","Thanh mát"],"optionGroups":[{"id":"sauce","name":"Nước chấm","options":[{"id":"peanut","name":"Sốt đậu phộng"},{"id":"fish","name":"Nước mắm chua ngọt"}]}]}
     }$$::jsonb),
     (7, $${
-      "en": {"name":"Thai Milk Tea","enName":"","description":"Classic Thai tea aroma with a rich, smooth sweetness.","detail":"Classic Thai black tea with condensed milk. Bold tea aroma and rich texture, with sweetness and ice level options.","category":"Drinks","tags":["Iced drink"],"optionGroups":[{"id":"sweetness","name":"Sweetness","options":[{"id":"less","name":"Less sweet"},{"id":"regular","name":"Regular sweet"}]},{"id":"ice","name":"Ice level","options":[{"id":"less","name":"Less ice"},{"id":"regular","name":"Regular ice"}]}]},
-      "th": {"name":"ชาไทยนม","enName":"","description":"กลิ่นชาไทยคลาสสิก หวานมันกลมกล่อม","detail":"ชาแดงไทยคลาสสิกผสมนมข้น กลิ่นชาชัด รสเข้มข้น สามารถเลือกระดับความหวานและน้ำแข็งได้","category":"เครื่องดื่ม","tags":["เครื่องดื่มเย็น"],"optionGroups":[{"id":"sweetness","name":"ระดับความหวาน","options":[{"id":"less","name":"หวานน้อย"},{"id":"regular","name":"หวานปกติ"}]},{"id":"ice","name":"ระดับน้ำแข็ง","options":[{"id":"less","name":"น้ำแข็งน้อย"},{"id":"regular","name":"น้ำแข็งปกติ"}]}]},
-      "vi": {"name":"Trà sữa Thái","enName":"","description":"Hương trà Thái cổ điển, ngọt béo và mượt.","detail":"Trà đỏ Thái cổ điển pha cùng sữa đặc, hương trà rõ và vị đậm. Có thể chọn độ ngọt và lượng đá.","category":"Đồ uống","tags":["Đồ uống đá"],"optionGroups":[{"id":"sweetness","name":"Độ ngọt","options":[{"id":"less","name":"Ít ngọt"},{"id":"regular","name":"Ngọt thường"}]},{"id":"ice","name":"Lượng đá","options":[{"id":"less","name":"Ít đá"},{"id":"regular","name":"Đá thường"}]}]}
+      "en": {"name":"Soursop Drink","enName":"","description":"Sweet tropical soursop flavor made into a refreshing fruit drink.","detail":"Made with soursop fruit flavor for a naturally tropical aroma and gentle sweetness. Best served chilled, refreshing with hot dishes or after a meal.","category":"Drinks","tags":["Fruity","Refreshing"],"optionGroups":[]},
+      "th": {"name":"น้ำทุเรียนเทศ","enName":"","description":"เครื่องดื่มผลไม้รสทุเรียนเทศ หอมหวานสดชื่น","detail":"ปรุงด้วยรสผลทุเรียนเทศ ให้กลิ่นผลไม้เมืองร้อนและความหวานนุ่ม ดื่มเย็นแล้วสดชื่น เหมาะกับอาหารจานร้อนหรือหลังมื้ออาหาร","category":"เครื่องดื่ม","tags":["กลิ่นผลไม้","สดชื่น"],"optionGroups":[]},
+      "vi": {"name":"Nước mãng cầu xiêm","enName":"","description":"Hương mãng cầu xiêm nhiệt đới, thanh mát và ngọt dịu.","detail":"Pha với hương vị mãng cầu xiêm, có mùi trái cây nhiệt đới tự nhiên và vị ngọt nhẹ. Uống lạnh rất thanh mát, hợp dùng với món nóng hoặc sau bữa ăn.","category":"Đồ uống","tags":["Vị trái cây","Thanh mát"],"optionGroups":[]}
     }$$::jsonb),
     (8, $${
       "en": {"name":"Salted Lime 7-Up","enName":"","description":"Salted lime with soda, refreshing and cuts through richness.","detail":"Salted lime mixed with 7-Up for a salty, sour, and sweet drink. Great with bold stir-fries or spicy-sour soups.","category":"Drinks","tags":["Iced drink","Refreshing"],"optionGroups":[{"id":"ice","name":"Ice level","options":[{"id":"less","name":"Less ice"},{"id":"regular","name":"Regular ice"}]}]},
@@ -176,6 +176,36 @@ from (
     ('西洋菜汤', 'S20')
 ) as seed(name, item_code)
 where item.name = seed.name;
+
+update public.menu_items
+set name = '海底椰龙眼水',
+    en_name = '',
+    description = '海底椰搭配龙眼熬制，清甜润喉，口感温和。',
+    detail = '以海底椰和龙眼慢煮成清润饮品，带淡淡果甜与草本清香，入口温和顺滑，适合饭后或天气炎热时饮用。',
+    image_url = 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/hai-di-ye-long-yan-shui.jpg',
+    tags = array['清润', '龙眼'],
+    translations = $${
+      "en": {"name":"Sea Coconut Longan Drink","enName":"","description":"Sea coconut and longan brewed into a gentle, throat-soothing sweet drink.","detail":"Slow-brewed with sea coconut and longan for a clear, soothing drink with light fruit sweetness and herbal aroma. Smooth and refreshing after meals or on hot days.","category":"Herbal Drinks","tags":["Soothing","Longan"]},
+      "th": {"name":"น้ำมะพร้าวทะเลลำไย","enName":"","description":"มะพร้าวทะเลต้มกับลำไย หวานใส ชุ่มคอ รสนุ่ม","detail":"ต้มมะพร้าวทะเลกับลำไยเป็นเครื่องดื่มชุ่มคอ มีกลิ่นสมุนไพรอ่อนๆ และความหวานจากผลไม้ ดื่มง่าย เหมาะหลังอาหารหรือวันที่อากาศร้อน","category":"เครื่องดื่มสมุนไพร","tags":["ชุ่มคอ","ลำไย"]},
+      "vi": {"name":"Nước dừa biển nhãn nhục","enName":"","description":"Dừa biển nấu cùng long nhãn, ngọt thanh và dịu cổ.","detail":"Dừa biển và long nhãn được nấu chậm thành thức uống thanh mát, có vị ngọt trái cây nhẹ và hương thảo mộc dịu. Phù hợp sau bữa ăn hoặc trong ngày nóng.","category":"Đồ uống thảo mộc","tags":["Thanh nhuận","Long nhãn"]}
+    }$$::jsonb,
+    updated_at = now()
+where id = 1025;
+
+update public.menu_items
+set name = '红毛榴莲水',
+    en_name = '',
+    description = '红毛榴莲果香清甜，调成清爽果饮，入口顺滑不腻。',
+    detail = '以红毛榴莲果肉风味调制，带自然热带果香与柔和甜感，冰饮更清爽，适合搭配热菜或饭后解腻。',
+    image_url = 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/hong-mao-liu-lian-shui.jpg',
+    tags = array['果香', '清爽'],
+    translations = $${
+      "en": {"name":"Soursop Drink","enName":"","description":"Sweet tropical soursop flavor made into a refreshing fruit drink.","detail":"Made with soursop fruit flavor for a naturally tropical aroma and gentle sweetness. Best served chilled, refreshing with hot dishes or after a meal.","category":"Herbal Drinks","tags":["Fruity","Refreshing"]},
+      "th": {"name":"น้ำทุเรียนเทศ","enName":"","description":"เครื่องดื่มผลไม้รสทุเรียนเทศ หอมหวานสดชื่น","detail":"ปรุงด้วยรสผลทุเรียนเทศ ให้กลิ่นผลไม้เมืองร้อนและความหวานนุ่ม ดื่มเย็นแล้วสดชื่น เหมาะกับอาหารจานร้อนหรือหลังมื้ออาหาร","category":"เครื่องดื่มสมุนไพร","tags":["กลิ่นผลไม้","สดชื่น"]},
+      "vi": {"name":"Nước mãng cầu xiêm","enName":"","description":"Hương mãng cầu xiêm nhiệt đới, thanh mát và ngọt dịu.","detail":"Pha với hương vị mãng cầu xiêm, có mùi trái cây nhiệt đới tự nhiên và vị ngọt nhẹ. Uống lạnh rất thanh mát, hợp dùng với món nóng hoặc sau bữa ăn.","category":"Đồ uống thảo mộc","tags":["Vị trái cây","Thanh mát"]}
+    }$$::jsonb,
+    updated_at = now()
+where id = 1039;
 
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),

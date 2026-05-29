@@ -176,34 +176,15 @@ export const MENU_ITEMS: MenuItem[] = [
   },
   {
     id: 7,
-    name: '泰式奶茶',
-    enName: 'Thai Milk Tea',
-    description: '经典泰茶香气，甜度浓郁顺口。',
-    detail: '经典泰式红茶搭配炼奶，茶香明显，口感浓郁。可选择甜度和冰量。',
+    name: '红毛榴莲水',
+    enName: 'Soursop Drink',
+    description: '红毛榴莲果香清甜，调成清爽果饮，入口顺滑不腻。',
+    detail: '以红毛榴莲果肉风味调制，带自然热带果香与柔和甜感，冰饮更清爽，适合搭配热菜或饭后解腻。',
     price: 12,
     category: '饮料',
-    image: 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/7-dish.jpg',
-    tags: ['冰饮'],
-    optionGroups: [
-      {
-        id: 'sweetness',
-        name: '甜度',
-        type: 'single',
-        options: [
-          { id: 'less', name: '少甜', priceDelta: 0 },
-          { id: 'regular', name: '正常甜', priceDelta: 0 },
-        ],
-      },
-      {
-        id: 'ice',
-        name: '冰量',
-        type: 'single',
-        options: [
-          { id: 'less', name: '少冰', priceDelta: 0 },
-          { id: 'regular', name: '正常冰', priceDelta: 0 },
-        ],
-      },
-    ],
+    image: 'https://dknmznkimydnkcmbejqi.supabase.co/storage/v1/object/public/menu-items/hong-mao-liu-lian-shui.jpg',
+    tags: ['果香', '清爽'],
+    optionGroups: [],
     recommended: true,
   },
   {
