@@ -1,7 +1,12 @@
 import { config as loadEnv } from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 
+import adminAuth from '../api/admin-auth';
+import adminMenuImage from '../api/admin-menu-image';
 import adminOrderPaymentReview from '../api/admin-order-payment-review';
+import adminMenuCategories from '../api/admin-menu-categories';
+import adminMenuItems from '../api/admin-menu-items';
+import adminOrders from '../api/admin-orders';
 import adminWalletRechargeReview from '../api/admin-wallet-recharge-review';
 import authLogout from '../api/auth-logout';
 import authMe from '../api/auth-me';
@@ -59,6 +64,11 @@ mount('/api/wallet/recharge/tng', walletRechargeTng);
 mount('/api/wallet/transactions', walletTransactions);
 mount('/api/admin/order-payment-review', adminOrderPaymentReview);
 mount('/api/admin/wallet-recharge-review', adminWalletRechargeReview);
+mount('/api/admin/auth', adminAuth);
+mount('/api/admin/menu-categories', adminMenuCategories);
+mount('/api/admin/menu-image', adminMenuImage);
+mount('/api/admin/menu-items', adminMenuItems);
+mount('/api/admin/orders', adminOrders);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ success: false, error: 'API route not found' });

@@ -21,6 +21,11 @@ const apiRoutes: Record<string, string> = {
   '/api/wallet/transactions': '/api/wallet-transactions.ts',
   '/api/admin/order-payment-review': '/api/admin-order-payment-review.ts',
   '/api/admin/wallet-recharge-review': '/api/admin-wallet-recharge-review.ts',
+  '/api/admin/auth': '/api/admin-auth.ts',
+  '/api/admin/menu-categories': '/api/admin-menu-categories.ts',
+  '/api/admin/menu-image': '/api/admin-menu-image.ts',
+  '/api/admin/menu-items': '/api/admin-menu-items.ts',
+  '/api/admin/orders': '/api/admin-orders.ts',
 };
 
 export default defineConfig(({ mode }) => {

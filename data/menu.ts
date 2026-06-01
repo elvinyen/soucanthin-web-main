@@ -2,7 +2,6 @@ export interface MenuItem {
   id: number;
   code?: string;
   name: string;
-  enName: string;
   description: string;
   detail: string;
   price: number;
@@ -55,7 +54,6 @@ export const MENU_ITEMS: MenuItem[] = [
     id: 1,
     code: 'S19',
     name: '十全大补汤',
-    enName: 'Herbal Pork Stew',
     description: '温润药材慢炖汤底，适合夜宵后补气暖胃。',
     detail: '以党参、当归、黄芪等温补药材慢火熬煮，汤底清润不腻，适合想要暖胃补气的夜宵时段。可按口味加饭或加肉。',
     price: 28,
@@ -78,7 +76,6 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 3,
     name: '冬阴功海鲜汤',
-    enName: 'Seafood Tom Yum',
     description: '酸辣泰式汤底配海鲜，入口鲜明开胃。',
     detail: '泰式香料、香茅、南姜与青柠熬出鲜明酸辣汤底，搭配虾、鱿鱼与贝类。可调整辣度，也可额外加海鲜。',
     price: 38,
@@ -111,7 +108,6 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 4,
     name: '泰式罗勒叶炒肉',
-    enName: 'Pad Krapow Moo',
     description: '罗勒香气浓郁，适合配饭的热炒主菜。',
     detail: '大火快炒猪肉碎、罗勒叶、蒜末与泰式酱汁，香气浓郁，默认微辣，适合作为配饭主菜。',
     price: 22,
@@ -133,7 +129,6 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 5,
     name: '越南牛肉粉',
-    enName: 'Beef Pho',
     description: '清香牛骨汤底，搭配河粉和牛肉片。',
     detail: '牛骨汤底长时间熬煮，配河粉、牛肉片、香草与青柠。汤感清爽，适合想吃主食但不想太重口味的顾客。',
     price: 26,
@@ -155,7 +150,6 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 6,
     name: '越南春卷',
-    enName: 'Fresh Spring Rolls',
     description: '清爽蔬菜与米纸卷，适合分享的小食。',
     detail: '米纸包裹新鲜蔬菜、香草与爽口配料，搭配蘸酱食用。适合多人分享或作为清爽前菜。',
     price: 18,
@@ -177,7 +171,6 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 7,
     name: '红毛榴莲水',
-    enName: 'Soursop Drink',
     description: '红毛榴莲果香清甜，调成清爽果饮，入口顺滑不腻。',
     detail: '以红毛榴莲果肉风味调制，带自然热带果香与柔和甜感，冰饮更清爽，适合搭配热菜或饭后解腻。',
     price: 12,
@@ -190,7 +183,6 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     id: 8,
     name: '咸柠七',
-    enName: 'Salted Lime 7-Up',
     description: '咸柠檬配汽水，解腻醒胃。',
     detail: '咸柠檬与七喜调制，咸香带酸甜，适合搭配重口味热炒或酸辣汤。',
     price: 9,

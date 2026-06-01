@@ -16,6 +16,7 @@ import AuthModal from './components/AuthModal';
 import UserCenter, { type UserCenterTab } from './components/UserCenter';
 import UserDropdown from './components/UserDropdown';
 import OrdersPage from './components/OrdersPage';
+import AdminDashboard from './components/AdminDashboard';
 import type { AuthMeResponse } from './types/auth';
 import type { CartLine } from './data/menu';
 import type { BottomTab } from './components/Footer';
@@ -24,6 +25,7 @@ type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
 const App: React.FC = () => {
   const { t } = useTranslation();
+  const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
   const [scrolled, setScrolled] = useState(false);
   const [view, setView] = useState<MainView>('home');
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -154,6 +156,10 @@ const App: React.FC = () => {
     if (tab === 'mine') setUserCenterTab('profile');
     if (tab === 'orders' || tab === 'mine') refreshSession();
   };
+
+  if (isAdminRoute) {
+    return <AdminDashboard />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-white shadow-xl relative overflow-x-hidden">

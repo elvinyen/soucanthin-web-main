@@ -3,7 +3,6 @@ import type { LanguageCode } from '../types/i18n';
 
 export type MenuTranslation = {
   name?: string;
-  enName?: string;
   description?: string;
   detail?: string;
   category?: string;
@@ -24,7 +23,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   1: {
     en: {
       name: 'Herbal Pork Stew',
-      enName: '',
       description: 'A gentle herbal slow-cooked soup for late-night warmth and nourishment.',
       detail: 'Slow-cooked with codonopsis, angelica, astragalus, and other warming herbs. The broth is clear and light, ideal when you want something soothing at night. Add rice or pork slices to taste.',
       category: 'Soups',
@@ -33,7 +31,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'ซุปหมูสมุนไพร',
-      enName: '',
       description: 'ซุปสมุนไพรเคี่ยวช้า อุ่นท้อง เหมาะสำหรับมื้อดึก',
       detail: 'เคี่ยวช้าด้วยตังเซียม ตังกุย หวงฉี และสมุนไพรบำรุงอื่นๆ น้ำซุปใส ไม่เลี่ยน เหมาะสำหรับมื้อดึกที่ต้องการความอุ่นสบาย สามารถเพิ่มข้าวหรือหมูสไลซ์ได้',
       category: 'ซุป',
@@ -42,7 +39,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: 'Súp heo thảo mộc',
-      enName: '',
       description: 'Súp thảo mộc hầm chậm, ấm bụng và nhẹ nhàng cho bữa khuya.',
       detail: 'Hầm chậm với đảng sâm, đương quy, hoàng kỳ và các vị thuốc bổ ấm. Nước súp trong, nhẹ, phù hợp khi muốn ăn khuya thanh dịu. Có thể thêm cơm hoặc thịt heo lát.',
       category: 'Súp',
@@ -53,7 +49,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   3: {
     en: {
       name: 'Seafood Tom Yum',
-      enName: '',
       description: 'Bright spicy-sour Thai broth with seafood.',
       detail: 'Thai aromatics, lemongrass, galangal, and lime create a vivid spicy-sour broth with prawns, squid, and shellfish. Spice level and extra seafood can be adjusted.',
       category: 'Thai Food',
@@ -65,7 +60,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'ต้มยำทะเล',
-      enName: '',
       description: 'ซุปต้มยำรสเปรี้ยวเผ็ดพร้อมซีฟู้ด',
       detail: 'สมุนไพรไทย ตะไคร้ ข่า และมะนาวให้รสเปรี้ยวเผ็ดชัดเจน เสิร์ฟพร้อมกุ้ง ปลาหมึก และหอย ปรับระดับความเผ็ดและเพิ่มซีฟู้ดได้',
       category: 'อาหารไทย',
@@ -77,7 +71,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: 'Tom Yum hải sản',
-      enName: '',
       description: 'Nước súp Thái chua cay rõ vị cùng hải sản.',
       detail: 'Hương liệu Thái, sả, riềng và chanh tạo nước súp chua cay nổi bật, ăn cùng tôm, mực và nghêu sò. Có thể chỉnh độ cay và thêm hải sản.',
       category: 'Món Thái',
@@ -91,7 +84,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   4: {
     en: {
       name: 'Pad Krapow Moo',
-      enName: '',
       description: 'Fragrant Thai basil stir-fry, perfect with rice.',
       detail: 'Minced pork, basil leaves, garlic, and Thai sauce are quickly stir-fried over high heat. Lightly spicy by default and ideal as a rice dish.',
       category: 'Thai Food',
@@ -100,7 +92,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'ผัดกะเพราหมู',
-      enName: '',
       description: 'ผัดกะเพราหอมเข้ม เหมาะทานคู่ข้าว',
       detail: 'หมูสับ ใบกะเพรา กระเทียม และซอสไทย ผัดไฟแรงจนหอม ค่าเริ่มต้นเผ็ดน้อย เหมาะเป็นจานหลักคู่ข้าว',
       category: 'อาหารไทย',
@@ -109,7 +100,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: 'Thịt heo xào húng quế Thái',
-      enName: '',
       description: 'Món xào thơm mùi húng quế Thái, hợp ăn với cơm.',
       detail: 'Thịt heo băm, lá húng quế, tỏi và sốt Thái được xào nhanh lửa lớn. Mặc định hơi cay, phù hợp làm món chính ăn với cơm.',
       category: 'Món Thái',
@@ -120,7 +110,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   5: {
     en: {
       name: 'Beef Pho',
-      enName: '',
       description: 'Clear beef bone broth with rice noodles and sliced beef.',
       detail: 'Long-simmered beef bone broth with rice noodles, sliced beef, herbs, and lime. Light and refreshing when you want a filling but not heavy meal.',
       category: 'Vietnamese Food',
@@ -129,7 +118,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'เฝอเนื้อ',
-      enName: '',
       description: 'น้ำซุปกระดูกเนื้อหอมใส พร้อมเส้นเฝอและเนื้อสไลซ์',
       detail: 'น้ำซุปกระดูกเนื้อเคี่ยวนาน เสิร์ฟกับเส้นเฝอ เนื้อสไลซ์ สมุนไพร และมะนาว รสเบาสดชื่น เหมาะเมื่ออยากทานอาหารหลักที่ไม่หนักเกินไป',
       category: 'อาหารเวียดนาม',
@@ -138,7 +126,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: 'Phở bò',
-      enName: '',
       description: 'Nước dùng xương bò thanh thơm cùng phở và bò lát.',
       detail: 'Nước dùng xương bò hầm lâu, ăn cùng phở, bò lát, rau thơm và chanh. Vị thanh nhẹ, phù hợp khi muốn ăn no nhưng không quá đậm.',
       category: 'Món Việt',
@@ -149,7 +136,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   6: {
     en: {
       name: 'Fresh Spring Rolls',
-      enName: '',
       description: 'Fresh vegetables wrapped in rice paper, great for sharing.',
       detail: 'Rice paper wraps fresh vegetables, herbs, and refreshing fillings, served with dipping sauce. Ideal for sharing or as a light starter.',
       category: 'Vietnamese Food',
@@ -158,7 +144,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'ปอเปี๊ยะสดเวียดนาม',
-      enName: '',
       description: 'ผักสดและแผ่นแป้งข้าว เหมาะเป็นของว่างแบ่งกันทาน',
       detail: 'แผ่นแป้งข้าวห่อผักสด สมุนไพร และไส้รสสดชื่น เสิร์ฟกับน้ำจิ้ม เหมาะสำหรับแบ่งกันหรือเป็นจานเรียกน้ำย่อยเบาๆ',
       category: 'อาหารเวียดนาม',
@@ -167,7 +152,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: 'Gỏi cuốn',
-      enName: '',
       description: 'Rau tươi cuốn bánh tráng, món nhẹ phù hợp để chia sẻ.',
       detail: 'Bánh tráng cuốn rau tươi, rau thơm và nhân thanh mát, dùng cùng nước chấm. Phù hợp để chia sẻ hoặc làm món khai vị nhẹ.',
       category: 'Món Việt',
@@ -178,7 +162,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   7: {
     en: {
       name: 'Soursop Drink',
-      enName: '',
       description: 'Sweet tropical soursop flavor made into a refreshing fruit drink.',
       detail: 'Made with soursop fruit flavor for a naturally tropical aroma and gentle sweetness. Best served chilled, refreshing with hot dishes or after a meal.',
       category: 'Drinks',
@@ -187,7 +170,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'น้ำทุเรียนเทศ',
-      enName: '',
       description: 'เครื่องดื่มผลไม้รสทุเรียนเทศ หอมหวานสดชื่น',
       detail: 'ปรุงด้วยรสผลทุเรียนเทศ ให้กลิ่นผลไม้เมืองร้อนและความหวานนุ่ม ดื่มเย็นแล้วสดชื่น เหมาะกับอาหารจานร้อนหรือหลังมื้ออาหาร',
       category: 'เครื่องดื่ม',
@@ -196,7 +178,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: 'Nước mãng cầu xiêm',
-      enName: '',
       description: 'Hương mãng cầu xiêm nhiệt đới, thanh mát và ngọt dịu.',
       detail: 'Pha với hương vị mãng cầu xiêm, có mùi trái cây nhiệt đới tự nhiên và vị ngọt nhẹ. Uống lạnh rất thanh mát, hợp dùng với món nóng hoặc sau bữa ăn.',
       category: 'Đồ uống',
@@ -207,7 +188,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
   8: {
     en: {
       name: 'Salted Lime 7-Up',
-      enName: '',
       description: 'Salted lime with soda, refreshing and cuts through richness.',
       detail: 'Salted lime mixed with 7-Up for a salty, sour, and sweet drink. Great with bold stir-fries or spicy-sour soups.',
       category: 'Drinks',
@@ -216,7 +196,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     th: {
       name: 'มะนาวดองเซเว่นอัพ',
-      enName: '',
       description: 'มะนาวดองผสมโซดา สดชื่น ตัดเลี่ยน',
       detail: 'มะนาวดองผสมเซเว่นอัพ ให้รสเค็ม เปรี้ยว หวาน เหมาะกับอาหารผัดรสจัดหรือซุปเปรี้ยวเผ็ด',
       category: 'เครื่องดื่ม',
@@ -225,7 +204,6 @@ export const MENU_TRANSLATIONS: Record<number, MenuTranslations> = {
     },
     vi: {
       name: '7-Up chanh muối',
-      enName: '',
       description: 'Chanh muối pha soda, thanh mát và đỡ ngấy.',
       detail: 'Chanh muối pha cùng 7-Up, vị mặn thơm chua ngọt. Hợp dùng với món xào đậm vị hoặc súp chua cay.',
       category: 'Đồ uống',
@@ -245,7 +223,6 @@ export function localizeMenuItem(item: MenuItem, language: LanguageCode): MenuIt
   return {
     ...item,
     name: translation.name || item.name,
-    enName: translation.enName ?? item.enName,
     description: translation.description || item.description,
     detail: translation.detail || item.detail,
     category: translation.category || item.category,

@@ -45,6 +45,7 @@ MOCEAN_BRAND="SoupCanThin"
 MOCEAN_SENDER_ID=""
 SESSION_SECRET="replace-with-a-long-random-secret"
 ADMIN_REVIEW_TOKEN="replace-with-a-long-random-admin-token"
+ADMIN_SESSION_SECRET="replace-with-a-long-random-admin-session-secret"
 VITE_FACEBOOK_URL="https://www.facebook.com/your-page"
 VITE_WHATSAPP_URL="https://wa.me/60123456789"
 ```
@@ -62,6 +63,7 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - `STRIPE_WEBHOOK_SECRET`
 - `MOCEAN_API_TOKEN`
 - `SESSION_SECRET`
+- `ADMIN_SESSION_SECRET`
 - `ADMIN_REVIEW_TOKEN`
 
 前端只允许使用 `VITE_FACEBOOK_URL`、`VITE_WHATSAPP_URL` 这类公开变量。
@@ -90,6 +92,31 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - 其他人先私聊订单机器人并发送 `/start`，系统会把他登记到 `telegram_users` 表。
 - 已有管理员在机器人里发送 `/admin_users`，可以从已登记用户列表里点击按钮设置或取消订单管理员。
 - 被设为管理员后，可以在订单通知按钮里确认订单、开始配送、标记送达、完成或取消订单。
+
+## 后台管理系统
+
+后台入口为：
+
+```text
+http://localhost:3000/admin
+```
+
+首次打开时，如果数据库还没有管理员账号，页面会显示“创建首个管理员”。输入：
+
+- 账号：管理员登录名，例如 `admin`
+- 显示名称：后台显示用名称
+- 密码：至少 8 位
+- Setup Token：环境变量 `ADMIN_REVIEW_TOKEN`
+
+创建成功后，后续登录只需要管理员账号和密码。后台登录状态通过 HttpOnly session cookie 保存，服务端会校验 `admin_sessions`，前端不会接触 `SUPABASE_SERVICE_ROLE_KEY`。
+
+菜单管理支持上传菜品图片。后台会先在浏览器端把原图压缩转换为 WebP，再通过服务端上传到 Supabase Storage 的 `menu-items` bucket。文件名固定为：
+
+```text
+{item_code}.webp
+```
+
+原图最大 8MB，转换后的 WebP 最大 1.5MB。
 
 ## 会员与钱包
 

@@ -316,10 +316,7 @@ function DishDetail({ item, onClose, onAdd }: {
           {item.soldOut && <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px]" />}
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-black/45" />
           <div className="absolute bottom-6 left-6 right-6 text-white">
-            {item.enName.trim() && (
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">{item.enName}</p>
-            )}
-            <h2 className={`${item.enName.trim() ? 'mt-2' : ''} flex flex-wrap items-center gap-2 text-3xl font-bold serif`}>
+            <h2 className="flex flex-wrap items-center gap-2 text-3xl font-bold serif">
               {item.code && (
                 <span className="rounded-full bg-white/20 px-3 py-1 text-sm font-bold leading-5 backdrop-blur">
                   {item.code}
