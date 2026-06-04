@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CartLine, CartOption, MENU_ITEMS, MenuItem } from '../data/menu';
 import { localizeMenuItems } from '../data/menuTranslations';
@@ -18,7 +18,9 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
   const language = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0] as LanguageCode;
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => localizeMenuItems(MENU_ITEMS, language));
   const [activeCategory, setActiveCategory] = useState('');
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const categoryRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
     let mounted = true;
@@ -41,6 +43,13 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
     return Array.from(new Set(menuItems.map(item => item.category).filter(Boolean)));
   }, [menuItems]);
 
+  const categorySections = useMemo(() => {
+    return categoryTabs.map(category => ({
+      category,
+      items: menuItems.filter(item => item.category === category),
+    }));
+  }, [categoryTabs, menuItems]);
+
   useEffect(() => {
     if (!categoryTabs.length) {
       setActiveCategory('');
@@ -55,10 +64,33 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
     if (updatedItem && updatedItem !== selectedItem) setSelectedItem(updatedItem);
   }, [menuItems, selectedItem]);
 
-  const filteredItems = useMemo(
-    () => menuItems.filter(item => item.category === activeCategory),
-    [activeCategory, menuItems],
-  );
+  useEffect(() => {
+    if (!categoryTabs.length) return;
+
+    const updateActiveCategory = () => {
+      const headerOffset = 86;
+      const currentCategory = categoryTabs.reduce((current, category) => {
+        const section = categoryRefs.current[category];
+        if (!section) return current;
+        return section.getBoundingClientRect().top <= headerOffset ? category : current;
+      }, categoryTabs[0]);
+      setActiveCategory(current => current === currentCategory ? current : currentCategory);
+    };
+
+    updateActiveCategory();
+    window.addEventListener('scroll', updateActiveCategory, { passive: true });
+    return () => window.removeEventListener('scroll', updateActiveCategory);
+  }, [categoryTabs]);
+
+  const scrollToCategory = (category: string) => {
+    const section = categoryRefs.current[category];
+    if (!section) return;
+    setActiveCategory(category);
+    setIsCategoryOpen(false);
+    const headerOffset = 78;
+    const top = section.getBoundingClientRect().top + window.scrollY - headerOffset;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  };
 
   const itemQuantity = (id: number) => cart
     .filter(line => line.itemId === id)
@@ -84,104 +116,149 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
     <div className="bg-[#F5F5F5] min-h-screen pb-40">
       <div className="fixed top-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-md border-b border-stone-100/50 shadow-sm max-w-md mx-auto">
         <div className="flex items-center gap-3 px-5 py-3">
-          <div className="flex min-w-0 flex-1 space-x-3 overflow-x-auto no-scrollbar">
-          {categoryTabs.map(cat => (
+          <div className="relative min-w-0 flex-1">
             <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`flex-none px-6 py-2 rounded-full text-xs font-bold tracking-widest transition-all duration-300 ${
-                activeCategory === cat
-                  ? 'bg-[#2D2D2D] text-white shadow-lg'
-                  : 'bg-white text-stone-500 border border-stone-100'
-              }`}
+              type="button"
+              onClick={() => setIsCategoryOpen(prev => !prev)}
+              className="flex min-w-32 max-w-full items-center justify-between gap-3 rounded-full border border-[#2D2D2D] bg-transparent px-6 py-2.5 text-left text-xs font-bold tracking-widest text-[#2D2D2D] transition active:scale-[0.98]"
             >
-              {cat}
+              <span className="min-w-0 truncate">{activeCategory || categoryTabs[0] || ''}</span>
+              <ChevronDown size={15} className={`flex-none transition-transform ${isCategoryOpen ? 'rotate-180' : ''}`} />
             </button>
-          ))}
           </div>
           <LanguageSelector className="flex-none" />
         </div>
+        {isCategoryOpen && (
+          <>
+            <button
+              type="button"
+              aria-label="Close category menu"
+              className="fixed inset-0 top-[4.25rem] cursor-default bg-transparent"
+              onClick={() => setIsCategoryOpen(false)}
+            />
+            <div className="absolute left-5 right-5 top-full z-10 mt-2 rounded-[1.5rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-black/15 backdrop-blur-xl">
+              <div className="flex max-h-72 flex-col gap-2 overflow-y-auto no-scrollbar">
+                {categoryTabs.map(category => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => scrollToCategory(category)}
+                    className={`flex items-center justify-between rounded-full px-4 py-3 text-left text-xs font-bold tracking-widest transition ${
+                      activeCategory === category
+                        ? 'bg-[#2D2D2D] text-white'
+                        : 'bg-[#F5F5F5] text-stone-500 active:bg-stone-100'
+                    }`}
+                  >
+                    <span className="min-w-0 truncate">{category}</span>
+                    {activeCategory === category && <Check size={15} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
-      <div className="px-6 pt-20 pb-8">
-        <div className="grid grid-cols-2 gap-x-5 gap-y-10">
-          {filteredItems.length === 0 && (
-            <div className="col-span-2 rounded-3xl bg-white p-8 text-center text-sm text-stone-400 shadow-sm">
-              {t('menuPage.emptyCategory')}
-            </div>
-          )}
-          {filteredItems.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setSelectedItem(item)}
-              className="flex flex-col animate-fade-in text-left"
+      <div className="px-6 pt-24 pb-8">
+        {categorySections.length === 0 && (
+          <div className="rounded-3xl bg-white p-8 text-center text-sm text-stone-400 shadow-sm">
+            {t('menuPage.emptyCategory')}
+          </div>
+        )}
+        <div className="space-y-12">
+          {categorySections.map(section => (
+            <section
+              key={section.category}
+              ref={(node) => {
+                categoryRefs.current[section.category] = node;
+              }}
+              className="scroll-mt-24"
             >
-              <div className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-md bg-white">
-                <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                {item.recommended && !item.soldOut && (
-                  <span className="absolute left-2 top-2 rounded-full bg-[#C8A97E] px-2 py-1 text-[10px] font-bold text-white shadow">
-                    {t('menuPage.recommended')}
-                  </span>
-                )}
-                {item.soldOut && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-sm font-bold text-stone-700 backdrop-blur-[1px]">
-                    {t('menuPage.soldOut')}
+              <div className="mb-6 flex items-center gap-3">
+                <h3 className="text-xl font-bold tracking-widest text-[#2D2D2D] serif">{section.category}</h3>
+                <span className="h-px flex-1 bg-[#C8A97E]/35" />
+              </div>
+              <div className="grid grid-cols-2 gap-x-5 gap-y-10">
+                {section.items.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelectedItem(item)}
+                    className="flex flex-col animate-fade-in text-left"
+                  >
+                    <div className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-md bg-white">
+                      <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                      {item.recommended && !item.soldOut && (
+                        <span className="absolute left-2 top-2 rounded-full bg-[#C8A97E] px-2 py-1 text-[10px] font-bold text-white shadow">
+                          {t('menuPage.recommended')}
+                        </span>
+                      )}
+                      {item.soldOut && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/65 text-sm font-bold text-stone-700 backdrop-blur-[1px]">
+                          {t('menuPage.soldOut')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 flex flex-1 flex-col items-center text-center">
+                      <h4 className="flex items-center justify-center gap-1.5 text-sm font-bold text-[#2D2D2D] serif">
+                        {item.code && (
+                          <span className="rounded-full bg-[#2D2D2D] px-2 py-0.5 text-[10px] font-bold leading-4 text-white">
+                            {item.code}
+                          </span>
+                        )}
+                        <span>{item.name}</span>
+                      </h4>
+                      <div className="mt-2 flex min-h-6 flex-wrap items-center justify-center gap-1">
+                        {item.tags.map(tag => (
+                          <span key={tag} className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-stone-500 shadow-sm">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="text-sm font-bold text-[#C8A97E] serif mt-2 mb-4">RM {item.price.toFixed(2)}</div>
+
+                      <div className="flex items-center space-x-4 bg-white rounded-full p-1 shadow-sm border border-stone-50">
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeLatestItemQuantity(item.id);
+                          }}
+                          className="w-7 h-7 flex items-center justify-center rounded-full bg-stone-50 text-stone-400 active:scale-90 transition-all"
+                        >
+                          <Minus size={14} />
+                        </span>
+                        <span className="text-sm font-semibold w-4 text-center text-[#2D2D2D]">
+                          {itemQuantity(item.id)}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (!item.soldOut) setSelectedItem(item);
+                          }}
+                          className={`w-7 h-7 flex items-center justify-center rounded-full active:scale-90 transition-all shadow-md ${
+                            item.soldOut
+                              ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                              : 'bg-[#C8A97E] text-white shadow-[#C8A97E]/20'
+                          }`}
+                        >
+                          <Plus size={14} />
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {section.items.length === 0 && (
+                  <div className="col-span-2 rounded-3xl bg-white p-8 text-center text-sm text-stone-400 shadow-sm">
+                    {t('menuPage.emptyCategory')}
                   </div>
                 )}
               </div>
-
-              <div className="mt-4 flex flex-1 flex-col items-center text-center">
-                <h4 className="flex items-center justify-center gap-1.5 text-sm font-bold text-[#2D2D2D] serif">
-                  {item.code && (
-                    <span className="rounded-full bg-[#2D2D2D] px-2 py-0.5 text-[10px] font-bold leading-4 text-white">
-                      {item.code}
-                    </span>
-                  )}
-                  <span>{item.name}</span>
-                </h4>
-                <div className="mt-2 flex min-h-6 flex-wrap items-center justify-center gap-1">
-                  {item.tags.map(tag => (
-                    <span key={tag} className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-stone-500 shadow-sm">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                <div className="text-sm font-bold text-[#C8A97E] serif mt-2 mb-4">RM {item.price.toFixed(2)}</div>
-
-                <div className="flex items-center space-x-4 bg-white rounded-full p-1 shadow-sm border border-stone-50">
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      removeLatestItemQuantity(item.id);
-                    }}
-                    className="w-7 h-7 flex items-center justify-center rounded-full bg-stone-50 text-stone-400 active:scale-90 transition-all"
-                  >
-                    <Minus size={14} />
-                  </span>
-                  <span className="text-sm font-semibold w-4 text-center text-[#2D2D2D]">
-                    {itemQuantity(item.id)}
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (!item.soldOut) setSelectedItem(item);
-                    }}
-                    className={`w-7 h-7 flex items-center justify-center rounded-full active:scale-90 transition-all shadow-md ${
-                      item.soldOut
-                        ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                        : 'bg-[#C8A97E] text-white shadow-[#C8A97E]/20'
-                    }`}
-                  >
-                    <Plus size={14} />
-                  </span>
-                </div>
-              </div>
-            </button>
+            </section>
           ))}
         </div>
       </div>
