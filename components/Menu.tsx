@@ -118,7 +118,7 @@ const Menu: React.FC<MenuProps> = ({ cart, setCart, onViewCart }) => {
               className="flex flex-col animate-fade-in text-left"
             >
               <div className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-md bg-white">
-                <img src={item.image} alt={item.name} className="h-full w-full object-contain" />
+                <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
                 {item.recommended && !item.soldOut && (
                   <span className="absolute left-2 top-2 rounded-full bg-[#C8A97E] px-2 py-1 text-[10px] font-bold text-white shadow">
                     {t('menuPage.recommended')}
@@ -312,7 +312,7 @@ function DishDetail({ item, onClose, onAdd }: {
       </button>
       <div className="h-full overflow-y-auto pb-32 no-scrollbar">
         <div className="relative aspect-square bg-white">
-          <img src={item.image} alt={item.name} className="h-full w-full object-contain" />
+          <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
           {item.soldOut && <div className="absolute inset-0 bg-white/40 backdrop-blur-[1px]" />}
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/5 to-black/45" />
           <div className="absolute bottom-6 left-6 right-6 text-white">
