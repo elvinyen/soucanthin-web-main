@@ -45,7 +45,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   } catch (error) {
     return res.status(400).json({
       success: false,
-      error: error instanceof Error ? error.message : '无法提交 TNG 充值',
+      error: error instanceof Error ? error.message : "无法提交 Touch 'n Go eWallet 充值",
     });
   }
 }
@@ -76,7 +76,7 @@ async function createPendingTngTransaction(params: {
       status: 'pending',
       receipt_url: params.receiptUrl,
       review_token: params.reviewToken,
-      note: 'TNG wallet top up pending review',
+      note: "Touch 'n Go eWallet wallet top up pending review",
     }),
   });
   const record = Array.isArray(result) ? result[0] : null;
@@ -97,7 +97,7 @@ function buildTngReviewMessage(params: {
   const rejectUrl = `${siteUrl}/api/admin/wallet-recharge-review?action=reject&id=${encodeURIComponent(params.transactionId)}&token=${encodeURIComponent(params.reviewToken)}&admin=${encodeURIComponent(adminToken)}`;
 
   return [
-    '[钱包充值审核] TNG 待审核',
+    "[钱包充值审核] Touch 'n Go eWallet 待审核",
     '',
     `流水ID: ${params.transactionId}`,
     `用户手机: ${params.phone}`,

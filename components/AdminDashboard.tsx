@@ -108,6 +108,11 @@ type OrderRow = {
   customer_phone: string;
   table_no?: string | null;
   delivery_address?: string | null;
+  assigned_branch_id?: string | null;
+  assigned_branch_name?: string | null;
+  delivery_distance_km?: number | null;
+  delivery_duration_min?: number | null;
+  delivery_quote_provider?: string | null;
   note?: string | null;
   total: number;
   payable_total?: number | null;
@@ -983,6 +988,12 @@ const AdminDashboard: React.FC = () => {
                         <Badge tone="muted">{labelPayment(order.payment_method)}</Badge>
                       </div>
                       <p className="mt-1 text-sm text-slate-500">{order.customer_name} · {order.customer_phone} · {order.order_type === 'dinein' ? `桌号 ${order.table_no || '-'}` : order.delivery_address}</p>
+                      {order.order_type === 'takeaway' && (
+                        <p className="mt-1 text-xs font-bold text-blue-600">
+                          {order.assigned_branch_name || '未分配门店'}
+                          {formatDeliveryMeta(order)}
+                        </p>
+                      )}
                     </button>
                     <div className="flex items-center justify-between gap-3 md:justify-end">
                       <div className="text-right">
@@ -1044,6 +1055,12 @@ const AdminDashboard: React.FC = () => {
                 <p className="font-bold text-slate-950">{selectedOrder.order.customer_name}</p>
                 <p className="mt-1 text-sm text-slate-400">{selectedOrder.order.customer_phone}</p>
                 <p className="mt-1 text-sm text-slate-400">{selectedOrder.order.order_type === 'dinein' ? `桌号 ${selectedOrder.order.table_no || '-'}` : selectedOrder.order.delivery_address}</p>
+                {selectedOrder.order.order_type === 'takeaway' && (
+                  <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
+                    <p className="font-bold">分配门店：{selectedOrder.order.assigned_branch_name || '-'}</p>
+                    <p>配送距离：{formatNumber(selectedOrder.order.delivery_distance_km, 2)} km · 预计 {formatNumber(selectedOrder.order.delivery_duration_min, 0)} 分钟</p>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">订单状态</label>
@@ -1092,6 +1109,21 @@ function AuthInput({ label, value, onChange, type = 'text', placeholder, autoCom
       <input value={value} onChange={event => onChange(event.target.value)} type={type} placeholder={placeholder} autoComplete={autoComplete} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white" />
     </label>
   );
+}
+
+function formatDeliveryMeta(order: OrderRow) {
+  const distance = Number(order.delivery_distance_km || 0);
+  const duration = Number(order.delivery_duration_min || 0);
+  const parts = [
+    Number.isFinite(distance) && distance > 0 ? `${distance.toFixed(2)} km` : '',
+    Number.isFinite(duration) && duration > 0 ? `${duration.toFixed(0)} 分钟` : '',
+  ].filter(Boolean);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
+function formatNumber(value: number | null | undefined, digits: number) {
+  const numberValue = Number(value || 0);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue.toFixed(digits) : '-';
 }
 
 function createEmptyTranslations(): Record<TranslationLang, MenuTranslationForm> {
@@ -1883,7 +1915,7 @@ function toneForOrder(status: OrderStatus): 'green' | 'red' | 'blue' | 'muted' {
 function labelPayment(method: string) {
   return {
     cash: '现金',
-    tng: 'TNG',
+    tng: "Touch 'n Go eWallet",
     stripe: 'Stripe',
     wallet: '钱包',
   }[method] || method;

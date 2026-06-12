@@ -3,7 +3,7 @@ import type { ApiRequest, ApiResponse, OrderRecord } from './_order-utils';
 import { editTelegramOrderMessage, getOrderItems, getSupabaseConfig, isOrderStatus, recordOrderStatusEvent, supabaseRequest } from './_order-utils';
 import type { OrderStatus } from '../types/order';
 
-const ORDER_SELECT = 'id,order_no,user_id,order_type,payment_method,customer_name,customer_phone,table_no,delivery_address,note,subtotal,delivery_fee,service_charge,total,discount_amount,payable_total,status,payment_status,payment_review_status,receipt_url,notification_status,telegram_chat_id,telegram_message_id,created_at,last_status_changed_at,last_operator_name';
+const ORDER_SELECT = 'id,order_no,user_id,order_type,payment_method,customer_name,customer_phone,table_no,delivery_address,assigned_branch_id,assigned_branch_name,delivery_latitude,delivery_longitude,delivery_distance_km,delivery_duration_min,delivery_quote_provider,note,subtotal,delivery_fee,service_charge,total,discount_amount,payable_total,status,payment_status,payment_review_status,receipt_url,notification_status,telegram_chat_id,telegram_message_id,created_at,last_status_changed_at,last_operator_name';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {

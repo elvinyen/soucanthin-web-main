@@ -49,6 +49,13 @@ export type OrderRecord = {
   customer_phone: string;
   table_no?: string | null;
   delivery_address?: string | null;
+  assigned_branch_id?: string | null;
+  assigned_branch_name?: string | null;
+  delivery_latitude?: number | null;
+  delivery_longitude?: number | null;
+  delivery_distance_km?: number | null;
+  delivery_duration_min?: number | null;
+  delivery_quote_provider?: string | null;
   note?: string | null;
   subtotal: number;
   delivery_fee?: number;
@@ -91,8 +98,6 @@ export type OrderItemRecord = {
 
 const ORDER_TYPES: OrderType[] = ['dinein', 'takeaway'];
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'tng', 'stripe', 'wallet'];
-const TAKEAWAY_DELIVERY_FEE = 12;
-
 export function getSupabaseConfig() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -147,7 +152,7 @@ export function validateOrder(order: Order | undefined, allowedPaymentMethods = 
 }
 
 export function validateReceiptImage(receiptImage?: ReceiptImage) {
-  if (!receiptImage) return 'TNG receipt image is required';
+  if (!receiptImage) return "Touch 'n Go eWallet receipt image is required";
   if (!receiptImage.fileName?.trim()) return 'Receipt file name is required';
   if (!['image/jpeg', 'image/png'].includes(receiptImage.mimeType)) {
     return 'Receipt must be a JPG or PNG image';
@@ -162,8 +167,8 @@ export function validateReceiptImage(receiptImage?: ReceiptImage) {
 
 export function calculateTotals(order: Order) {
   const subtotal = roundMoney(order.items.reduce((sum, item) => sum + item.price * item.qty, 0));
-  const deliveryFee = order.orderType === 'takeaway' ? TAKEAWAY_DELIVERY_FEE : 0;
-  const serviceCharge = roundMoney(subtotal * 0.06);
+  const deliveryFee = order.orderType === 'takeaway' ? roundMoney(Math.max(Number(order.deliveryFee || 0), 0)) : 0;
+  const serviceCharge = 0;
   const total = roundMoney(subtotal + deliveryFee + serviceCharge);
   const discountAmount = roundMoney(Math.min(Math.max(Number(order.discountAmount || 0), 0), total));
   const payableTotal = roundMoney(Math.max(total - discountAmount, 0));
@@ -195,6 +200,13 @@ export async function createOrderWithItems(params: {
     customer_phone: params.order.customer.phone.trim(),
     table_no: params.order.orderType === 'dinein' ? params.order.dineIn?.tableNo.trim() : null,
     delivery_address: params.order.orderType === 'takeaway' ? params.order.takeaway?.address.trim() : null,
+    assigned_branch_id: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.branchId || null : null,
+    assigned_branch_name: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.branchName || null : null,
+    delivery_latitude: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.addressLatitude ?? null : null,
+    delivery_longitude: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.addressLongitude ?? null : null,
+    delivery_distance_km: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.distanceKm ?? null : null,
+    delivery_duration_min: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.durationMin ?? null : null,
+    delivery_quote_provider: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.provider || null : null,
     note: params.order.note?.trim() || null,
     subtotal,
     delivery_fee: deliveryFee,
@@ -214,6 +226,7 @@ export async function createOrderWithItems(params: {
     source_payload: {
       ...params.order,
       deliveryFee,
+      deliveryQuote: params.order.deliveryQuote,
       discountAmount,
       payableTotal,
       receiptImage: params.order.receiptImage ? {
@@ -456,6 +469,9 @@ export async function notifyStaffFromOrder(order: Order, orderNo: string, extra:
     customerPhone: order.customer.phone,
     tableNo: order.orderType === 'dinein' ? order.dineIn?.tableNo : null,
     deliveryAddress: order.orderType === 'takeaway' ? order.takeaway?.address : null,
+    assignedBranchName: order.orderType === 'takeaway' ? order.deliveryQuote?.branchName : null,
+    deliveryDistanceKm: order.orderType === 'takeaway' ? order.deliveryQuote?.distanceKm : null,
+    deliveryDurationMin: order.orderType === 'takeaway' ? order.deliveryQuote?.durationMin : null,
     items: order.items.map(item => ({
       code: item.code,
       name: item.name,
@@ -494,6 +510,9 @@ export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItem
     customerPhone: order.customer_phone,
     tableNo: order.table_no,
     deliveryAddress: order.delivery_address,
+    assignedBranchName: order.assigned_branch_name,
+    deliveryDistanceKm: order.delivery_distance_km,
+    deliveryDurationMin: order.delivery_duration_min,
     items: items.map(item => ({
       code: item.item_code || undefined,
       name: item.name,
@@ -536,6 +555,9 @@ export async function editTelegramOrderMessage(order: OrderRecord, items: OrderI
     customerPhone: order.customer_phone,
     tableNo: order.table_no,
     deliveryAddress: order.delivery_address,
+    assignedBranchName: order.assigned_branch_name,
+    deliveryDistanceKm: order.delivery_distance_km,
+    deliveryDurationMin: order.delivery_duration_min,
     items: items.map(item => ({
       code: item.item_code || undefined,
       name: item.name,
@@ -713,6 +735,9 @@ function buildStaffMessage(params: {
   customerPhone: string;
   tableNo?: string | null;
   deliveryAddress?: string | null;
+  assignedBranchName?: string | null;
+  deliveryDistanceKm?: number | null;
+  deliveryDurationMin?: number | null;
   items: {
     code?: string;
     name: string;
@@ -747,9 +772,14 @@ function buildStaffMessage(params: {
 
   const actionText = staffActionFor(params.paymentMethod);
   const locationText = params.orderType === 'dinein'
-    ? `桌号：${params.tableNo || '-'}`
-    : `地址：${params.deliveryAddress || '-'}`;
-  const receiptText = params.receiptUrl ? `\nTNG截图: ${params.receiptUrl}` : '';
+    ? [`桌号：${params.tableNo || '-'}`]
+    : [
+        `分配门店：${params.assignedBranchName || '-'}`,
+        `地址：${params.deliveryAddress || '-'}`,
+        `配送距离：${formatOptionalNumber(params.deliveryDistanceKm, 'km')}`,
+        `预计时间：${formatOptionalNumber(params.deliveryDurationMin, '分钟')}`,
+      ];
+  const receiptText = params.receiptUrl ? `\nTouch 'n Go eWallet 截图: ${params.receiptUrl}` : '';
   const reviewText = params.approveUrl && params.rejectUrl
     ? `\n\n[付款审核]\n通过: ${params.approveUrl}\n拒绝: ${params.rejectUrl}`
     : '';
@@ -779,7 +809,7 @@ function buildStaffMessage(params: {
     `👤 顾客资料`,
     `姓名：${params.customerName}`,
     `电话：${params.customerPhone}`,
-    locationText,
+    ...locationText,
     ``,
     `🍲 菜品明细`,
     `---------------`,
@@ -789,7 +819,6 @@ function buildStaffMessage(params: {
     `💰 金额明细`,
     `小计：RM ${Number(params.subtotal).toFixed(2)}`,
     `配送费：RM ${Number(params.deliveryFee || 0).toFixed(2)}`,
-    `SST 6%：RM ${Number(params.serviceCharge).toFixed(2)}`,
     `原价总额：RM ${Number(params.total).toFixed(2)}`,
     `优惠抵扣：RM ${Number(params.discountAmount || 0).toFixed(2)}`,
     `实付金额：RM ${Number(params.payableTotal ?? params.total).toFixed(2)}`,
@@ -859,7 +888,7 @@ function reviewStatusFor(paymentMethod: PaymentMethod): PaymentReviewStatus {
 
 function staffActionFor(paymentMethod: PaymentMethod) {
   if (paymentMethod === 'cash') return '准备订单，柜台/送达时收款';
-  if (paymentMethod === 'tng') return '先审核TNG付款截图，再处理订单';
+  if (paymentMethod === 'tng') return "先审核 Touch 'n Go eWallet 付款截图，再处理订单";
   if (paymentMethod === 'wallet') return '钱包已付款，直接处理订单';
   return 'Stripe已付款，直接处理订单';
 }
@@ -888,13 +917,19 @@ function formatMalaysiaDate(value: Date) {
   });
 }
 
+function formatOptionalNumber(value: number | null | undefined, unit: string) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return '-';
+  return `${numberValue.toFixed(unit === 'km' ? 2 : 0)} ${unit}`;
+}
+
 function labelOrderType(orderType: OrderType) {
   return orderType === 'dinein' ? '堂食' : '外卖';
 }
 
 function labelPaymentMethod(paymentMethod: PaymentMethod) {
   if (paymentMethod === 'cash') return '现金';
-  if (paymentMethod === 'tng') return 'TNG转账';
+  if (paymentMethod === 'tng') return "Touch 'n Go eWallet 转账";
   if (paymentMethod === 'wallet') return '钱包余额';
   return 'Stripe线上付款';
 }

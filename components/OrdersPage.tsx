@@ -24,7 +24,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
 
   if (!session.authenticated) {
     return (
-      <div className="min-h-screen bg-stone-50 px-7 pb-28 pt-8">
+      <div className="min-h-screen bg-stone-50 px-6 pb-28 pt-7">
         <PageTitle t={t} />
         <div className="mt-10 rounded-[2rem] bg-white p-6 text-center shadow-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2D2D2D] text-[#C8A97E]">
@@ -129,8 +129,7 @@ const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory
 
 const PageTitle = ({ t }: { t: TFunction }) => (
   <div>
-    <p className="text-[10px] uppercase tracking-[0.24em] text-stone-400">Orders</p>
-    <h1 className="serif mt-1 text-2xl font-bold text-[#2D2D2D]">{t('common.orders')}</h1>
+    <h1 className="serif text-2xl font-bold text-[#2D2D2D]">{t('common.orders')}</h1>
   </div>
 );
 

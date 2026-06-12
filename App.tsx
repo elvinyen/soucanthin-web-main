@@ -20,6 +20,7 @@ import AdminDashboard from './components/AdminDashboard';
 import type { AuthMeResponse } from './types/auth';
 import type { CartLine } from './data/menu';
 import type { BottomTab } from './components/Footer';
+import type { OrderType } from './types/order';
 
 type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
@@ -36,6 +37,10 @@ const App: React.FC = () => {
   const [userCenterTab, setUserCenterTab] = useState<UserCenterTab>('profile');
   const [session, setSession] = useState<AuthMeResponse>({ success: true, authenticated: false });
   const [tableNumber, setTableNumber] = useState<string | null>(null);
+  const [orderType, setOrderType] = useState<OrderType>('takeaway');
+  const [tableNo, setTableNo] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryAddressLabel, setDeliveryAddressLabel] = useState('');
   const [userCenterNotice, setUserCenterNotice] = useState('');
   const [appNotice, setAppNotice] = useState('');
 
@@ -47,6 +52,8 @@ const App: React.FC = () => {
     const walletTransactionId = params.get('tx');
     if (table) {
       setTableNumber(table);
+      setTableNo(table);
+      setOrderType('dinein');
       setView('menu');
     }
     if (walletStatus === 'stripe-success') {
@@ -102,6 +109,15 @@ const App: React.FC = () => {
   useEffect(() => {
     refreshSession();
   }, []);
+
+  useEffect(() => {
+    if (deliveryAddress.trim()) return;
+    const defaultAddress = (session.addresses || []).find(item => item.isDefault);
+    if (defaultAddress?.address) {
+      setDeliveryAddress(defaultAddress.address);
+      setDeliveryAddressLabel(defaultAddress.label || '');
+    }
+  }, [deliveryAddress, session.addresses]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -207,6 +223,15 @@ const App: React.FC = () => {
             setCart={setCart} 
             onViewCart={() => setIsCartOpen(true)} 
             tableNumber={tableNumber}
+            orderType={orderType}
+            setOrderType={setOrderType}
+            tableNo={tableNo}
+            setTableNo={setTableNo}
+            deliveryAddress={deliveryAddress}
+            setDeliveryAddress={setDeliveryAddress}
+            deliveryAddressLabel={deliveryAddressLabel}
+            setDeliveryAddressLabel={setDeliveryAddressLabel}
+            session={session}
           />
         )}
 
@@ -234,10 +259,9 @@ const App: React.FC = () => {
               externalNotice={userCenterNotice}
             />
           ) : (
-            <div className="min-h-screen bg-[#F4EFE6]/80 px-7 pb-32 pt-8">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-stone-400">{t('user.account')}</p>
-              <h1 className="serif mt-1 text-2xl font-bold text-[#2D2D2D]">{t('user.mine')}</h1>
-              <div className="mt-10 rounded-[2rem] border border-white/60 bg-white/65 p-6 text-center shadow-[0_14px_40px_rgba(45,45,45,0.08)] backdrop-blur-xl">
+            <div className="min-h-screen bg-white px-6 pb-32 pt-7 text-[#2D2D2D]">
+              <h1 className="serif text-2xl font-bold text-[#2D2D2D]">{t('user.mine')}</h1>
+              <div className="mt-10 rounded-[1.65rem] border border-stone-100 bg-white p-6 text-center shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2D2D2D] text-[#C8A97E]">
                   <img src="/logo/sct_logo.png" alt={`${t('common.brandZh')} Logo`} className="h-8 w-8 object-contain" />
                 </div>
@@ -246,7 +270,7 @@ const App: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsAuthOpen(true)}
-                  className="mt-6 w-full rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white"
+                  className="mt-6 w-full rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/10"
                 >
                   {t('common.login')}
                 </button>
@@ -263,6 +287,14 @@ const App: React.FC = () => {
         cart={cart} 
         setCart={setCart} 
         tableNumber={tableNumber}
+        orderType={orderType}
+        setOrderType={setOrderType}
+        tableNo={tableNo}
+        setTableNo={setTableNo}
+        address={deliveryAddress}
+        setAddress={setDeliveryAddress}
+        addressLabel={deliveryAddressLabel}
+        setAddressLabel={setDeliveryAddressLabel}
         session={session}
         onRefreshSession={refreshSession}
         onOrderSuccess={() => {
@@ -280,8 +312,10 @@ const App: React.FC = () => {
 
       <Footer activeTab={view} onTabChange={handleTabChange} />
       {view !== 'home' && view !== 'menu' && (
-        <div className="fixed right-5 top-5 z-[60] mx-auto max-w-md">
-          <LanguageSelector />
+        <div className="pointer-events-none fixed left-1/2 top-7 z-[60] w-full max-w-md -translate-x-1/2 px-5">
+          <div className="flex justify-end">
+            <LanguageSelector className="pointer-events-auto" />
+          </div>
         </div>
       )}
       <FloatingWhatsApp />

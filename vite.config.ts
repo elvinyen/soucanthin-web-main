@@ -4,6 +4,9 @@ import react from '@vitejs/plugin-react';
 
 const apiRoutes: Record<string, string> = {
   '/api/menu': '/api/menu.ts',
+  '/api/address-autocomplete': '/api/address-autocomplete.ts',
+  '/api/address-place-details': '/api/address-place-details.ts',
+  '/api/delivery-quote': '/api/delivery-quote.ts',
   '/api/order': '/api/order.ts',
   '/api/payment-config': '/api/payment-config.ts',
   '/api/telegram/webhook': '/api/telegram-webhook.ts',

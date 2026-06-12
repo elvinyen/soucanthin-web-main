@@ -10,6 +10,7 @@ import {
   validateOrder,
 } from './_order-utils';
 import { getAuthenticatedUser } from './_auth-utils';
+import { applyDeliveryQuoteToOrder, DeliveryQuoteError } from './_delivery-utils';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method && req.method !== 'POST') {
@@ -45,6 +46,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (order.couponId && !user) {
       return res.status(401).json({ success: false, error: '请先登录后使用优惠券' });
     }
+
+    await applyDeliveryQuoteToOrder(order);
 
     const { total } = calculateTotals({ ...order, discountAmount: 0 });
     const discountAmount = user ? await getCouponDiscount(user.id, order.couponId, total) : 0;
@@ -83,6 +86,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       checkoutUrl: checkoutSession.url,
     });
   } catch (error) {
+    if (error instanceof DeliveryQuoteError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
     console.error('Stripe checkout API error:', error);
     return res.status(500).json({
       success: false,

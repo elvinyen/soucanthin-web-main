@@ -43,6 +43,16 @@ export interface Order {
   }[];
   subtotal: number;
   deliveryFee?: number;
+  deliveryQuote?: {
+    branchId: string;
+    branchName: string;
+    addressLatitude: number;
+    addressLongitude: number;
+    distanceKm: number;
+    durationMin: number;
+    deliveryFee: number;
+    provider: string;
+  };
   serviceCharge: number;
   total: number;
   couponId?: string;

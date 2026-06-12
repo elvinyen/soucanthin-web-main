@@ -28,8 +28,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : await rejectOrderPayment(orderId, reviewToken);
 
     const message = action === 'approve'
-      ? `订单 ${order.order_no} 的 TNG 付款已通过`
-      : `订单 ${order.order_no} 的 TNG 付款已拒绝`;
+      ? `订单 ${order.order_no} 的 Touch 'n Go eWallet 付款已通过`
+      : `订单 ${order.order_no} 的 Touch 'n Go eWallet 付款已拒绝`;
 
     if (req.method === 'GET') {
       res.setHeader?.('Content-Type', 'text/html; charset=utf-8');
@@ -132,7 +132,7 @@ async function findPendingTngOrder(orderId: string, reviewToken: string) {
     user_id?: string | null;
     coupon_id?: string | null;
   } | undefined : undefined;
-  if (!order?.id) throw new Error('待审核 TNG 订单不存在或已处理');
+  if (!order?.id) throw new Error("待审核 Touch 'n Go eWallet 订单不存在或已处理");
   return order;
 }
 
@@ -142,7 +142,7 @@ function parseQuery(url: string) {
 }
 
 function renderResult(message: string) {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TNG付款审核</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f4;color:#292524;display:grid;min-height:100vh;place-items:center;margin:0"><main style="background:white;border:1px solid #e7e5e4;border-radius:20px;padding:28px;max-width:360px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.08)"><h1 style="font-size:20px;margin:0 0 12px">TNG付款审核</h1><p style="margin:0;color:#78716c;line-height:1.6">${escapeHtml(message)}</p></main></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Touch 'n Go eWallet 付款审核</title><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f4;color:#292524;display:grid;min-height:100vh;place-items:center;margin:0"><main style="background:white;border:1px solid #e7e5e4;border-radius:20px;padding:28px;max-width:360px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.08)"><h1 style="font-size:20px;margin:0 0 12px">Touch 'n Go eWallet 付款审核</h1><p style="margin:0;color:#78716c;line-height:1.6">${escapeHtml(message)}</p></main></body></html>`;
 }
 
 function escapeHtml(value: string) {

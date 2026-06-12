@@ -53,7 +53,7 @@ export function normalizeMalaysiaPhone(value: string) {
   const digits = raw.replace(/\D/g, '');
   let normalized = digits;
 
-  if (digits.startsWith('60')) {
+  if (/^(60|65|66|84|86)/.test(digits)) {
     normalized = digits;
   } else if (digits.startsWith('0')) {
     normalized = `60${digits.slice(1)}`;
@@ -61,8 +61,15 @@ export function normalizeMalaysiaPhone(value: string) {
     normalized = `60${digits}`;
   }
 
-  if (!/^60\d{8,11}$/.test(normalized)) {
-    throw new Error('请输入有效的马来西亚手机号');
+  const isSupportedPhone =
+    /^60\d{8,11}$/.test(normalized) ||
+    /^65\d{8}$/.test(normalized) ||
+    /^66\d{8,10}$/.test(normalized) ||
+    /^84\d{8,10}$/.test(normalized) ||
+    /^86\d{11}$/.test(normalized);
+
+  if (!isSupportedPhone) {
+    throw new Error('请输入有效的手机号');
   }
 
   return {

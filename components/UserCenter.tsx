@@ -49,9 +49,14 @@ const tabs: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React
 ];
 
 const quickAmounts = [1, 5, 10, 20, 50, 100];
-const glassPanel = 'rounded-[1.75rem] border border-white/55 bg-white/55 shadow-[0_18px_55px_rgba(45,45,45,0.12)] backdrop-blur-2xl';
-const glassCard = 'rounded-3xl border border-white/60 bg-white/65 shadow-[0_14px_40px_rgba(45,45,45,0.08)] backdrop-blur-xl';
-const glassInput = 'border border-white/70 bg-white/60 shadow-inner shadow-white/40 backdrop-blur-xl';
+const pageShell = 'min-h-screen max-w-md mx-auto bg-white text-[#2D2D2D]';
+const pagePanel = 'relative min-h-screen overflow-hidden bg-white';
+const sheetPanel = 'absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.25rem] border border-stone-100 bg-white/95 shadow-[0_-24px_70px_rgba(45,45,45,0.16)] backdrop-blur-2xl animate-slide-up';
+const glassPanel = 'rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_16px_45px_rgba(45,45,45,0.07)]';
+const glassCard = 'rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_14px_40px_rgba(45,45,45,0.06)]';
+const glassInput = 'border border-stone-200/80 bg-white text-[#2D2D2D] placeholder:text-stone-400 shadow-sm';
+const primaryButton = 'bg-[#2D2D2D] text-white shadow-xl shadow-black/10';
+const darkButton = 'bg-[#2D2D2D] text-white shadow-xl shadow-black/10';
 const ONLINE_PAYMENT_ENABLED = false;
 
 const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, onClose, onLogout, onRefresh, externalNotice, mode = 'sheet' }) => {
@@ -374,38 +379,43 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   };
 
   return (
-    <div className={isPage ? 'min-h-screen max-w-md mx-auto bg-[#F4EFE6]/80' : 'fixed inset-0 z-[115] max-w-md mx-auto'}>
+    <div className={isPage ? pageShell : 'fixed inset-0 z-[115] max-w-md mx-auto'}>
       {!isPage && <div className="absolute inset-0 bg-black/45 backdrop-blur-md" onClick={onClose} />}
-      <div className={isPage ? 'relative min-h-screen overflow-hidden bg-[#F4EFE6]/80' : 'absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.5rem] border border-white/40 bg-[#F4EFE6]/70 shadow-[0_-28px_80px_rgba(0,0,0,0.28)] backdrop-blur-3xl animate-slide-up'}>
-        <div className="absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_18%_0%,rgba(200,169,126,0.34),transparent_48%),radial-gradient(circle_at_82%_10%,rgba(255,255,255,0.72),transparent_40%)] pointer-events-none" />
-        {!isPage && <div className="relative w-12 h-1.5 bg-white/70 rounded-full mx-auto mt-4 flex-none shadow-sm" />}
+      <div className={isPage ? pagePanel : sheetPanel}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-stone-100" />
+        {!isPage && <div className="relative w-12 h-1.5 bg-stone-200 rounded-full mx-auto mt-4 flex-none shadow-sm" />}
 
-        <div className="relative px-7 pt-6 pb-4 flex items-center justify-between flex-none">
-          <div className="flex items-center space-x-3">
-            {!isPage && (
-              <button
-                onClick={onClose}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
-                aria-label={t('common.back')}
-              >
-                <ArrowLeft size={20} />
-              </button>
-            )}
-            {isPage && !isPageRoot && (
-              <button
-                onClick={() => setIsPageRoot(true)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/55 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
-                aria-label={t('common.back')}
-              >
-                <ArrowLeft size={20} />
-              </button>
-            )}
-            <div>
-              <h2 className="text-xl font-bold serif text-[#2D2D2D]">{isPage && isPageRoot ? t('common.mine') : t(activeMeta.labelKey)}</h2>
-              <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">{isPage && isPageRoot ? t('user.account') : activeMeta.subtitle}</p>
+        {isPage && isPageRoot ? (
+          <div className="relative flex-none px-6 pt-7">
+            <h1 className="serif text-2xl font-bold text-[#2D2D2D]">{t('user.mine')}</h1>
+          </div>
+        ) : (
+          <div className="relative flex flex-none items-center justify-between px-7 pb-4 pt-6">
+            <div className="flex items-center space-x-3">
+              {!isPage && (
+                <button
+                  onClick={onClose}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-100 bg-stone-50 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
+                  aria-label={t('common.back')}
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              {isPage && !isPageRoot && (
+                <button
+                  onClick={() => setIsPageRoot(true)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-100 bg-stone-50 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
+                  aria-label={t('common.back')}
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              <div>
+                <h2 className="serif text-xl font-bold text-[#2D2D2D]">{t(activeMeta.labelKey)}</h2>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className={isPage ? 'relative overflow-y-visible px-6 pb-32 no-scrollbar' : 'relative h-[calc(85dvh-6.5rem)] max-h-[calc(85vh-6.5rem)] overflow-y-auto px-7 pb-10 no-scrollbar'}>
           {isPage && isPageRoot ? (
@@ -420,12 +430,12 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
           <>
           <div className={`mb-6 p-5 ${glassPanel}`}>
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-[#2D2D2D] text-[#C8A97E] shadow-lg shadow-black/15">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-100 bg-[#F7F7F7] text-[#C8A97E] shadow-sm">
                 <ActiveIcon size={22} />
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-[#2D2D2D]">{session.user.displayPhone}</p>
-                <p className="mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-stone-500">{getDisplayName(session.user.name, t)}</p>
+                <p className="mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-stone-400">{getDisplayName(session.user.name, t)}</p>
               </div>
             </div>
           </div>
@@ -463,7 +473,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       type="button"
                       onClick={requestProfilePhoneOtp}
                       disabled={isSubmitting || phoneCooldown > 0 || !profilePhone.trim() || profilePhone.trim() === session.user.displayPhone}
-                      className="rounded-2xl border border-white/60 bg-white/70 px-4 py-3 text-xs font-bold text-stone-600 shadow-sm backdrop-blur-xl disabled:opacity-50"
+                      className="rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3 text-xs font-bold text-stone-600 shadow-sm backdrop-blur-xl disabled:opacity-50"
                     >
                       {phoneCooldown > 0 ? `${phoneCooldown}s` : t('userCenter.getOtp')}
                     </button>
@@ -484,7 +494,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <button
                   onClick={saveProfile}
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15 disabled:bg-stone-200"
+                  className={`flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-bold disabled:bg-white/10 disabled:text-stone-400 ${primaryButton}`}
                 >
                   <Save size={17} />
                   {t('userCenter.saveProfile')}
@@ -504,10 +514,10 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
           {activeTab === 'wallet' && (
             <section className="space-y-5">
-              <div className="rounded-[2rem] border border-white/10 bg-[#2D2D2D]/95 p-6 text-white shadow-2xl shadow-black/25 backdrop-blur-xl">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/50">{t('userCenter.walletBalance')}</p>
+              <div className="rounded-[1.75rem] border border-stone-100 bg-white p-6 text-[#2D2D2D] shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#C8A97E]/70">{t('userCenter.walletBalance')}</p>
                 <div className="mt-4 text-4xl font-bold serif">RM {walletBalance.toFixed(2)}</div>
-                <p className="mt-3 text-xs text-white/50">{t('userCenter.pendingRecharge', { count: pendingTransactions })}</p>
+                <p className="mt-3 text-xs text-stone-400">{t('userCenter.pendingRecharge', { count: pendingTransactions })}</p>
               </div>
 
               <div className={`space-y-3 p-5 ${glassCard}`}>
@@ -518,7 +528,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       key={value}
                       onClick={() => setAmount(value)}
                     className={`rounded-2xl border py-3 text-xs font-bold transition ${
-                        amount === value ? 'border-[#C8A97E] bg-[#C8A97E] text-white shadow-lg shadow-[#C8A97E]/25' : 'border-white/60 bg-white/60 text-stone-500'
+                        amount === value ? 'border-[#C8A97E] bg-[#C8A97E] text-[#2D2D2D] shadow-lg shadow-[#C8A97E]/20' : 'border-stone-100 bg-stone-50 text-stone-500'
                       }`}
                     >
                       RM {value}
@@ -529,7 +539,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   <button
                     type="button"
                     onClick={() => setAmount(value => Math.max(1, value - 1))}
-                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-stone-500 shadow-sm backdrop-blur-xl"
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-50 text-stone-500 shadow-sm backdrop-blur-xl"
                     aria-label={t('userCenter.decreaseAmount')}
                   >
                     -
@@ -538,7 +548,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   <button
                     type="button"
                     onClick={() => setAmount(value => Math.min(1000, value + 1))}
-                    className="flex h-10 w-10 items-center justify-center rounded-full bg-white/75 text-stone-500 shadow-sm backdrop-blur-xl"
+                    className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-50 text-stone-500 shadow-sm backdrop-blur-xl"
                     aria-label={t('userCenter.increaseAmount')}
                   >
                     +
@@ -548,12 +558,12 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
               <div className={`space-y-3 p-5 ${glassCard}`}>
                 <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{t('cart.paymentMethod')}</h3>
-                <div className={`grid gap-2 rounded-2xl border border-white/60 bg-white/45 p-1 backdrop-blur-xl ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <div className={`grid gap-2 rounded-2xl border border-stone-100 bg-stone-50 p-1 backdrop-blur-xl ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <button
                     type="button"
                     onClick={() => setRechargeMethod('tng')}
                     className={`flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
-                      rechargeMethod === 'tng' ? 'bg-[#2D2D2D] text-white shadow-sm' : 'text-stone-500'
+                      rechargeMethod === 'tng' ? 'bg-[#C8A97E] text-[#2D2D2D] shadow-sm' : 'text-stone-500'
                     }`}
                   >
                     <WalletCards size={16} />
@@ -564,7 +574,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       type="button"
                       onClick={() => setRechargeMethod('stripe')}
                       className={`flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${
-                        rechargeMethod === 'stripe' ? 'bg-[#2D2D2D] text-white shadow-sm' : 'text-stone-500'
+                        rechargeMethod === 'stripe' ? 'bg-[#C8A97E] text-[#2D2D2D] shadow-sm' : 'text-stone-500'
                       }`}
                     >
                       <CreditCard size={16} />
@@ -575,13 +585,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
 
                 {rechargeMethod === 'tng' || !ONLINE_PAYMENT_ENABLED ? (
                   <>
-                    <div className="rounded-2xl border border-[#C8A97E]/25 bg-[#FBF7EF]/70 p-4 space-y-3 backdrop-blur-xl">
+                    <div className="rounded-2xl border border-stone-100 bg-stone-50 p-4 space-y-3 backdrop-blur-xl">
                       <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-stone-500">{t('userCenter.tngPayee')}</span>
+                        <span className="text-stone-400">{t('userCenter.tngPayee')}</span>
                         <span className="text-right font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || t('userCenter.configTngName')}</span>
                       </div>
                       {paymentConfig?.tng.qrImageUrl ? (
-                        <div className="rounded-2xl border border-white/70 bg-white/80 p-3">
+                        <div className="rounded-2xl border border-stone-100 bg-white p-3">
                           <img
                             src={paymentConfig.tng.qrImageUrl}
                             alt={t('cart.tngQrCode')}
@@ -590,12 +600,12 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         </div>
                       ) : (
                         <div className="flex items-center justify-between gap-4 text-xs">
-                          <span className="text-stone-500">{t('cart.tngAccount')}</span>
+                          <span className="text-stone-400">{t('cart.tngAccount')}</span>
                           <span className="text-right font-mono font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountNumber || t('userCenter.configTngNumber')}</span>
                         </div>
                       )}
                     </div>
-                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/60 bg-[#FBF7EF]/70 px-4 py-4 text-xs font-bold text-[#C8A97E] backdrop-blur-xl">
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/55 bg-stone-50 px-4 py-4 text-xs font-bold text-[#C8A97E] backdrop-blur-xl">
                       <Upload size={16} />
                       <span className="truncate">{receiptFile ? receiptFile.name : t('cart.uploadReceipt')}</span>
                       <input
@@ -609,7 +619,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                       <button
                         type="button"
                         onClick={() => setIsReceiptPreviewOpen(true)}
-                        className="h-40 w-full overflow-hidden rounded-2xl border border-white/60 bg-white/50 p-2 backdrop-blur-xl active:scale-[0.99]"
+                        className="h-40 w-full overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 p-2 backdrop-blur-xl active:scale-[0.99]"
                         aria-label={t('userCenter.viewTngRecharge')}
                       >
                         <img src={receiptPreview} alt={t('userCenter.tngRechargeAlt')} className="h-full w-full object-contain" />
@@ -618,7 +628,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     <button
                       onClick={rechargeTng}
                       disabled={isSubmitting}
-                      className="flex w-full items-center justify-center gap-2 rounded-full bg-[#C8A97E] py-4 text-sm font-bold text-white disabled:bg-stone-200"
+                      className={`flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-bold disabled:bg-white/10 disabled:text-stone-400 ${primaryButton}`}
                     >
                       <WalletCards size={17} />
                       {t('userCenter.submitTngReview')}
@@ -626,13 +636,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   </>
                 ) : (
                   <>
-                    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-3 text-xs leading-5 text-stone-500 backdrop-blur-xl">
+                    <div className="rounded-2xl border border-stone-100 bg-stone-50 px-4 py-3 text-xs leading-5 text-stone-500 backdrop-blur-xl">
                       {t('userCenter.onlineRechargeHint')}
                     </div>
                     <button
                       onClick={rechargeStripe}
                       disabled={isSubmitting}
-                      className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white disabled:bg-stone-200"
+                      className={`flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-bold disabled:bg-white/10 disabled:text-stone-400 ${primaryButton}`}
                     >
                       <CreditCard size={17} />
                       {t('userCenter.goOnlineTransfer')}
@@ -721,7 +731,6 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         <div className="h-px bg-stone-100" />
                         <InfoLine label={t('common.subtotal')} value={`RM ${(order.subtotal || 0).toFixed(2)}`} />
                         <InfoLine label={t('common.deliveryFee')} value={`RM ${(order.deliveryFee || 0).toFixed(2)}`} />
-                        <InfoLine label="SST 6%" value={`RM ${(order.serviceCharge || 0).toFixed(2)}`} />
                         <InfoLine label={t('common.discount')} value={`RM ${(order.discountAmount || 0).toFixed(2)}`} />
                         <InfoLine label={t('common.payable')} value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
                         {order.note && <InfoLine label={t('common.note')} value={order.note} />}
@@ -763,7 +772,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <button
                   onClick={saveAddress}
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15 disabled:bg-stone-200"
+                  className={`flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-bold disabled:bg-white/10 disabled:text-stone-400 ${primaryButton}`}
                 >
                   <Plus size={17} />
                   {editingAddressId ? t('userCenter.saveAddress') : t('userCenter.addAddress')}
@@ -830,14 +839,14 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             <section className="space-y-4">
               <button
                 onClick={handleLogout}
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/15"
+                className={`flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-bold ${darkButton}`}
               >
                 <LogOut size={17} />
                 {t('common.logout')}
               </button>
               <button
                 onClick={onRefresh}
-                className="w-full rounded-full border border-white/60 bg-white/60 py-4 text-sm font-bold text-stone-600 shadow-sm backdrop-blur-xl"
+                className="w-full rounded-full border border-stone-100 bg-stone-50 py-4 text-sm font-bold text-stone-600 shadow-sm backdrop-blur-xl"
               >
                 {t('common.refresh')}
               </button>
@@ -926,14 +935,14 @@ const AccountHome: React.FC<{
 
   return (
     <section className="space-y-5">
-      <div className="rounded-[2rem] bg-[#2D2D2D] p-6 text-white shadow-2xl shadow-black/20">
+      <div className="rounded-[1.75rem] border border-stone-100 bg-white p-6 text-[#2D2D2D] shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-[#C8A97E]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-100 bg-stone-50 text-[#C8A97E]">
             <User size={25} />
           </div>
           <div className="min-w-0">
             <p className="truncate text-lg font-bold serif">{getDisplayName(session.user?.name, t)}</p>
-            <p className="mt-1 truncate text-xs text-white/45">{session.user?.displayPhone}</p>
+            <p className="mt-1 truncate text-xs text-stone-400">{session.user?.displayPhone}</p>
           </div>
         </div>
         <div className="mt-6 grid grid-cols-3 gap-2 text-center">
@@ -943,7 +952,7 @@ const AccountHome: React.FC<{
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[2rem] border border-white/60 bg-white/60 shadow-[0_18px_55px_rgba(45,45,45,0.1)] backdrop-blur-2xl">
+      <div className="overflow-hidden rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
         {tabs.map((tab, index) => {
           const Icon = tab.icon;
           return (
@@ -951,11 +960,11 @@ const AccountHome: React.FC<{
               key={tab.id}
               type="button"
               onClick={() => onOpenTab(tab.id)}
-              className={`flex w-full items-center gap-4 px-5 py-4 text-left transition active:bg-white/70 ${
-                index > 0 ? 'border-t border-white/60' : ''
+              className={`flex w-full items-center gap-4 px-5 py-4 text-left transition active:bg-stone-50 ${
+                index > 0 ? 'border-t border-stone-100' : ''
               }`}
             >
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F7F1E7] text-[#C8A97E]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C8A97E]/12 text-[#C8A97E]">
                 <Icon size={20} />
               </div>
               <div className="min-w-0 flex-1">
@@ -972,9 +981,9 @@ const AccountHome: React.FC<{
 };
 
 const AccountMetric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-2xl bg-white/10 px-2 py-3">
+  <div className="rounded-2xl border border-stone-100 bg-stone-50 px-2 py-3">
     <p className="truncate text-sm font-bold text-[#C8A97E]">{value}</p>
-    <p className="mt-1 text-[10px] text-white/40">{label}</p>
+    <p className="mt-1 text-[10px] text-stone-400">{label}</p>
   </div>
 );
 
@@ -992,7 +1001,7 @@ const OrderProgress: React.FC<{ order: UserOrderSummary; t: TFunction }> = ({ or
   const isCancelled = order.status === 'cancelled';
 
   return (
-    <div className={`rounded-2xl border p-4 ${isCancelled ? 'border-red-100 bg-red-50/70' : 'border-white/70 bg-white/50'}`}>
+    <div className={`rounded-2xl border p-4 ${isCancelled ? 'border-red-400/25 bg-red-500/10' : 'border-stone-100 bg-stone-50'}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className={`text-sm font-bold ${isCancelled ? 'text-red-600' : 'text-[#2D2D2D]'}`}>{meta.label}</p>
@@ -1009,7 +1018,7 @@ const OrderProgress: React.FC<{ order: UserOrderSummary; t: TFunction }> = ({ or
             const active = currentIndex >= index;
             return (
               <div key={step.status} className="min-w-0">
-                <div className={`h-1.5 rounded-full ${active ? 'bg-[#C8A97E]' : 'bg-stone-200'}`} />
+                <div className={`h-1.5 rounded-full ${active ? 'bg-[#C8A97E]' : 'bg-stone-100'}`} />
                 <p className={`mt-2 truncate text-center text-[10px] ${active ? 'font-bold text-[#C8A97E]' : 'text-stone-400'}`}>{t(step.labelKey)}</p>
               </div>
             );
@@ -1046,7 +1055,7 @@ function labelStatus(item: WalletTransaction, t: TFunction) {
 
 function labelPayment(method: string | undefined, t: TFunction) {
   if (method === 'cash') return t('userCenter.payment.cash');
-  if (method === 'tng') return 'TNG';
+  if (method === 'tng') return "Touch 'n Go eWallet";
   if (method === 'stripe') return t('userCenter.payment.stripe');
   if (method === 'wallet') return t('userCenter.payment.wallet');
   return method || '-';
@@ -1082,7 +1091,7 @@ function getOrderStatusMeta(status: string | undefined, t: TFunction) {
     completed: {
       label: t('ordersPage.status.completed'),
       description: t('ordersPage.steps.completedDesc'),
-      badgeClass: 'bg-stone-200 text-stone-600',
+      badgeClass: 'bg-stone-100 text-stone-600',
     },
     cancelled: {
       label: t('ordersPage.status.cancelled'),

@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Minus, Plus, ShoppingBag, User, Phone, MapPin, Hash, MessageSquare, ArrowLeft, ChevronRight, Upload, WalletCards, CreditCard, Copy, CheckCircle2 } from 'lucide-react';
+import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CartLine } from '../data/menu';
 import { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
 import type { AuthMeResponse } from '../types/auth';
+import { AddressSelectionDrawer } from './OrderPreferenceControls';
 
 interface CartProps {
   isOpen: boolean;
@@ -12,6 +13,14 @@ interface CartProps {
   cart: CartLine[];
   setCart: React.Dispatch<React.SetStateAction<CartLine[]>>;
   tableNumber: string | null;
+  orderType: OrderType;
+  setOrderType: React.Dispatch<React.SetStateAction<OrderType>>;
+  tableNo: string;
+  setTableNo: React.Dispatch<React.SetStateAction<string>>;
+  address: string;
+  setAddress: React.Dispatch<React.SetStateAction<string>>;
+  addressLabel: string;
+  setAddressLabel: React.Dispatch<React.SetStateAction<string>>;
   session: AuthMeResponse;
   onOrderSuccess: () => void;
   onRefreshSession: () => Promise<void>;
@@ -27,27 +36,58 @@ type PaymentConfig = {
     qrImageUrl: string;
   };
 };
+type DeliveryQuote = {
+  deliveryFee: number;
+  distanceKm: number;
+  durationMin: number;
+  deliverable: true;
+};
+type DeliveryQuoteStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const isValidPhone = (value: string) => /^[0-9+\-\s()]{8,20}$/.test(value.trim());
-const TAKEAWAY_DELIVERY_FEE = 12;
 const ONLINE_PAYMENT_ENABLED = false;
+const checkoutCard = 'rounded-3xl border border-stone-100 bg-white p-5 shadow-sm';
+const checkoutTitle = 'text-sm font-semibold text-[#2D2D2D]';
+const checkoutInput = 'h-12 w-full rounded-2xl border border-stone-200/70 bg-white pl-11 pr-4 text-sm text-[#2D2D2D] outline-none transition placeholder:text-xs placeholder:text-stone-400 focus:border-stone-400/80';
+const checkoutHelp = 'text-xs leading-5 text-stone-500';
+const checkoutError = 'px-2 text-[11px] leading-4 text-red-500';
+const buttonSeparator = <span className="h-4 w-[2px] rounded-full bg-white/60" aria-hidden="true" />;
 
-const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber, session, onOrderSuccess, onRefreshSession, onWalletRecharge }) => {
+const Cart: React.FC<CartProps> = ({
+  isOpen,
+  onClose,
+  cart,
+  setCart,
+  tableNumber,
+  orderType,
+  setOrderType,
+  tableNo,
+  setTableNo,
+  address,
+  setAddress,
+  addressLabel,
+  setAddressLabel,
+  session,
+  onOrderSuccess,
+  onRefreshSession,
+  onWalletRecharge,
+}) => {
   const { t } = useTranslation();
   const hasScannedTable = Boolean(tableNumber?.trim());
   const [step, setStep] = useState<CheckoutStep>('summary');
-  const [orderType, setOrderType] = useState<OrderType>('takeaway');
   const [isOrdering, setIsOrdering] = useState(false);
   const [shouldRender, setShouldRender] = useState(isOpen);
 
   // Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [tableNo, setTableNo] = useState('');
   const [isTableLocked, setIsTableLocked] = useState(false);
-  const [address, setAddress] = useState('');
+  const [isAddressDrawerOpen, setIsAddressDrawerOpen] = useState(false);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [deliveryQuoteStatus, setDeliveryQuoteStatus] = useState<DeliveryQuoteStatus>('idle');
+  const [deliveryQuoteError, setDeliveryQuoteError] = useState('');
+  const [deliveryUnit, setDeliveryUnit] = useState('');
   const [deliveryInstruction, setDeliveryInstruction] = useState('');
-  const [isDeliveryInstructionOpen, setIsDeliveryInstructionOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
   const [selectedCouponId, setSelectedCouponId] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -75,7 +115,10 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       setReceiptFile(null);
       setReceiptPreview('');
       setDeliveryInstruction('');
-      setIsDeliveryInstructionOpen(false);
+      setDeliveryUnit('');
+      setDeliveryQuote(null);
+      setDeliveryQuoteStatus('idle');
+      setDeliveryQuoteError('');
       setPaymentMethod('wallet');
       if (session.user) {
         setName(session.user.name || '');
@@ -84,7 +127,10 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
         if (defaultAddress) {
           setName(defaultAddress.recipientName);
           setPhone(defaultAddress.phone);
-          setAddress(defaultAddress.address);
+          if (!address.trim()) {
+            setAddress(defaultAddress.address);
+            setAddressLabel(defaultAddress.label || '');
+          }
         }
       }
       
@@ -93,10 +139,8 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
         setTableNo(scannedTableNo);
         setIsTableLocked(true);
         setOrderType('dinein');
-      } else {
-        setTableNo('');
+      } else if (!tableNo.trim()) {
         setIsTableLocked(false);
-        setOrderType('takeaway');
       }
     }
   }, [isOpen, tableNumber]);
@@ -116,6 +160,63 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       });
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || orderType !== 'takeaway') {
+      setDeliveryQuote(null);
+      setDeliveryQuoteStatus('idle');
+      setDeliveryQuoteError('');
+      return;
+    }
+
+    const normalizedAddress = address.trim();
+    if (!normalizedAddress) {
+      setDeliveryQuote(null);
+      setDeliveryQuoteStatus('idle');
+      setDeliveryQuoteError('');
+      return;
+    }
+
+    const controller = new AbortController();
+    setDeliveryQuoteStatus('loading');
+    setDeliveryQuote(null);
+    setDeliveryQuoteError('');
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch('/api/delivery-quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: normalizedAddress }),
+          signal: controller.signal,
+        });
+        const payload = await res.json();
+
+        if (res.ok && payload.success && payload.deliverable) {
+          setDeliveryQuote({
+            deliveryFee: Number(payload.deliveryFee || 0),
+            distanceKm: Number(payload.distanceKm || 0),
+            durationMin: Number(payload.durationMin || 0),
+            deliverable: true,
+          });
+          setDeliveryQuoteStatus('success');
+          return;
+        }
+
+        setDeliveryQuoteStatus('error');
+        setDeliveryQuoteError(payload.error || t('cart.validation.deliveryQuoteFailed'));
+      } catch (error) {
+        if ((error as Error).name === 'AbortError') return;
+        setDeliveryQuoteStatus('error');
+        setDeliveryQuoteError(t('cart.validation.deliveryQuoteFailed'));
+      }
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [address, isOpen, orderType, t]);
+
   const handleAnimationEnd = () => {
     if (!isOpen) {
       setShouldRender(false);
@@ -126,8 +227,8 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
   const cartItems = cart;
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-  const deliveryFee = orderType === 'takeaway' ? TAKEAWAY_DELIVERY_FEE : 0;
-  const serviceCharge = subtotal * 0.06;
+  const deliveryFee = orderType === 'takeaway' ? deliveryQuote?.deliveryFee || 0 : 0;
+  const serviceCharge = 0;
   const total = subtotal + deliveryFee + serviceCharge;
   const availableCoupons = (session.coupons || []).filter(coupon => {
     if (coupon.status !== 'available') return false;
@@ -149,6 +250,9 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
     if (!isValidPhone(phone)) return t('cart.validation.phoneFormat');
     if (orderType === 'dinein' && !tableNo.trim()) return t('cart.validation.table');
     if (orderType === 'takeaway' && !address.trim()) return t('cart.validation.address');
+    if (orderType === 'takeaway' && deliveryQuoteStatus === 'loading') return t('cart.validation.deliveryQuoteLoading');
+    if (orderType === 'takeaway' && deliveryQuoteStatus === 'error') return deliveryQuoteError || t('cart.validation.deliveryQuoteFailed');
+    if (orderType === 'takeaway' && !deliveryQuote) return t('cart.validation.deliveryQuoteRequired');
     if (paymentMethod === 'tng' && !receiptFile) return t('cart.validation.receipt');
     if (paymentMethod === 'wallet' && !session.authenticated) return t('cart.validation.walletLogin');
     return '';
@@ -172,6 +276,10 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
 
   const handleNextStep = () => {
     if (cartItems.length > 0) {
+      if (orderType === 'takeaway' && !address.trim()) {
+        setIsAddressDrawerOpen(true);
+        return;
+      }
       setStep('details');
     }
   };
@@ -208,9 +316,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
     setName('');
     setPhone('');
     setTableNo('');
-    setAddress('');
+    setDeliveryQuote(null);
+    setDeliveryQuoteStatus('idle');
+    setDeliveryQuoteError('');
+    setDeliveryUnit('');
     setDeliveryInstruction('');
-    setIsDeliveryInstructionOpen(false);
     setReceiptFile(null);
     setReceiptPreview('');
     setIsReceiptPreviewOpen(false);
@@ -244,6 +354,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       return;
     }
 
+    const takeawayNote = [
+      deliveryUnit.trim() ? `${t('cart.deliveryUnitLabel')}: ${deliveryUnit.trim()}` : '',
+      deliveryInstruction.trim(),
+    ].filter(Boolean).join('\n');
+
     const orderData: Order = {
       orderType,
       paymentMethod,
@@ -253,7 +368,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       },
       ...(orderType === 'dinein' 
         ? { dineIn: { tableNo: tableNo.trim() } } 
-        : { takeaway: { address: address.trim(), note: deliveryInstruction.trim() || undefined } }
+        : { takeaway: { address: address.trim(), note: takeawayNote || undefined } }
       ),
       items: cartItems.map(item => ({
         id: item.itemId.toString(),
@@ -274,7 +389,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       discountAmount: Number(discountAmount.toFixed(2)),
       payableTotal: Number(payableTotal.toFixed(2)),
       receiptImage,
-      note: deliveryInstruction.trim() || undefined,
+      note: takeawayNote || undefined,
       createdAt: new Date().toISOString(),
     };
 
@@ -334,7 +449,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
       />
 
       <div 
-        className={`absolute bottom-0 left-0 right-0 bg-[#F5F5F5] rounded-t-[2.5rem] shadow-2xl transition-transform duration-500 ease-out overflow-hidden flex flex-col max-h-[94vh] ${
+        className={`absolute bottom-0 left-0 right-0 bg-[#FAFAFA] rounded-t-[2.5rem] shadow-2xl transition-transform duration-500 ease-out overflow-hidden flex flex-col max-h-[94vh] ${
           isOpen ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
@@ -385,8 +500,8 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
           <>
             <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mt-4 flex-none" />
 
-            <div className="px-8 pt-6 pb-4 flex items-center justify-between flex-none">
-              <div className="flex items-center space-x-3">
+            <div className="relative px-8 pt-6 pb-4 flex items-center justify-between flex-none">
+              <div className="flex w-10 items-center justify-start">
                 {step === 'details' && (
                   <button 
                     onClick={handleBackStep}
@@ -395,14 +510,16 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                     <ArrowLeft size={20} />
                   </button>
                 )}
-                <div>
-                  <h2 className="text-xl font-bold serif text-[#2D2D2D]">
-                    {step === 'summary' ? t('cart.cart') : t('cart.checkout')}
-                  </h2>
-                  <p className="text-[10px] text-stone-400 uppercase tracking-widest mt-0.5">
-                    {step === 'summary' ? t('cart.cartSummary') : t('cart.confirmOrder')}
-                  </p>
-                </div>
+              </div>
+              <div className="pointer-events-none absolute left-1/2 top-6 flex -translate-x-1/2 items-center justify-center gap-3">
+                {step === 'summary' ? (
+                  <ShoppingCart size={20} className="text-[#C8A97E]" />
+                ) : (
+                  <ReceiptText size={20} className="text-[#C8A97E]" />
+                )}
+                <h2 className="text-xl font-semibold text-[#2D2D2D]">
+                  {step === 'summary' ? t('cart.cart') : t('cart.checkout')}
+                </h2>
               </div>
               <button 
                 onClick={onClose}
@@ -425,35 +542,35 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                   {step === 'summary' ? (
                     <section className="space-y-6 animate-fade-in">
                       <h3 className="text-xs font-bold text-stone-400 tracking-[0.2em] uppercase">{t('cart.selectedDetails')} ( {totalItems} )</h3>
-                      <div className="space-y-6">
+                      <div>
                         {cartItems.map(item => (
-                          <div key={item.lineId} className="flex items-center space-x-4 group">
+                          <div key={item.lineId} className="flex items-center space-x-4 border-b border-stone-200/80 py-4 first:pt-0 last:border-b-0 last:pb-0 group">
                             <div className="w-16 h-16 rounded-2xl overflow-hidden bg-stone-100 flex-none shadow-sm">
                               <img src={item.image} className="w-full h-full object-cover" alt={item.name} />
                             </div>
                             <div className="flex-grow">
-                              <h4 className="flex flex-wrap items-center gap-1.5 text-sm font-bold text-[#2D2D2D] serif">
+                              <h4 className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-[#2D2D2D]">
                                 {item.code && (
-                                  <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-bold leading-4 text-stone-600">
+                                  <span className="rounded-full bg-stone-100 px-2 py-0.5 font-sans text-[10px] font-semibold leading-4 text-stone-500">
                                     {item.code}
                                   </span>
                                 )}
                                 <span>{item.name}</span>
                               </h4>
                               <ItemCustomization item={item} />
-                              <div className="text-xs font-bold text-[#C8A97E] mt-1">RM {item.unitPrice.toFixed(2)}</div>
+                              <div className="text-xs font-medium text-[#C8A97E] mt-1">RM {item.unitPrice.toFixed(2)}</div>
                             </div>
-                            <div className="flex items-center space-x-3 bg-stone-50 rounded-full p-1 border border-stone-100">
+                            <div className="flex items-center space-x-3 rounded-full bg-white/70 p-1">
                               <button 
                                 onClick={() => updateQuantity(item.lineId, -1)}
-                                className="w-7 h-7 flex items-center justify-center rounded-full bg-white text-stone-400 active:scale-90 transition-all shadow-sm"
+                                className="w-7 h-7 flex items-center justify-center rounded-full bg-stone-100 text-stone-500 active:scale-90 transition-all"
                               >
                                 <Minus size={12} />
                               </button>
                               <span className="text-sm font-bold w-4 text-center text-[#2D2D2D]">{item.quantity}</span>
                               <button 
                                 onClick={() => updateQuantity(item.lineId, 1)}
-                                className="w-7 h-7 flex items-center justify-center rounded-full bg-[#2D2D2D] text-white active:scale-90 transition-all shadow-sm"
+                                className="w-7 h-7 flex items-center justify-center rounded-full bg-[#2D2D2D] text-white active:scale-90 transition-all"
                               >
                                 <Plus size={12} />
                               </button>
@@ -462,130 +579,83 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                         ))}
                       </div>
 
-                      <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-sm space-y-3 mt-8">
-                        <div className="flex justify-between text-xs text-stone-400">
-                          <span>{t('common.subtotal')}</span>
-                          <span className="text-[#2D2D2D] font-medium">RM {subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs text-stone-400">
-                          <span>{t('common.deliveryFee')}</span>
-                          <span className="text-[#2D2D2D] font-medium">RM {deliveryFee.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs text-stone-400">
-                          <span>SST (6%)</span>
-                          <span className="text-[#2D2D2D] font-medium">RM {serviceCharge.toFixed(2)}</span>
-                        </div>
-                        {discountAmount > 0 && (
-                          <div className="flex justify-between text-xs text-emerald-600">
-                            <span>{t('cart.coupon')}</span>
-                            <span className="font-medium">- RM {discountAmount.toFixed(2)}</span>
-                          </div>
-                        )}
-                        <div className="h-px bg-stone-50 my-1" />
-                        <div className="flex justify-between items-center pt-1">
-                          <span className="text-sm font-bold serif text-[#2D2D2D]">{t('common.payable')}</span>
-                          <span className="text-xl font-bold text-[#C8A97E] serif">RM {payableTotal.toFixed(2)}</span>
-                        </div>
-                      </div>
                     </section>
                   ) : (
-                    <section className="space-y-6 animate-fade-in">
-                      <div className="rounded-[2rem] border border-white/70 bg-white/70 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <div className="mb-4 flex items-center justify-between">
-                          <h3 className="text-sm font-bold serif text-[#2D2D2D]">{t('cart.orderContent')}</h3>
-                          <span className="rounded-full bg-stone-100 px-3 py-1 text-[11px] font-bold text-[#C8A97E]">{t('common.pieces', { count: totalItems })}</span>
+                    <section className="space-y-4 animate-fade-in">
+                      <div className={checkoutCard}>
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <h3 className={checkoutTitle}>{t('cart.orderContent')}</h3>
+                          <span className="rounded-full bg-stone-100 px-3 py-1 text-[11px] font-medium text-stone-500">{t('common.pieces', { count: totalItems })}</span>
                         </div>
-                        <div className="space-y-4">
+                        <div className="divide-y divide-stone-100/80">
                           {cartItems.map(item => (
-                            <div key={item.lineId} className="flex gap-3">
-                              <div className="h-14 w-14 flex-none overflow-hidden rounded-2xl bg-stone-100">
-                                <img src={item.image} className="h-full w-full object-cover" alt={item.name} />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex justify-between gap-3">
-                                  <p className="truncate text-sm font-bold text-[#2D2D2D]">
-                                    {item.code ? `[${item.code}] ` : ''}{item.name} ×{item.quantity}
+                            <div key={item.lineId} className="py-3 first:pt-0 last:pb-0">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0 flex-1">
+                                  <p className="min-w-0 text-sm leading-5 text-[#2D2D2D]">
+                                    {item.code && (
+                                      <span className="mr-1.5 rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium leading-4 text-stone-500">{item.code}</span>
+                                    )}
+                                    <span>{item.name}</span>
+                                    <span className="ml-2 text-xs text-stone-400">x{item.quantity}</span>
                                   </p>
-                                  <p className="flex-none text-sm font-bold text-[#2D2D2D]">RM {(item.unitPrice * item.quantity).toFixed(2)}</p>
+                                  <ItemCustomization item={item} />
                                 </div>
-                                <ItemCustomization item={item} />
+                                <p className="flex-none text-right text-sm text-stone-600">RM {(item.unitPrice * item.quantity).toFixed(2)}</p>
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div className="mt-5 space-y-2 border-t border-stone-200/60 pt-4 text-xs">
+                        <div className="mt-4 space-y-2 border-t border-stone-100/80 pt-4 text-xs">
                           <PriceLine label={t('common.subtotal')} value={subtotal} />
-                          <PriceLine label={t('common.deliveryFee')} value={deliveryFee} muted={orderType === 'dinein' ? t('cart.takeaway') : undefined} />
-                          <PriceLine label={t('common.tax')} value={serviceCharge} />
+                          <PriceLine
+                            label={t('common.deliveryFee')}
+                            value={deliveryFee}
+                            muted={orderType === 'dinein' ? t('cart.takeaway') : orderType === 'takeaway' && !deliveryQuote ? t('cart.deliveryQuotePending') : undefined}
+                          />
                           {discountAmount > 0 && <PriceLine label={t('common.discount')} value={-discountAmount} highlight />}
                           <div className="flex items-center justify-between pt-2">
-                            <span className="font-bold text-[#2D2D2D]">{t('common.total')}</span>
-                            <span className="text-2xl font-bold serif text-[#C8A97E]">RM {payableTotal.toFixed(2)}</span>
+                            <span className="text-sm font-medium text-[#2D2D2D]">{t('common.total')}</span>
+                            <span className="text-lg font-semibold text-[#C8A97E]">RM {payableTotal.toFixed(2)}</span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">{t('cart.orderMethod')}</h3>
-                        <div className="grid grid-cols-2 gap-2 rounded-full bg-stone-100/80 p-1">
-                          <button
-                            onClick={() => setOrderType('dinein')}
-                            type="button"
-                            className={`rounded-full px-3 py-3 text-xs font-bold transition-all ${
-                              orderType === 'dinein'
-                                ? 'bg-[#2D2D2D] text-white shadow-sm'
-                                : 'text-stone-500'
-                            }`}
-                          >
-                            🍽 {t('cart.dineIn')}
-                          </button>
-                          <button
-                            onClick={() => setOrderType('takeaway')}
-                            type="button"
-                            className={`rounded-full px-3 py-3 text-xs font-bold transition-all ${
-                              orderType === 'takeaway'
-                                ? 'bg-[#2D2D2D] text-white shadow-sm'
-                                : 'text-stone-500'
-                            }`}
-                          >
-                            🥡 {t('cart.takeaway')}
-                          </button>
-                        </div>
-                        {hasScannedTable && orderType === 'dinein' && (
-                          <p className="mt-3 text-[11px] leading-5 text-stone-500">{t('cart.tableDetected')}</p>
-                        )}
-                      </div>
-
-                      <div className="rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">{t('cart.detailsTitle')}</h3>
-                        <div className="space-y-3">
-                          <div className="relative group">
-                            <User className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
-                            <input
-                              type="text"
-                              placeholder={t('cart.name')}
-                              value={name}
-                              onChange={(e) => setName(e.target.value)}
-                              className="w-full rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
-                            />
+                      <div className={checkoutCard}>
+                        <h3 className={checkoutTitle}>{t('cart.orderMethod')}</h3>
+                        <div className="mt-4 space-y-4">
+                          <div className="grid rounded-full bg-stone-100 text-xs font-semibold text-stone-500">
+                            <div className="grid grid-cols-2">
+                              {(['takeaway', 'dinein'] as OrderType[]).map((type) => {
+                                const active = orderType === type;
+                                return (
+                                  <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => {
+                                      setOrderType(type);
+                                      if (type === 'takeaway' && !address.trim()) setIsAddressDrawerOpen(true);
+                                    }}
+                                    className={`flex h-9 items-center justify-center gap-1.5 rounded-full transition-all active:scale-[0.98] ${
+                                      active
+                                        ? 'bg-[#3A3A3A] text-white shadow-sm'
+                                        : 'text-stone-500'
+                                    }`}
+                                  >
+                                    {type === 'takeaway' ? <Bike size={14} /> : <Utensils size={14} />}
+                                    <span>{type === 'takeaway' ? t('cart.takeaway') : t('cart.dineIn')}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                          {attemptedSubmit && !name.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.name')}</p>}
-                          <div className="relative group">
-                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
-                            <input
-                              type="tel"
-                              placeholder={t('cart.phone')}
-                              value={phone}
-                              onChange={(e) => setPhone(e.target.value)}
-                              className="w-full rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
-                            />
-                          </div>
-                          {attemptedSubmit && phone.trim() && !isValidPhone(phone) && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.phoneFormat')}</p>}
-                          {attemptedSubmit && !phone.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.phone')}</p>}
+                          {hasScannedTable && orderType === 'dinein' && (
+                            <p className={checkoutHelp}>{t('cart.tableDetected')}</p>
+                          )}
                           {orderType === 'dinein' ? (
-                            <>
-                              <div className="relative group animate-fade-in">
-                                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
+                            <div className="space-y-3 rounded-2xl bg-stone-50/70 p-3">
+                              <div className="relative animate-fade-in">
+                                <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={16} />
                                 <div className="flex gap-2">
                                   <input
                                     type="text"
@@ -593,75 +663,127 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                     value={tableNo}
                                     onChange={(e) => setTableNo(e.target.value)}
                                     disabled={isTableLocked}
-                                    className={`w-full rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E] ${
-                                      isTableLocked ? 'text-stone-500 cursor-not-allowed' : ''
-                                    }`}
+                                    className={`${checkoutInput} ${isTableLocked ? 'cursor-not-allowed text-stone-500' : ''}`}
                                   />
                                   {isTableLocked && (
                                     <button
                                       type="button"
                                       onClick={() => setIsTableLocked(false)}
-                                      className="flex-none rounded-2xl bg-stone-100 px-4 text-xs font-bold text-stone-500 transition-colors active:scale-[0.98]"
+                                      className="flex-none rounded-2xl border border-stone-200/70 bg-white px-4 text-xs font-semibold text-stone-600 transition active:scale-[0.98]"
                                     >
                                       {t('common.edit')}
                                     </button>
                                   )}
                                 </div>
                               </div>
-                              {attemptedSubmit && !tableNo.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.table')}</p>}
-                            </>
+                              {attemptedSubmit && !tableNo.trim() && <p className={checkoutError}>{t('cart.validation.table')}</p>}
+                            </div>
                           ) : (
-                            <>
-                              <div className="relative group animate-fade-in">
-                                <MapPin className="absolute left-4 top-4 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
-                                <textarea
-                                  placeholder={t('cart.address')}
-                                  value={address}
-                                  onChange={(e) => setAddress(e.target.value)}
-                                  rows={3}
-                                  className="w-full resize-none rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
+                            <div className="space-y-3 rounded-2xl bg-stone-50/70 p-3">
+                              <button
+                                type="button"
+                                onClick={() => setIsAddressDrawerOpen(true)}
+                                className="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-stone-100 bg-white px-3 py-2 text-left transition active:scale-[0.99]"
+                              >
+                                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-stone-100 text-stone-500">
+                                  <MapPin size={16} />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className={`block truncate ${address ? 'text-sm font-semibold text-[#2D2D2D]' : 'text-xs font-medium text-stone-400'}`}>{addressLabel || (address ? address.split(',')[0] : t('menuPage.chooseAddress'))}</span>
+                                  <span className="mt-0.5 block truncate text-[11px] text-stone-400">{address ? t('cart.tapToChangeAddress') : t('cart.addressRequiredHint')}</span>
+                                </span>
+                                <ChevronRight size={17} className="flex-none text-stone-300" />
+                              </button>
+                              {attemptedSubmit && !address.trim() && <p className={checkoutError}>{t('cart.validation.address')}</p>}
+                              <div className="relative rounded-2xl border border-stone-100 bg-white">
+                                <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-300" size={16} />
+                                <input
+                                  type="text"
+                                  placeholder={t('cart.deliveryUnitPlaceholder')}
+                                  value={deliveryUnit}
+                                  maxLength={80}
+                                  onChange={(e) => setDeliveryUnit(e.target.value.slice(0, 80))}
+                                  className="h-12 w-full bg-transparent pl-10 pr-3 text-sm text-[#2D2D2D] outline-none transition placeholder:text-xs placeholder:text-stone-400"
                                 />
                               </div>
-                              {attemptedSubmit && !address.trim() && <p className="-mt-1 px-2 text-[11px] text-red-500">{t('cart.validation.address')}</p>}
-                              {!isDeliveryInstructionOpen ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setIsDeliveryInstructionOpen(true)}
-                                  className="text-xs font-bold text-[#C8A97E]"
-                                >
-                                  {t('cart.addDeliveryInstruction')}
-                                </button>
-                              ) : (
-                                <div className="relative group animate-fade-in">
-                                  <MessageSquare className="absolute left-4 top-4 text-stone-300 group-focus-within:text-[#C8A97E] transition-colors" size={16} />
-                                  <textarea
-                                    placeholder={t('cart.deliveryInstructionPlaceholder')}
-                                    value={deliveryInstruction}
-                                    maxLength={100}
-                                    onChange={(e) => setDeliveryInstruction(e.target.value.slice(0, 100))}
-                                    rows={2}
-                                    className="w-full resize-none rounded-2xl border border-white/70 bg-white/70 py-4 pl-11 pr-4 text-sm shadow-inner shadow-white/40 outline-none transition-all focus:border-[#C8A97E]"
-                                  />
-                                  <span className="absolute bottom-3 right-4 text-[10px] text-stone-400">{deliveryInstruction.length}/100</span>
+                              <div className="relative rounded-2xl border border-stone-100 bg-white">
+                                <MessageSquare className="absolute left-3.5 top-3.5 text-stone-300" size={16} />
+                                <textarea
+                                  placeholder={t('cart.deliveryInstructionPlaceholder')}
+                                  value={deliveryInstruction}
+                                  maxLength={100}
+                                  onChange={(e) => setDeliveryInstruction(e.target.value.slice(0, 100))}
+                                  rows={2}
+                                  className="w-full resize-none bg-transparent py-3 pl-10 pr-12 text-sm text-[#2D2D2D] outline-none transition placeholder:text-xs placeholder:text-stone-400"
+                                />
+                                <span className="absolute bottom-3 right-2 text-[10px] text-stone-400">{deliveryInstruction.length}/100</span>
+                              </div>
+                              {address.trim() && (
+                                <div className={`rounded-2xl px-4 py-3 text-xs leading-5 ${
+                                  deliveryQuoteStatus === 'success'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : deliveryQuoteStatus === 'error'
+                                      ? 'bg-red-50 text-red-600'
+                                      : 'bg-stone-50 text-stone-500'
+                                }`}>
+                                  {deliveryQuoteStatus === 'loading' && t('cart.deliveryQuoteLoading')}
+                                  {deliveryQuoteStatus === 'success' && deliveryQuote && (
+                                    <span>{t('cart.deliveryQuoteReady', {
+                                      fee: deliveryQuote.deliveryFee.toFixed(2),
+                                      distance: deliveryQuote.distanceKm.toFixed(2),
+                                      minutes: deliveryQuote.durationMin,
+                                    })}</span>
+                                  )}
+                                  {deliveryQuoteStatus === 'error' && (deliveryQuoteError || t('cart.validation.deliveryQuoteFailed'))}
+                                  {deliveryQuoteStatus === 'idle' && t('cart.deliveryQuoteIdle')}
                                 </div>
                               )}
-                            </>
+                            </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="rounded-[2rem] border border-white/70 bg-white/65 p-5 shadow-[0_18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
-                        <h3 className="mb-4 text-sm font-bold serif text-[#2D2D2D]">{t('cart.paymentMethod')}</h3>
-                        <div className={`grid gap-2 ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                      <div className={checkoutCard}>
+                        <h3 className={checkoutTitle}>{t('cart.detailsTitle')}</h3>
+                        <div className="mt-4 space-y-3">
+                          <div className="relative">
+                            <User className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={16} />
+                            <input
+                              type="text"
+                              placeholder={t('cart.name')}
+                              value={name}
+                              onChange={(e) => setName(e.target.value)}
+                              className={checkoutInput}
+                            />
+                          </div>
+                          {attemptedSubmit && !name.trim() && <p className={checkoutError}>{t('cart.validation.name')}</p>}
+                          <div className="relative">
+                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-300" size={16} />
+                            <input
+                              type="tel"
+                              placeholder={t('cart.phone')}
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                              className={checkoutInput}
+                            />
+                          </div>
+                          {attemptedSubmit && phone.trim() && !isValidPhone(phone) && <p className={checkoutError}>{t('cart.validation.phoneFormat')}</p>}
+                          {attemptedSubmit && !phone.trim() && <p className={checkoutError}>{t('cart.validation.phone')}</p>}
+                        </div>
+                      </div>
+
+                      <div className={checkoutCard}>
+                        <h3 className={checkoutTitle}>{t('cart.paymentMethod')}</h3>
+                        <div className={`mt-4 grid gap-2 ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
                           <PaymentTab active={paymentMethod === 'wallet'} icon={<WalletCards size={16} />} label="Wallet" onClick={() => setPaymentMethod('wallet')} />
-                          <PaymentTab active={paymentMethod === 'tng'} icon={<WalletCards size={16} />} label="TNG" onClick={() => setPaymentMethod('tng')} />
+                          <PaymentTab active={paymentMethod === 'tng'} icon={<WalletCards size={16} />} label="Touch 'n Go" onClick={() => setPaymentMethod('tng')} />
                           {ONLINE_PAYMENT_ENABLED && (
                             <PaymentTab active={paymentMethod === 'stripe'} icon={<CreditCard size={16} />} label={t('cart.onlinePayment')} onClick={() => setPaymentMethod('stripe')} />
                           )}
                         </div>
 
                         {paymentMethod === 'wallet' && (
-                          <div className="mt-4 space-y-3 rounded-3xl border border-stone-100 bg-stone-50/80 p-4">
+                          <div className="mt-4 space-y-3 rounded-2xl bg-stone-50 p-4 text-xs">
                             <PriceLine label={t('cart.walletBalance')} value={walletBalance} />
                             <PriceLine label={t('cart.thisPayment')} value={payableTotal} />
                             <PriceLine label={t('cart.balanceAfter')} value={Math.max(walletAfterPayment, 0)} highlight={walletInsufficient} />
@@ -670,20 +792,31 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                         )}
 
                         {paymentMethod === 'tng' && (
-                          <div className="mt-4 space-y-3 rounded-3xl border border-stone-100 bg-stone-50/80 p-4">
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between gap-4">
-                                <span className="text-stone-500">{t('cart.payee')}</span>
-                                <span className="font-bold text-[#2D2D2D]">{paymentConfig?.tng.accountName || 'Soup Can Thin'}</span>
-                              </div>
+                          <div className="mt-4 space-y-3 rounded-2xl bg-stone-50 p-4">
+                            <div className="rounded-2xl bg-white p-3 text-[11px] leading-5 text-stone-500">
+                              <p>{t('cart.tngStepTransfer')}</p>
+                              <p>{t('cart.tngStepVerify')}</p>
+                              <p>{t('cart.tngStepUpload')}</p>
+                            </div>
+                            <div className="flex justify-between gap-4 text-xs">
+                              <span className="text-stone-500">{t('cart.payee')}</span>
+                              <span className="font-semibold text-[#2D2D2D]">{paymentConfig?.tng.accountName || 'Soup Can Thin'}</span>
                             </div>
                             {paymentConfig?.tng.qrImageUrl ? (
-                              <div className="rounded-2xl border border-white bg-white/90 p-3">
+                              <div className="space-y-3 rounded-2xl bg-white p-3">
                                 <img
                                   src={paymentConfig.tng.qrImageUrl}
                                   alt={t('cart.tngQrCode')}
                                   className="mx-auto aspect-square w-full max-w-56 object-contain"
                                 />
+                                <a
+                                  href={paymentConfig.tng.qrImageUrl}
+                                  download
+                                  className="flex h-10 items-center justify-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-4 text-xs font-medium text-stone-600 active:scale-[0.99]"
+                                >
+                                  <Download size={14} />
+                                  <span>{t('cart.downloadTngQr')}</span>
+                                </a>
                               </div>
                             ) : (
                               <div className="flex items-center justify-between gap-4 text-xs">
@@ -691,14 +824,14 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 <button
                                   type="button"
                                   onClick={() => navigator.clipboard?.writeText(paymentConfig?.tng.accountNumber || '0123456789')}
-                                  className="flex items-center gap-1 font-mono font-bold text-[#2D2D2D]"
+                                  className="flex items-center gap-1 font-mono font-semibold text-[#2D2D2D]"
                                 >
                                   {paymentConfig?.tng.accountNumber || '0123456789'}
                                   <Copy size={13} className="text-[#C8A97E]" />
                                 </button>
                               </div>
                             )}
-                            <label className="flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/70 bg-white/80 px-4 py-5 text-xs font-bold text-[#C8A97E] active:scale-[0.99]">
+                            <label className="flex min-w-0 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#C8A97E]/70 bg-white px-4 py-4 text-xs font-semibold text-[#C8A97E] active:scale-[0.99]">
                               {receiptFile ? <CheckCircle2 size={16} /> : <Upload size={16} />}
                               <span className="min-w-0 truncate">{receiptFile ? receiptFile.name : t('cart.uploadReceipt')}</span>
                               <input
@@ -708,13 +841,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                                 onChange={(event) => handleReceiptChange(event.target.files?.[0] || null)}
                               />
                             </label>
-                            <p className="text-[11px] leading-5 text-stone-500">{t('cart.receiptHint')}</p>
-                            {!receiptFile && <p className="text-[11px] text-amber-700">{t('cart.receiptRequired')}</p>}
                             {receiptPreview && (
                               <button
                                 type="button"
                                 onClick={() => setIsReceiptPreviewOpen(true)}
-                                className="h-40 w-full overflow-hidden rounded-2xl border border-white bg-white/80 p-2 active:scale-[0.99]"
+                                className="h-40 w-full overflow-hidden rounded-2xl bg-white p-2 active:scale-[0.99]"
                                 aria-label={t('cart.receiptPreviewAria')}
                               >
                                 <img src={receiptPreview} alt={t('cart.receiptPreviewAlt')} className="h-full w-full object-contain" />
@@ -724,11 +855,11 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                         )}
 
                         {ONLINE_PAYMENT_ENABLED && paymentMethod === 'stripe' && (
-                          <div className="mt-4 rounded-3xl border border-stone-100 bg-stone-50/80 p-4">
+                          <div className="mt-4 rounded-2xl bg-stone-50 p-4">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="text-sm font-bold text-[#2D2D2D]">{t('cart.onlinePayment')}</p>
-                                <p className="mt-1 text-[11px] text-stone-500">Powered by Stripe</p>
+                                <p className="text-sm font-semibold text-[#2D2D2D]">{t('cart.onlinePayment')}</p>
+                                <p className={checkoutHelp}>Powered by Stripe</p>
                               </div>
                               <CreditCard className="text-[#C8A97E]" size={22} />
                             </div>
@@ -737,12 +868,12 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                       </div>
 
                       {availableCoupons.length > 0 && (
-                        <div className="space-y-4">
-                          <h3 className="text-[10px] font-bold text-stone-400 tracking-[0.2em] uppercase">{t('cart.coupon')}</h3>
+                        <div className={checkoutCard}>
+                          <h3 className={checkoutTitle}>{t('cart.coupon')}</h3>
                           <select
                             value={selectedCouponId}
                             onChange={(event) => setSelectedCouponId(event.target.value)}
-                            className="w-full rounded-2xl border border-stone-100 bg-white px-4 py-4 text-sm outline-none focus:border-[#C8A97E] shadow-sm"
+                            className="mt-4 h-12 w-full rounded-2xl border border-stone-200/70 bg-white px-4 text-sm text-[#2D2D2D] outline-none focus:border-stone-400/80"
                           >
                             <option value="">{t('cart.noCoupon')}</option>
                             {availableCoupons.map(coupon => (
@@ -752,7 +883,7 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                             ))}
                           </select>
                           {discountAmount > 0 && (
-                            <p className="text-[11px] leading-5 text-emerald-600">
+                            <p className="mt-3 text-[11px] leading-5 text-emerald-600">
                               {t('cart.couponApplied', { discount: discountAmount.toFixed(2), total: payableTotal.toFixed(2) })}
                             </p>
                           )}
@@ -771,33 +902,31 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
             </div>
 
             {/* Bottom Bar Action Button */}
-            <div className="absolute bottom-0 left-0 right-0 border-t border-white/70 bg-white/80 p-5 shadow-[0_-18px_55px_rgba(45,45,45,0.08)] backdrop-blur-2xl">
+            <div className="absolute bottom-0 left-0 right-0 border-t border-stone-100 bg-white/90 p-5 shadow-[0_-12px_36px_rgba(45,45,45,0.06)] backdrop-blur-xl">
               {step === 'summary' ? (
                 <button 
                   onClick={handleNextStep}
                   disabled={cartItems.length === 0}
-                  className={`w-full py-5 rounded-full font-bold text-base tracking-widest shadow-2xl transition-all flex items-center justify-center space-x-3 ${
+                  className={`flex w-full items-center justify-center gap-3 rounded-full py-4 text-sm font-semibold transition-all ${
                     cartItems.length === 0
                       ? 'bg-stone-200 text-stone-400 cursor-not-allowed' 
-                      : 'bg-[#2D2D2D] text-white active:scale-95 shadow-black/30'
+                      : 'bg-[#2D2D2D] text-white active:scale-95'
                   }`}
                 >
-                  <span>{t('cart.continueCheckout')}</span>
+                  <span>{t('cart.totalAmount', { amount: subtotal.toFixed(2) })}</span>
+                  {buttonSeparator}
+                  <span>{t('cart.settle')}</span>
                   <ChevronRight size={18} />
                 </button>
               ) : (
-                <div className="flex items-center gap-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">{t('common.total')}</p>
-                    <p className="text-xl font-bold serif text-[#2D2D2D]">RM {payableTotal.toFixed(2)}</p>
-                  </div>
+                <div>
                   <button
                     onClick={handlePlaceOrder}
                     disabled={isOrdering || !isFormValid}
-                    className={`min-h-[3.75rem] flex-[1.4] rounded-full px-4 py-4 text-sm font-bold tracking-widest shadow-2xl transition-all flex items-center justify-center text-center ${
+                    className={`flex min-h-[3.5rem] w-full items-center justify-center rounded-full px-4 py-4 text-center text-sm font-semibold transition-all ${
                       isOrdering || !isFormValid
                         ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                        : 'bg-[#2D2D2D] text-white active:scale-95 shadow-black/30'
+                        : 'bg-[#2D2D2D] text-white active:scale-95'
                     }`}
                   >
                     {isOrdering ? (
@@ -808,11 +937,13 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
                           ? t('cart.fillInfoContinue')
                           : walletInsufficient
                             ? t('cart.topUp')
-                            : paymentMethod === 'wallet'
-                              ? t('cart.payWithWallet')
-                              : paymentMethod === 'stripe'
-                                ? t('cart.payAmount', { amount: payableTotal.toFixed(2) })
-                                : t('cart.placeOrder')}
+                            : (
+                              <span className="inline-flex items-center justify-center gap-3">
+                                <span>{t('cart.totalAmount', { amount: payableTotal.toFixed(2) })}</span>
+                                {buttonSeparator}
+                                <span>{t('cart.settle')}</span>
+                              </span>
+                            )}
                       </span>
                     )}
                   </button>
@@ -822,6 +953,23 @@ const Cart: React.FC<CartProps> = ({ isOpen, onClose, cart, setCart, tableNumber
           </>
         )}
       </div>
+      <AddressSelectionDrawer
+        isOpen={isAddressDrawerOpen}
+        address={address}
+        savedAddresses={session.addresses || []}
+        requireSelection={step === 'summary' || step === 'details'}
+        onClose={() => setIsAddressDrawerOpen(false)}
+        onConfirm={(nextAddress, savedAddress, nextAddressLabel) => {
+          setAddress(nextAddress);
+          setAddressLabel(nextAddressLabel || '');
+          if (savedAddress) {
+            setName(savedAddress.recipientName);
+            setPhone(savedAddress.phone);
+          }
+          setIsAddressDrawerOpen(false);
+          if (step === 'summary' && cartItems.length > 0) setStep('details');
+        }}
+      />
       {receiptPreview && isReceiptPreviewOpen && (
         <div className="absolute inset-0 z-[130] flex items-center justify-center bg-black/80 p-6" onClick={() => setIsReceiptPreviewOpen(false)}>
           <button
@@ -852,7 +1000,7 @@ function PriceLine({ label, value, muted, highlight }: { label: string; value: n
         {label}
         {muted && <span className="ml-1 text-[10px] text-stone-400">({muted})</span>}
       </span>
-      <span className={`font-bold ${highlight ? 'text-emerald-600' : 'text-[#2D2D2D]'}`}>{displayValue}</span>
+      <span className={highlight ? 'text-emerald-600' : 'text-stone-600'}>{displayValue}</span>
     </div>
   );
 }
@@ -862,14 +1010,14 @@ function PaymentTab({ active, icon, label, onClick }: { active: boolean; icon: R
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-[4.25rem] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-3 text-xs font-bold transition-all ${
+      className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-3 text-xs font-semibold transition-all ${
         active
-          ? 'bg-[#2D2D2D] text-white shadow-lg shadow-black/15'
-          : 'bg-white/70 text-stone-500 shadow-sm'
+          ? 'border-[#2D2D2D] bg-[#2D2D2D] text-white'
+          : 'border-stone-200/70 bg-white text-stone-500'
       }`}
     >
       {icon}
-      <span>{label}</span>
+      <span className="text-center leading-tight">{label}</span>
     </button>
   );
 }
