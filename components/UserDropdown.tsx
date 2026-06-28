@@ -9,9 +9,12 @@ interface UserDropdownProps {
   session: AuthMeResponse;
   onClose: () => void;
   onSelect: (tab: UserCenterTab) => void;
+  onOrders: () => void;
 }
 
-const menuItems: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React.ElementType }[] = [
+type UserDropdownItem = { id: UserCenterTab | 'orders'; labelKey: string; subtitle: string; icon: React.ElementType };
+
+const menuItems: UserDropdownItem[] = [
   { id: 'profile', labelKey: 'user.menu.profile', subtitle: 'Profile', icon: User },
   { id: 'wallet', labelKey: 'user.menu.wallet', subtitle: 'Wallet', icon: Wallet },
   { id: 'orders', labelKey: 'user.menu.orders', subtitle: 'Orders', icon: ReceiptText },
@@ -20,10 +23,17 @@ const menuItems: { id: UserCenterTab; labelKey: string; subtitle: string; icon: 
   { id: 'settings', labelKey: 'user.menu.settings', subtitle: 'Settings', icon: Settings },
 ];
 
-const UserDropdown: React.FC<UserDropdownProps> = ({ isOpen, session, onClose, onSelect }) => {
+const UserDropdown: React.FC<UserDropdownProps> = ({ isOpen, session, onClose, onSelect, onOrders }) => {
   const { t } = useTranslation();
   if (!isOpen || !session.user) return null;
   const displayName = session.user.name?.trim() || t('common.memberFallback');
+  const handleSelect = (item: UserDropdownItem) => {
+    if (item.id === 'orders') {
+      onOrders();
+      return;
+    }
+    onSelect(item.id);
+  };
 
   return (
     <div className="fixed inset-0 z-[90] max-w-md mx-auto bg-black/5" onClick={onClose}>
@@ -51,7 +61,7 @@ const UserDropdown: React.FC<UserDropdownProps> = ({ isOpen, session, onClose, o
             return (
               <button
                 key={item.id}
-                onClick={() => onSelect(item.id)}
+                onClick={() => handleSelect(item)}
                 className="group flex w-full items-center gap-3 rounded-2xl border border-white/0 px-3 py-3 text-left transition hover:border-white/60 hover:bg-white/70 active:scale-[0.99]"
               >
                 <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-white/70 bg-white/80 text-[#C8A97E] shadow-sm backdrop-blur-[2px] transition group-hover:bg-[#2D2D2D] group-hover:text-[#E7C996]">

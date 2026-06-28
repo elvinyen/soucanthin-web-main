@@ -31,6 +31,7 @@ type MenuTranslationRow = {
 
 const SUPPORTED_LANGUAGES: LanguageCode[] = ['zh', 'en', 'th', 'vi'];
 const DEFAULT_LANGUAGE: LanguageCode = 'en';
+const DISPLAY_TAGS = ['热卖', '新品', '招牌'];
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method && req.method !== 'GET') {
@@ -89,6 +90,9 @@ function mapMenuItem(
 ): MenuItem {
   const translation = getTranslation(translationsByItem.get(Number(row.id)), lang);
   const category = categoryLabels.get(Number(row.category_id)) || '';
+  const sourceTags = Array.isArray(row.tags) ? row.tags : [];
+  const translatedTags = translation?.tags;
+  const displayLabel = Boolean(row.recommended) ? '推荐' : sourceTags.find(tag => DISPLAY_TAGS.includes(tag));
   return {
     id: Number(row.id),
     code: row.item_code || undefined,
@@ -98,12 +102,13 @@ function mapMenuItem(
     price: Number(row.price || 0),
     category: translation?.category || category,
     image: row.image_url,
-    tags: translation?.tags || (Array.isArray(row.tags) ? row.tags : []),
+    tags: (translatedTags || sourceTags).filter(tag => !DISPLAY_TAGS.includes(tag)),
     optionGroups: mergeOptionGroups(
       Array.isArray(row.option_groups) ? row.option_groups : [],
       translation?.optionGroups,
     ),
     recommended: Boolean(row.recommended),
+    displayLabel,
     soldOut: Boolean(row.sold_out),
   };
 }

@@ -6,12 +6,15 @@ import {
   calculateTotals,
   generateOrderId,
   getCouponDiscount,
+  getOrderItems,
   markCouponUsed,
+  notifyKitchenFromRecord,
   notifyStaffFromOrder,
   parseOrderBody,
   processWalletPayment,
   updateOrderById,
   uploadReceipt,
+  validateMenuItemsAvailable,
   validateOrder,
 } from './_order-utils';
 import { getAuthenticatedUser, getWallet } from './_auth-utils';
@@ -34,6 +37,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const validationError = validateOrder(order, ['tng', 'wallet']);
   if (validationError) {
     return res.status(400).json({ success: false, error: validationError });
+  }
+
+  try {
+    const availabilityError = await validateMenuItemsAvailable(order);
+    if (availabilityError) {
+      return res.status(400).json({ success: false, error: availabilityError });
+    }
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error instanceof Error ? error.message : '菜单状态校验失败' });
   }
 
   const orderNo = generateOrderId();
@@ -70,7 +82,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? 'paid'
       : 'pending_review';
     const paymentReviewStatus = order.paymentMethod === 'tng' ? 'pending' : 'not_required';
-    const status = 'pending_confirm';
+    const status = paymentStatus === 'paid' && paymentReviewStatus !== 'pending'
+      ? 'waiting_kitchen'
+      : 'pending_confirm';
     const paymentReviewToken = order.paymentMethod === 'tng' ? randomBytes(24).toString('base64url') : null;
 
     const { orderRecord } = await createOrderWithItems({
@@ -100,12 +114,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       receipt_url: receiptUrl,
       ...(paymentReviewToken ? buildTngReviewLinks(orderRecord.id, paymentReviewToken) : {}),
     });
+    const kitchenNotification = status === 'waiting_kitchen'
+      ? await notifyKitchenFromRecord(orderRecord, await getOrderItems(orderRecord.id))
+      : null;
 
     await updateOrderById(orderRecord.id, {
       notification_status: notification.status,
       notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
       telegram_chat_id: notification.chatId || null,
       telegram_message_id: notification.messageId || null,
+      review_tg_chat_id: notification.chatId || null,
+      review_tg_message_id: notification.messageId || null,
+      kitchen_tg_chat_id: kitchenNotification?.chatId || null,
+      kitchen_tg_message_id: kitchenNotification?.messageId || null,
     });
 
     return res.status(200).json({

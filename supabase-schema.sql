@@ -174,15 +174,20 @@ create table if not exists public.admin_users (
   username text not null,
   password_hash text not null,
   display_name text not null,
-  role text not null default 'manager' check (role in ('owner', 'manager', 'staff')),
+  role text not null default 'admin' check (role in ('admin', 'kitchen', 'customer_service', 'delivery', 'owner', 'manager', 'staff')),
   active boolean not null default true,
   last_login_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.admin_users drop constraint if exists admin_users_role_check;
+alter table public.admin_users
+  add constraint admin_users_role_check check (role in ('admin', 'kitchen', 'customer_service', 'delivery', 'owner', 'manager', 'staff'));
+
 create unique index if not exists admin_users_username_lower_unique_idx on public.admin_users (lower(username));
 create index if not exists admin_users_active_idx on public.admin_users (active);
+create index if not exists admin_users_role_idx on public.admin_users (role);
 alter table public.admin_users enable row level security;
 
 create table if not exists public.admin_sessions (
@@ -247,8 +252,18 @@ create table if not exists public.orders (
   notification_status text not null default 'pending',
   telegram_chat_id text,
   telegram_message_id integer,
+  review_tg_chat_id text,
+  review_tg_message_id integer,
+  kitchen_tg_chat_id text,
+  kitchen_tg_message_id integer,
+  delivery_tg_chat_id text,
+  delivery_tg_message_id integer,
   notified_at timestamptz,
   paid_at timestamptz,
+  kitchen_started_at timestamptz,
+  kitchen_completed_at timestamptz,
+  kitchen_started_by uuid references public.admin_users(id),
+  kitchen_completed_by uuid references public.admin_users(id),
   source_payload jsonb,
   created_at timestamptz not null default now()
 );
@@ -260,8 +275,18 @@ alter table public.orders add column if not exists stripe_checkout_session_id te
 alter table public.orders add column if not exists stripe_payment_intent_id text;
 alter table public.orders add column if not exists telegram_chat_id text;
 alter table public.orders add column if not exists telegram_message_id integer;
+alter table public.orders add column if not exists review_tg_chat_id text;
+alter table public.orders add column if not exists review_tg_message_id integer;
+alter table public.orders add column if not exists kitchen_tg_chat_id text;
+alter table public.orders add column if not exists kitchen_tg_message_id integer;
+alter table public.orders add column if not exists delivery_tg_chat_id text;
+alter table public.orders add column if not exists delivery_tg_message_id integer;
 alter table public.orders add column if not exists notified_at timestamptz;
 alter table public.orders add column if not exists paid_at timestamptz;
+alter table public.orders add column if not exists kitchen_started_at timestamptz;
+alter table public.orders add column if not exists kitchen_completed_at timestamptz;
+alter table public.orders add column if not exists kitchen_started_by uuid references public.admin_users(id);
+alter table public.orders add column if not exists kitchen_completed_by uuid references public.admin_users(id);
 alter table public.orders add column if not exists user_id uuid;
 alter table public.orders add column if not exists coupon_id uuid;
 alter table public.orders add column if not exists discount_amount numeric(10, 2) not null default 0;
@@ -286,6 +311,11 @@ update public.orders set payment_method = 'stripe' where payment_method = 'onlin
 update public.orders set payment_method = 'tng' where payment_method = 'ewallet';
 update public.orders set status = 'pending_confirm' where status in ('pending', 'awaiting_payment', 'pending_review');
 update public.orders set status = 'cancelled' where status in ('payment_rejected', 'rejected');
+update public.orders
+set status = 'waiting_kitchen'
+where status = 'pending_confirm'
+  and payment_status = 'paid'
+  and payment_review_status <> 'pending';
 
 alter table public.orders drop constraint if exists orders_order_type_check;
 alter table public.orders drop constraint if exists orders_payment_method_check;
@@ -301,7 +331,7 @@ alter table public.orders
   add constraint orders_payment_method_check check (payment_method in ('cash', 'tng', 'stripe', 'wallet'));
 
 alter table public.orders
-  add constraint orders_status_check check (status in ('pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
+  add constraint orders_status_check check (status in ('pending_confirm', 'waiting_kitchen', 'cooking', 'kitchen_done', 'stock_issue', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
 
 alter table public.orders
   add constraint orders_payment_status_check check (payment_status in ('pay_at_counter', 'pending_review', 'awaiting_payment', 'paid'));
@@ -338,6 +368,8 @@ update public.order_items set unit_base_price = unit_price where unit_base_price
 
 create index if not exists orders_created_at_idx on public.orders (created_at desc);
 create index if not exists orders_status_idx on public.orders (status);
+create index if not exists orders_kitchen_queue_idx on public.orders (status, created_at);
+create index if not exists orders_kitchen_completed_idx on public.orders (kitchen_completed_at desc);
 create index if not exists orders_payment_status_idx on public.orders (payment_status);
 create index if not exists orders_stripe_checkout_session_idx on public.orders (stripe_checkout_session_id);
 create index if not exists orders_user_id_idx on public.orders (user_id);
@@ -371,13 +403,13 @@ alter table public.order_status_events drop constraint if exists order_status_ev
 alter table public.order_status_events drop constraint if exists order_status_events_to_status_check;
 
 alter table public.order_status_events
-  add constraint order_status_events_action_check check (action in ('confirm', 'start_delivery', 'delivered', 'complete', 'cancel'));
+  add constraint order_status_events_action_check check (action in ('send_to_kitchen', 'kitchen_start', 'kitchen_complete', 'stock_issue', 'confirm', 'start_delivery', 'delivered', 'complete', 'cancel'));
 
 alter table public.order_status_events
-  add constraint order_status_events_from_status_check check (from_status in ('pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
+  add constraint order_status_events_from_status_check check (from_status in ('pending_confirm', 'waiting_kitchen', 'cooking', 'kitchen_done', 'stock_issue', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
 
 alter table public.order_status_events
-  add constraint order_status_events_to_status_check check (to_status in ('pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
+  add constraint order_status_events_to_status_check check (to_status in ('pending_confirm', 'waiting_kitchen', 'cooking', 'kitchen_done', 'stock_issue', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'));
 
 create index if not exists order_status_events_order_id_idx on public.order_status_events (order_id, created_at desc);
 create index if not exists order_status_events_order_no_idx on public.order_status_events (order_no, created_at desc);

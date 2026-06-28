@@ -26,7 +26,8 @@ type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
 const App: React.FC = () => {
   const { t } = useTranslation();
-  const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
+  const normalizedPathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  const isAdminRoute = normalizedPathname === '/admin' || normalizedPathname.startsWith('/admin/');
   const [scrolled, setScrolled] = useState(false);
   const [view, setView] = useState<MainView>('home');
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -41,6 +42,7 @@ const App: React.FC = () => {
   const [tableNo, setTableNo] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryAddressLabel, setDeliveryAddressLabel] = useState('');
+  const [deliveryAddressId, setDeliveryAddressId] = useState('');
   const [userCenterNotice, setUserCenterNotice] = useState('');
   const [appNotice, setAppNotice] = useState('');
 
@@ -78,7 +80,6 @@ const App: React.FC = () => {
     }
     if (paymentStatus === 'stripe-success') {
       setView('orders');
-      setUserCenterTab('orders');
       setUserCenterNotice(t('user.notice.paymentStripeSuccess'));
       [0, 1500, 4000, 8000].forEach(delay => {
         window.setTimeout(refreshSession, delay);
@@ -111,13 +112,32 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const savedAddresses = session.addresses || [];
+    if (deliveryAddressId) {
+      const savedAddress = savedAddresses.find(item => item.id === deliveryAddressId);
+      if (!savedAddress) {
+        setDeliveryAddress('');
+        setDeliveryAddressLabel('');
+        setDeliveryAddressId('');
+        return;
+      }
+      if (deliveryAddress.trim() !== savedAddress.address.trim()) {
+        setDeliveryAddress(savedAddress.address);
+      }
+      if (deliveryAddressLabel !== (savedAddress.label || '')) {
+        setDeliveryAddressLabel(savedAddress.label || '');
+      }
+      return;
+    }
+
     if (deliveryAddress.trim()) return;
-    const defaultAddress = (session.addresses || []).find(item => item.isDefault);
+    const defaultAddress = savedAddresses.find(item => item.isDefault);
     if (defaultAddress?.address) {
       setDeliveryAddress(defaultAddress.address);
       setDeliveryAddressLabel(defaultAddress.label || '');
+      setDeliveryAddressId(defaultAddress.id);
     }
-  }, [deliveryAddress, session.addresses]);
+  }, [deliveryAddress, deliveryAddressId, deliveryAddressLabel, session.addresses]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -153,6 +173,12 @@ const App: React.FC = () => {
     setUserCenterTab(tab);
     setIsUserMenuOpen(false);
     setView('mine');
+  };
+
+  const openOrdersPage = () => {
+    setIsUserMenuOpen(false);
+    setView('orders');
+    refreshSession();
   };
 
   const handleLogout = () => {
@@ -231,6 +257,7 @@ const App: React.FC = () => {
             setDeliveryAddress={setDeliveryAddress}
             deliveryAddressLabel={deliveryAddressLabel}
             setDeliveryAddressLabel={setDeliveryAddressLabel}
+            setDeliveryAddressId={setDeliveryAddressId}
             session={session}
           />
         )}
@@ -240,8 +267,8 @@ const App: React.FC = () => {
             session={session}
             onLogin={() => setIsAuthOpen(true)}
             onOpenHistory={() => {
-              setUserCenterTab('orders');
-              setView('mine');
+              setView('orders');
+              refreshSession();
             }}
           />
         )}
@@ -259,18 +286,18 @@ const App: React.FC = () => {
               externalNotice={userCenterNotice}
             />
           ) : (
-            <div className="min-h-screen bg-white px-6 pb-32 pt-7 text-[#2D2D2D]">
+            <div className="min-h-screen bg-stone-50 px-6 pb-32 pt-7 text-[#2D2D2D]">
               <h1 className="serif text-2xl font-bold text-[#2D2D2D]">{t('user.mine')}</h1>
-              <div className="mt-10 rounded-[1.65rem] border border-stone-100 bg-white p-6 text-center shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2D2D2D] text-[#C8A97E]">
+              <div className="mt-10 rounded-[2rem] bg-white p-6 text-center shadow-sm">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#C7A46A]/12 text-[#C7A46A]">
                   <img src="/logo/sct_logo.png" alt={`${t('common.brandZh')} Logo`} className="h-8 w-8 object-contain" />
                 </div>
                 <h2 className="serif mt-5 text-lg font-bold text-[#2D2D2D]">{t('user.loginRequiredTitle')}</h2>
-                <p className="mt-2 text-sm leading-6 text-stone-500">{t('user.loginRequiredDescription')}</p>
+                <p className="mt-2 text-sm leading-6 text-[#8A8175]">{t('user.loginRequiredDescription')}</p>
                 <button
                   type="button"
                   onClick={() => setIsAuthOpen(true)}
-                  className="mt-6 w-full rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white shadow-xl shadow-black/10"
+                  className="mt-6 w-full rounded-full bg-[#C7A46A] py-4 text-sm font-bold text-white shadow-xl shadow-[#C7A46A]/20"
                 >
                   {t('common.login')}
                 </button>
@@ -295,12 +322,12 @@ const App: React.FC = () => {
         setAddress={setDeliveryAddress}
         addressLabel={deliveryAddressLabel}
         setAddressLabel={setDeliveryAddressLabel}
+        setAddressId={setDeliveryAddressId}
         session={session}
         onRefreshSession={refreshSession}
         onOrderSuccess={() => {
           setIsCartOpen(false);
           setView('orders');
-          setUserCenterTab('orders');
           refreshSession();
         }}
         onWalletRecharge={() => {
@@ -341,6 +368,7 @@ const App: React.FC = () => {
         session={session}
         onClose={() => setIsUserMenuOpen(false)}
         onSelect={openUserCenter}
+        onOrders={openOrdersPage}
       />
 
       <UserCenter

@@ -1,13 +1,13 @@
-import { AdminError, jsonError, parseAdminBody, parseQuery, requireAdmin } from './_admin-utils';
+import { AdminError, jsonError, parseAdminBody, parseQuery, requireAdminRole } from './_admin-utils';
 import type { ApiRequest, ApiResponse, OrderRecord } from './_order-utils';
-import { editTelegramOrderMessage, getOrderItems, getSupabaseConfig, isOrderStatus, recordOrderStatusEvent, supabaseRequest } from './_order-utils';
+import { editTelegramDeliveryMessage, editTelegramOrderMessage, getOrderItems, getSupabaseConfig, isOrderStatus, notifyDeliveryFromRecord, recordOrderStatusEvent, supabaseRequest } from './_order-utils';
 import type { OrderStatus } from '../types/order';
 
-const ORDER_SELECT = 'id,order_no,user_id,order_type,payment_method,customer_name,customer_phone,table_no,delivery_address,assigned_branch_id,assigned_branch_name,delivery_latitude,delivery_longitude,delivery_distance_km,delivery_duration_min,delivery_quote_provider,note,subtotal,delivery_fee,service_charge,total,discount_amount,payable_total,status,payment_status,payment_review_status,receipt_url,notification_status,telegram_chat_id,telegram_message_id,created_at,last_status_changed_at,last_operator_name';
+const ORDER_SELECT = 'id,order_no,user_id,order_type,payment_method,customer_name,customer_phone,table_no,delivery_address,assigned_branch_id,assigned_branch_name,delivery_latitude,delivery_longitude,delivery_distance_km,delivery_duration_min,delivery_quote_provider,note,subtotal,delivery_fee,service_charge,total,discount_amount,payable_total,status,payment_status,payment_review_status,receipt_url,notification_status,telegram_chat_id,telegram_message_id,review_tg_chat_id,review_tg_message_id,kitchen_tg_chat_id,kitchen_tg_message_id,delivery_tg_chat_id,delivery_tg_message_id,created_at,last_status_changed_at,last_operator_name';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    await requireAdmin(req);
+    await requireAdminRole(req, ['admin', 'customer_service']);
     const method = req.method || 'GET';
 
     if (method === 'GET') return getOrders(req, res);
@@ -100,12 +100,32 @@ async function updateOrderStatus(req: ApiRequest, res: ApiResponse) {
   if (updatedOrder) {
     const items = await getOrderItems(updatedOrder.id);
     await editTelegramOrderMessage(updatedOrder, items);
+    if (updatedOrder.order_type === 'takeaway' && ['kitchen_done', 'delivering', 'delivered', 'completed'].includes(updatedOrder.status)) {
+      if (updatedOrder.delivery_tg_message_id) {
+        await editTelegramDeliveryMessage(updatedOrder, items);
+      } else {
+        const deliveryNotification = await notifyDeliveryFromRecord(updatedOrder, items);
+        if (deliveryNotification.messageId) {
+          await supabaseRequest(supabaseUrl, serviceRoleKey, `/orders?id=eq.${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              delivery_tg_chat_id: deliveryNotification.chatId || null,
+              delivery_tg_message_id: deliveryNotification.messageId || null,
+            }),
+          });
+        }
+      }
+    }
   }
 
   return res.status(200).json({ success: true, status: nextStatus });
 }
 
 function actionForStatus(status: OrderStatus) {
+  if (status === 'waiting_kitchen') return 'send_to_kitchen';
+  if (status === 'cooking') return 'kitchen_start';
+  if (status === 'kitchen_done') return 'kitchen_complete';
+  if (status === 'stock_issue') return 'stock_issue';
   if (status === 'preparing') return 'confirm';
   if (status === 'delivering') return 'start_delivery';
   if (status === 'delivered') return 'delivered';

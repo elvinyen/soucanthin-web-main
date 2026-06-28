@@ -1,5 +1,5 @@
 import type { ApiRequest, ApiResponse, OrderRecord } from './_order-utils';
-import { getOrderItems, getSupabaseConfig, markCouponUsed, notifyStaffFromRecord, supabaseRequest } from './_order-utils';
+import { getOrderItems, getSupabaseConfig, markCouponUsed, notifyKitchenFromRecord, notifyStaffFromRecord, supabaseRequest } from './_order-utils';
 import { parseJsonBody } from './_auth-utils';
 
 type ReviewAction = 'approve' | 'reject';
@@ -57,7 +57,7 @@ async function approveOrderPayment(orderId: string, reviewToken: string) {
     {
       method: 'PATCH',
       body: JSON.stringify({
-        status: 'pending_confirm',
+        status: 'waiting_kitchen',
         payment_status: 'paid',
         payment_review_status: 'approved',
         paid_at: new Date().toISOString(),
@@ -70,6 +70,7 @@ async function approveOrderPayment(orderId: string, reviewToken: string) {
   if (approvedOrder) {
     const items = await getOrderItems(approvedOrder.id);
     const notification = await notifyStaffFromRecord(approvedOrder, items);
+    const kitchenNotification = await notifyKitchenFromRecord(approvedOrder, items);
     await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
@@ -81,6 +82,10 @@ async function approveOrderPayment(orderId: string, reviewToken: string) {
           notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
           telegram_chat_id: notification.chatId || null,
           telegram_message_id: notification.messageId || null,
+          review_tg_chat_id: notification.chatId || null,
+          review_tg_message_id: notification.messageId || null,
+          kitchen_tg_chat_id: kitchenNotification.chatId || null,
+          kitchen_tg_message_id: kitchenNotification.messageId || null,
         }),
       },
     );

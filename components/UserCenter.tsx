@@ -3,7 +3,6 @@ import {
   X,
   User,
   Wallet,
-  ReceiptText,
   MapPin,
   TicketPercent,
   Settings,
@@ -21,10 +20,10 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import type { AuthMeResponse, UserAddress, UserOrderSummary, WalletTransaction } from '../types/auth';
+import type { AuthMeResponse, UserAddress, WalletTransaction } from '../types/auth';
 import type { ReceiptImage } from '../types/order';
 
-export type UserCenterTab = 'profile' | 'wallet' | 'orders' | 'addresses' | 'coupons' | 'settings';
+export type UserCenterTab = 'profile' | 'wallet' | 'addresses' | 'coupons' | 'settings';
 
 interface UserCenterProps {
   isOpen: boolean;
@@ -42,20 +41,19 @@ type PaymentConfig = { tng: { accountName: string; accountNumber: string; qrImag
 const tabs: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React.ElementType }[] = [
   { id: 'profile', labelKey: 'userCenter.tabs.profile', subtitle: 'Profile', icon: User },
   { id: 'wallet', labelKey: 'userCenter.tabs.wallet', subtitle: 'Wallet', icon: Wallet },
-  { id: 'orders', labelKey: 'userCenter.tabs.orders', subtitle: 'Orders', icon: ReceiptText },
   { id: 'addresses', labelKey: 'userCenter.tabs.addresses', subtitle: 'Addresses', icon: MapPin },
   { id: 'coupons', labelKey: 'userCenter.tabs.coupons', subtitle: 'Coupons', icon: TicketPercent },
   { id: 'settings', labelKey: 'userCenter.tabs.settings', subtitle: 'Settings', icon: Settings },
 ];
 
 const quickAmounts = [1, 5, 10, 20, 50, 100];
-const pageShell = 'min-h-screen max-w-md mx-auto bg-white text-[#2D2D2D]';
-const pagePanel = 'relative min-h-screen overflow-hidden bg-white';
+const pageShell = 'min-h-screen max-w-md mx-auto bg-stone-50 text-[#2D2D2D]';
+const pagePanel = 'relative min-h-screen overflow-hidden bg-stone-50';
 const sheetPanel = 'absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.25rem] border border-stone-100 bg-white/95 shadow-[0_-24px_70px_rgba(45,45,45,0.16)] backdrop-blur-2xl animate-slide-up';
 const glassPanel = 'rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_16px_45px_rgba(45,45,45,0.07)]';
 const glassCard = 'rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_14px_40px_rgba(45,45,45,0.06)]';
 const glassInput = 'border border-stone-200/80 bg-white text-[#2D2D2D] placeholder:text-stone-400 shadow-sm';
-const primaryButton = 'bg-[#2D2D2D] text-white shadow-xl shadow-black/10';
+const primaryButton = 'bg-[#C7A46A] text-white shadow-xl shadow-[#C7A46A]/20';
 const darkButton = 'bg-[#2D2D2D] text-white shadow-xl shadow-black/10';
 const ONLINE_PAYMENT_ENABLED = false;
 
@@ -87,7 +85,6 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
     isDefault: true,
   });
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
-  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   const pendingTransactions = useMemo(
     () => transactions.filter(item => item.method === 'tng' && item.status === 'pending').length,
@@ -681,67 +678,6 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             </section>
           )}
 
-          {activeTab === 'orders' && (
-            <section className="space-y-3">
-              {(session.orders || []).length === 0 ? (
-                <EmptyState text={t('userCenter.emptyOrders')} />
-              ) : (
-                (session.orders || []).map(order => {
-                  const expanded = expandedOrderId === order.id;
-                  const orderStatus = getOrderStatusMeta(order.status, t);
-                  return (
-                  <div key={order.id} className={`p-5 ${glassCard}`}>
-                    <button
-                      onClick={() => setExpandedOrderId(expanded ? null : order.id)}
-                      className="flex w-full items-center justify-between gap-4 text-left"
-                    >
-                      <div>
-                        <p className="font-mono text-sm font-bold text-[#2D2D2D]">{order.orderNo}</p>
-                        <p className="mt-1 text-[11px] text-stone-400">{formatDate(order.createdAt, i18n.language)}</p>
-                        <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ${orderStatus.badgeClass}`}>
-                          {orderStatus.label}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-[#C8A97E]">RM {(order.payableTotal ?? order.total).toFixed(2)}</p>
-                        <p className="mt-1 text-[11px] text-stone-400">{labelPayment(order.paymentMethod, t)} · {labelPaymentStatus(order.paymentStatus, t)}</p>
-                      </div>
-                    </button>
-                    {expanded && (
-                      <div className="mt-4 space-y-3 border-t border-stone-100 pt-4 text-xs text-stone-500">
-                        <OrderProgress order={order} t={t} />
-                        <InfoLine label={t('userCenter.orderType')} value={order.orderType === 'takeaway' ? t('cart.takeaway') : t('cart.dineIn')} />
-                        <InfoLine label={order.orderType === 'takeaway' ? t('userCenter.fullAddress') : t('ordersPage.tableLabel')} value={order.orderType === 'takeaway' ? order.deliveryAddress || '-' : order.tableNo || '-'} />
-                        {(order.items || []).map(item => (
-                          <div key={item.id || item.name} className="flex justify-between gap-3">
-                            <span className="text-[#2D2D2D]">
-                              {item.name} x{item.quantity}
-                              {item.options?.length ? (
-                                <span className="mt-1 block text-[11px] font-normal leading-4 text-stone-400">
-                                  {item.options.map(option => `${option.groupName}: ${option.name}`).join(' · ')}
-                                </span>
-                              ) : null}
-                              {item.note ? (
-                                <span className="mt-1 block text-[11px] font-normal leading-4 text-stone-400">{t('common.note')}：{item.note}</span>
-                              ) : null}
-                            </span>
-                            <span>RM {item.lineTotal.toFixed(2)}</span>
-                          </div>
-                        ))}
-                        <div className="h-px bg-stone-100" />
-                        <InfoLine label={t('common.subtotal')} value={`RM ${(order.subtotal || 0).toFixed(2)}`} />
-                        <InfoLine label={t('common.deliveryFee')} value={`RM ${(order.deliveryFee || 0).toFixed(2)}`} />
-                        <InfoLine label={t('common.discount')} value={`RM ${(order.discountAmount || 0).toFixed(2)}`} />
-                        <InfoLine label={t('common.payable')} value={`RM ${(order.payableTotal ?? order.total).toFixed(2)}`} strong />
-                        {order.note && <InfoLine label={t('common.note')} value={order.note} />}
-                      </div>
-                    )}
-                  </div>
-                )})
-              )}
-            </section>
-          )}
-
           {activeTab === 'addresses' && (
             <section className="space-y-4">
               <div className={`space-y-3 p-5 ${glassCard}`}>
@@ -924,35 +860,61 @@ const AccountHome: React.FC<{
   onOpenTab: (tab: UserCenterTab) => void;
   t: TFunction;
 }> = ({ session, walletBalance, pendingTransactions, onOpenTab, t }) => {
+  const availableCoupons = (session.coupons || []).filter(coupon => coupon.status === 'available').length;
+  const addressCount = (session.addresses || []).length;
+  const defaultAddress = (session.addresses || []).find(address => address.isDefault);
   const summaries: Record<UserCenterTab, string> = {
     profile: session.user?.displayPhone || t('userCenter.summaryEdit'),
     wallet: `RM ${walletBalance.toFixed(2)}${pendingTransactions ? ` · ${t('userCenter.pendingReview', { count: pendingTransactions })}` : ''}`,
-    orders: t('userCenter.ordersCount', { count: (session.orders || []).length }),
-    addresses: t('userCenter.addressesCount', { count: (session.addresses || []).length }),
-    coupons: t('userCenter.couponsCount', { count: (session.coupons || []).filter(coupon => coupon.status === 'available').length }),
+    addresses: defaultAddress ? t('userCenter.defaultAddressReady') : t('userCenter.addressesCount', { count: addressCount }),
+    coupons: t('userCenter.couponsCount', { count: availableCoupons }),
     settings: t('userCenter.settingsSummary'),
   };
 
   return (
-    <section className="space-y-5">
-      <div className="rounded-[1.75rem] border border-stone-100 bg-white p-6 text-[#2D2D2D] shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
-        <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-100 bg-stone-50 text-[#C8A97E]">
-            <User size={25} />
+    <section className="mt-7 space-y-5">
+      <div className="relative overflow-hidden rounded-[1.75rem] bg-[#2B2B2B] p-6 text-white shadow-[0_20px_45px_rgba(43,43,43,0.18)]">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full border border-[#C7A46A]/18" />
+        <div className="pointer-events-none absolute right-5 top-10 h-24 w-24 rounded-full border border-white/5" />
+        <div className="pointer-events-none absolute bottom-4 right-5 h-16 w-24 rounded-full border border-[#C7A46A]/10" />
+        <div className="relative">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-[#C7A46A]">{t('userCenter.memberCenter')}</p>
+              <h2 className="serif mt-2 text-xl font-bold text-white">{t('userCenter.memberCardTitle')}</h2>
+            </div>
+            <span className="rounded-full border border-[#C7A46A]/30 bg-[#C7A46A]/12 px-3 py-1 text-[11px] font-bold text-[#E7C996]">
+              {t('userCenter.memberLevel')}
+            </span>
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-lg font-bold serif">{getDisplayName(session.user?.name, t)}</p>
-            <p className="mt-1 truncate text-xs text-stone-400">{session.user?.displayPhone}</p>
+          <div className="mt-8">
+            <p className="truncate text-lg font-bold">{getDisplayName(session.user?.name, t)}</p>
+            <p className="mt-1 text-sm text-white/48">{maskPhone(session.user?.displayPhone)}</p>
           </div>
-        </div>
-        <div className="mt-6 grid grid-cols-3 gap-2 text-center">
-          <AccountMetric label={t('userCenter.metricsWallet')} value={`RM ${walletBalance.toFixed(2)}`} />
-          <AccountMetric label={t('userCenter.metricsOrders')} value={`${(session.orders || []).length}`} />
-          <AccountMetric label={t('userCenter.metricsCoupons')} value={`${(session.coupons || []).filter(coupon => coupon.status === 'available').length}`} />
+          <div className="mt-7 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs text-white/45">{t('userCenter.walletBalance')}</p>
+              <p className="serif mt-2 text-4xl font-bold text-[#E7C996]">RM {walletBalance.toFixed(2)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenTab('wallet')}
+              className="flex shrink-0 items-center gap-1 rounded-full bg-[#C7A46A] px-4 py-2 text-xs font-bold text-white shadow-lg shadow-[#C7A46A]/20"
+            >
+              {t('userCenter.rechargeNow')}
+              <ChevronRight size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_16px_45px_rgba(45,45,45,0.07)]">
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <AccountMetric label={t('userCenter.metricsWallet')} value={`RM ${walletBalance.toFixed(2)}`} />
+        <AccountMetric label={t('userCenter.metricsCoupons')} value={t('userCenter.couponUnit', { count: availableCoupons })} />
+        <AccountMetric label={t('userCenter.metricsPendingRecharge')} value={t('userCenter.pendingUnit', { count: pendingTransactions })} />
+      </div>
+
+      <div className="overflow-hidden rounded-[1.5rem] bg-white shadow-sm">
         {tabs.map((tab, index) => {
           const Icon = tab.icon;
           return (
@@ -964,12 +926,12 @@ const AccountHome: React.FC<{
                 index > 0 ? 'border-t border-stone-100' : ''
               }`}
             >
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C8A97E]/12 text-[#C8A97E]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#C7A46A]/12 text-[#A78345]">
                 <Icon size={20} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-[#2D2D2D]">{t(tab.labelKey)}</p>
-                <p className="mt-1 truncate text-xs text-stone-400">{summaries[tab.id]}</p>
+                <p className="text-sm font-bold text-[#2B2B2B]">{t(tab.labelKey)}</p>
+                <p className="mt-1 truncate text-xs text-[#8A8175]">{summaries[tab.id]}</p>
               </div>
               <ChevronRight size={18} className="text-stone-300" />
             </button>
@@ -981,53 +943,11 @@ const AccountHome: React.FC<{
 };
 
 const AccountMetric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-2xl border border-stone-100 bg-stone-50 px-2 py-3">
-    <p className="truncate text-sm font-bold text-[#C8A97E]">{value}</p>
-    <p className="mt-1 text-[10px] text-stone-400">{label}</p>
+  <div className="rounded-[1.35rem] border border-white/75 bg-white px-2 py-4 shadow-[0_10px_30px_rgba(45,45,45,0.045)]">
+    <p className="truncate text-sm font-bold text-[#A78345]">{value}</p>
+    <p className="mt-1 text-[10px] text-[#8A8175]">{label}</p>
   </div>
 );
-
-const orderSteps: { status: UserOrderSummary['status']; labelKey: string }[] = [
-  { status: 'pending_confirm', labelKey: 'ordersPage.status.pending_confirm' },
-  { status: 'preparing', labelKey: 'ordersPage.status.preparing' },
-  { status: 'delivering', labelKey: 'ordersPage.status.delivering' },
-  { status: 'delivered', labelKey: 'ordersPage.status.delivered' },
-  { status: 'completed', labelKey: 'ordersPage.status.completed' },
-];
-
-const OrderProgress: React.FC<{ order: UserOrderSummary; t: TFunction }> = ({ order, t }) => {
-  const meta = getOrderStatusMeta(order.status, t);
-  const currentIndex = orderSteps.findIndex(step => step.status === order.status);
-  const isCancelled = order.status === 'cancelled';
-
-  return (
-    <div className={`rounded-2xl border p-4 ${isCancelled ? 'border-red-400/25 bg-red-500/10' : 'border-stone-100 bg-stone-50'}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className={`text-sm font-bold ${isCancelled ? 'text-red-600' : 'text-[#2D2D2D]'}`}>{meta.label}</p>
-          <p className="mt-1 text-xs leading-5 text-stone-500">{meta.description}</p>
-        </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${meta.badgeClass}`}>
-          {meta.label}
-        </span>
-      </div>
-
-      {!isCancelled && (
-        <div className="mt-4 grid grid-cols-5 gap-1">
-          {orderSteps.map((step, index) => {
-            const active = currentIndex >= index;
-            return (
-              <div key={step.status} className="min-w-0">
-                <div className={`h-1.5 rounded-full ${active ? 'bg-[#C8A97E]' : 'bg-stone-100'}`} />
-                <p className={`mt-2 truncate text-center text-[10px] ${active ? 'font-bold text-[#C8A97E]' : 'text-stone-400'}`}>{t(step.labelKey)}</p>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
 
 function formatDate(value?: string | null, language = 'en') {
   if (!value) return '-';
@@ -1053,61 +973,19 @@ function labelStatus(item: WalletTransaction, t: TFunction) {
   return t(`userCenter.transactionStatus.${item.status}`);
 }
 
-function labelPayment(method: string | undefined, t: TFunction) {
-  if (method === 'cash') return t('userCenter.payment.cash');
-  if (method === 'tng') return "Touch 'n Go eWallet";
-  if (method === 'stripe') return t('userCenter.payment.stripe');
-  if (method === 'wallet') return t('userCenter.payment.wallet');
-  return method || '-';
-}
-
-function labelPaymentStatus(status: string | undefined, t: TFunction) {
-  return status ? t(`ordersPage.payment.${status}`, { defaultValue: status }) : '-';
-}
-
-function getOrderStatusMeta(status: string | undefined, t: TFunction) {
-  const fallback = {
-    label: t('ordersPage.status.pending_confirm'),
-    description: t('ordersPage.steps.submittedDesc'),
-    badgeClass: 'bg-[#C8A97E]/15 text-[#9B7848]',
-  };
-  const labels: Record<string, { label: string; description: string; badgeClass: string }> = {
-    pending_confirm: fallback,
-    preparing: {
-      label: t('ordersPage.status.preparing'),
-      description: t('ordersPage.steps.preparingDesc'),
-      badgeClass: 'bg-amber-100 text-amber-700',
-    },
-    delivering: {
-      label: t('ordersPage.status.delivering'),
-      description: t('ordersPage.delivery.delivering'),
-      badgeClass: 'bg-sky-100 text-sky-700',
-    },
-    delivered: {
-      label: t('ordersPage.status.delivered'),
-      description: t('ordersPage.steps.deliveredDesc'),
-      badgeClass: 'bg-emerald-100 text-emerald-700',
-    },
-    completed: {
-      label: t('ordersPage.status.completed'),
-      description: t('ordersPage.steps.completedDesc'),
-      badgeClass: 'bg-stone-100 text-stone-600',
-    },
-    cancelled: {
-      label: t('ordersPage.status.cancelled'),
-      description: t('ordersPage.steps.cancelledDesc'),
-      badgeClass: 'bg-red-100 text-red-600',
-    },
-  };
-  return labels[status || ''] || fallback;
-}
-
 function labelCouponStatus(status: string, t: TFunction) {
   return t(`userCenter.couponStatus.${status}`, { defaultValue: status });
 }
 
 function getDisplayName(name: string | undefined | null, t: TFunction) {
   return name?.trim() || t('common.memberFallback');
+}
+
+function maskPhone(phone?: string | null) {
+  if (!phone) return '-';
+  const compact = phone.replace(/\s/g, '');
+  if (compact.length < 7) return phone;
+  return `${compact.slice(0, 3)} **** ${compact.slice(-4)}`;
 }
 
 export default UserCenter;

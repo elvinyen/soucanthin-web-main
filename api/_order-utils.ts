@@ -18,7 +18,16 @@ export type ApiRequest = {
 export type NotificationStatus = 'sent' | 'failed';
 export type PaymentStatus = 'pay_at_counter' | 'pending_review' | 'awaiting_payment' | 'paid';
 export type PaymentReviewStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
-export type TelegramOrderAction = 'confirm' | 'start_delivery' | 'delivered' | 'complete' | 'cancel';
+export type TelegramOrderAction =
+  | 'send_to_kitchen'
+  | 'kitchen_start'
+  | 'kitchen_complete'
+  | 'stock_issue'
+  | 'confirm'
+  | 'start_delivery'
+  | 'delivered'
+  | 'complete'
+  | 'cancel';
 
 export type TelegramNotificationResult = {
   status: NotificationStatus;
@@ -75,9 +84,19 @@ export type OrderRecord = {
   notification_status: NotificationStatus | 'pending';
   telegram_chat_id?: string | null;
   telegram_message_id?: number | null;
+  review_tg_chat_id?: string | null;
+  review_tg_message_id?: number | null;
+  kitchen_tg_chat_id?: string | null;
+  kitchen_tg_message_id?: number | null;
+  delivery_tg_chat_id?: string | null;
+  delivery_tg_message_id?: number | null;
   last_operator_telegram_user_id?: string | null;
   last_operator_name?: string | null;
   last_status_changed_at?: string | null;
+  kitchen_started_at?: string | null;
+  kitchen_completed_at?: string | null;
+  kitchen_started_by?: string | null;
+  kitchen_completed_by?: string | null;
   created_at: string;
 };
 
@@ -115,6 +134,22 @@ export function getSupabaseConfig() {
     supabaseUrl: supabaseUrl.replace(/\/$/, ''),
     serviceRoleKey,
   };
+}
+
+export function supabaseAuthHeaders(serviceRoleKey: string) {
+  const headers: Record<string, string> = {
+    apikey: serviceRoleKey,
+  };
+
+  if (isJwtLikeKey(serviceRoleKey)) {
+    headers.Authorization = `Bearer ${serviceRoleKey}`;
+  }
+
+  return headers;
+}
+
+function isJwtLikeKey(key: string) {
+  return key.split('.').length >= 3;
 }
 
 export function parseOrderBody(body: unknown) {
@@ -163,6 +198,32 @@ export function validateReceiptImage(receiptImage?: ReceiptImage) {
   if (byteLength > 5 * 1024 * 1024) return 'Receipt image must be under 5MB';
 
   return '';
+}
+
+export async function validateMenuItemsAvailable(order: Order) {
+  const rawItemIds = order.items.map(item => Number(item.id));
+  if (rawItemIds.some(id => !Number.isInteger(id) || id <= 0)) return 'Order items are invalid';
+  const itemIds = Array.from(new Set(rawItemIds));
+
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const rows = await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/menu_items?id=in.(${itemIds.map(id => encodeURIComponent(String(id))).join(',')})&select=id,name,active,sold_out`,
+    { method: 'GET' },
+  );
+  const itemsById = new Map(
+    (Array.isArray(rows) ? rows : []).map(row => {
+      const item = row as { id?: number; name?: string; active?: boolean | null; sold_out?: boolean | null };
+      return [Number(item.id), item];
+    }),
+  );
+  const unavailable = itemIds
+    .map(id => itemsById.get(id))
+    .find(item => !item || item.active === false || item.sold_out === true);
+
+  if (!unavailable) return '';
+  return unavailable?.sold_out ? `「${unavailable.name || '菜品'}」已售罄，请从购物车移除后再下单` : `「${unavailable?.name || '菜品'}」已下架，请从购物车移除后再下单`;
 }
 
 export function calculateTotals(order: Order) {
@@ -412,8 +473,7 @@ export async function uploadReceipt(orderNo: string, receiptImage: ReceiptImage)
   const response = await fetch(`${supabaseUrl}/storage/v1/object/payment-receipts/${objectPath}`, {
     method: 'POST',
     headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      ...supabaseAuthHeaders(serviceRoleKey),
       'Content-Type': receiptImage.mimeType,
       'x-upsert': 'true',
     },
@@ -437,8 +497,7 @@ export async function supabaseRequest(
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1${path}`, {
     ...init,
     headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      ...supabaseAuthHeaders(serviceRoleKey),
       'Content-Type': 'application/json',
       ...(init.headers || {}),
     },
@@ -492,56 +551,15 @@ export async function notifyStaffFromOrder(order: Order, orderNo: string, extra:
     rejectUrl: (extra as { reject_url?: string }).reject_url,
     stripeCheckoutSessionId: extra.stripe_checkout_session_id,
     stripePaymentIntentId: extra.stripe_payment_intent_id,
-  }), buildOrderKeyboard(orderNo, extra.status || 'pending_confirm', extra.payment_status || paymentStatusFor(order.paymentMethod), extra.payment_review_status || reviewStatusFor(order.paymentMethod)));
+  }), 'review');
 }
 
 export async function notifyStaffFromRecord(order: OrderRecord, items: OrderItemRecord[]) {
-  return sendTelegramOrderNotification(buildStaffMessage({
-    orderNo: order.order_no,
-    orderStatus: order.status,
-    createdAt: order.created_at,
-    orderType: order.order_type,
-    paymentMethod: order.payment_method,
-    paymentStatus: order.payment_status,
-    paymentReviewStatus: order.payment_review_status,
-    lastOperatorName: order.last_operator_name,
-    lastStatusChangedAt: order.last_status_changed_at,
-    customerName: order.customer_name,
-    customerPhone: order.customer_phone,
-    tableNo: order.table_no,
-    deliveryAddress: order.delivery_address,
-    assignedBranchName: order.assigned_branch_name,
-    deliveryDistanceKm: order.delivery_distance_km,
-    deliveryDurationMin: order.delivery_duration_min,
-    items: items.map(item => ({
-      code: item.item_code || undefined,
-      name: item.name,
-      quantity: item.quantity,
-      lineTotal: Number(item.line_total),
-      options: item.selected_options || [],
-      note: item.item_note || undefined,
-    })),
-    subtotal: Number(order.subtotal),
-    deliveryFee: Number(order.delivery_fee || 0),
-    serviceCharge: Number(order.service_charge),
-    total: Number(order.total),
-    discountAmount: Number(order.discount_amount || 0),
-    payableTotal: Number(order.payable_total ?? order.total),
-    note: order.note || undefined,
-    receiptUrl: order.receipt_url,
-    stripeCheckoutSessionId: order.stripe_checkout_session_id,
-    stripePaymentIntentId: order.stripe_payment_intent_id,
-  }), buildOrderKeyboard(order.order_no, order.status, order.payment_status, order.payment_review_status));
+  return sendTelegramOrderNotification(buildReviewMessageFromRecord(order, items), 'review');
 }
 
-export async function editTelegramOrderMessage(order: OrderRecord, items: OrderItemRecord[]) {
-  const token = process.env.TELEGRAM_TOKEN;
-  const chatId = order.telegram_chat_id;
-  const messageId = order.telegram_message_id;
-
-  if (!token || !chatId || !messageId) return false;
-
-  const message = buildStaffMessage({
+function buildReviewMessageFromRecord(order: OrderRecord, items: OrderItemRecord[]) {
+  return buildStaffMessage({
     orderNo: order.order_no,
     orderStatus: order.status,
     createdAt: order.created_at,
@@ -577,6 +595,16 @@ export async function editTelegramOrderMessage(order: OrderRecord, items: OrderI
     stripeCheckoutSessionId: order.stripe_checkout_session_id,
     stripePaymentIntentId: order.stripe_payment_intent_id,
   });
+}
+
+export async function editTelegramOrderMessage(order: OrderRecord, items: OrderItemRecord[]) {
+  const token = process.env.TELEGRAM_TOKEN;
+  const chatId = order.review_tg_chat_id || order.telegram_chat_id;
+  const messageId = order.review_tg_message_id || order.telegram_message_id;
+
+  if (!token || !chatId || !messageId) return false;
+
+  const message = buildReviewMessageFromRecord(order, items);
 
   try {
     const response = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
@@ -586,7 +614,7 @@ export async function editTelegramOrderMessage(order: OrderRecord, items: OrderI
         chat_id: chatId,
         message_id: messageId,
         text: message,
-        reply_markup: buildOrderKeyboard(order.order_no, order.status, order.payment_status, order.payment_review_status) || { inline_keyboard: [] },
+        reply_markup: { inline_keyboard: [] },
       }),
     });
 
@@ -600,6 +628,67 @@ export async function editTelegramOrderMessage(order: OrderRecord, items: OrderI
     console.error('Telegram edit error:', error);
     return false;
   }
+}
+
+export async function editTelegramKitchenMessage(order: OrderRecord, phase: 'cooking' | 'kitchen_done' | 'stock_issue') {
+  const token = process.env.TELEGRAM_TOKEN;
+  const chatId = order.kitchen_tg_chat_id;
+  const messageId = order.kitchen_tg_message_id;
+
+  if (!token || !chatId || !messageId) return false;
+  if (
+    (order.review_tg_chat_id || order.telegram_chat_id) === chatId
+    && (order.review_tg_message_id || order.telegram_message_id) === messageId
+  ) {
+    return false;
+  }
+
+  const nowText = formatMalaysiaTime(new Date());
+  const message = {
+    cooking: `🔵 制作中 ${order.order_no}\n开始：${nowText}`,
+    kitchen_done: `✅ 已完成 ${order.order_no}\n完成：${nowText}`,
+    stock_issue: `🔴 缺货异常 ${order.order_no}\n时间：${nowText}`,
+  }[phase];
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text: message,
+        reply_markup: { inline_keyboard: [] },
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Telegram kitchen edit failed:', await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Telegram kitchen edit error:', error);
+    return false;
+  }
+}
+
+export async function notifyKitchenFromRecord(order: OrderRecord, items: OrderItemRecord[]) {
+  return sendTelegramOrderNotification(buildKitchenMessage(order, items), 'kitchen');
+}
+
+export async function editTelegramDeliveryMessage(order: OrderRecord, items: OrderItemRecord[]) {
+  const token = process.env.TELEGRAM_TOKEN;
+  const chatId = order.delivery_tg_chat_id;
+  const messageId = order.delivery_tg_message_id;
+  if (!token || !chatId || !messageId) return false;
+  return editTelegramMessage(token, chatId, messageId, buildDeliveryMessage(order, items));
+}
+
+export async function notifyDeliveryFromRecord(order: OrderRecord, items: OrderItemRecord[]) {
+  if (order.order_type !== 'takeaway') return { status: 'failed' as const };
+  return sendTelegramOrderNotification(buildDeliveryMessage(order, items), 'delivery');
 }
 
 export async function answerTelegramCallback(callbackQueryId: string, text: string, alert = false) {
@@ -630,18 +719,18 @@ export async function answerTelegramCallback(callbackQueryId: string, text: stri
 }
 
 export async function sendTelegramNotification(message: string): Promise<NotificationStatus> {
-  const result = await sendTelegramOrderNotification(message);
+  const result = await sendTelegramOrderNotification(message, 'review');
   return result.status;
 }
 
-export async function sendTelegramOrderNotification(message: string, replyMarkup?: InlineKeyboardMarkup): Promise<TelegramNotificationResult> {
+export async function sendTelegramOrderNotification(message: string, channel: 'review' | 'kitchen' | 'delivery' = 'review'): Promise<TelegramNotificationResult> {
   const token = process.env.TELEGRAM_TOKEN;
-  const chatIds = await getTelegramOrderNotificationChatIds();
+  const chatIds = await getTelegramOrderNotificationChatIds(channel);
 
   if (!token || chatIds.length === 0) return { status: 'failed' };
 
   try {
-    const results = await Promise.all(chatIds.map(chatId => sendTelegramMessageToChat(token, chatId, message, replyMarkup)));
+    const results = await Promise.all(chatIds.map(chatId => sendTelegramMessageToChat(token, chatId, message)));
     const firstSuccess = results.find(result => result.ok);
 
     if (!firstSuccess) return { status: 'failed' };
@@ -693,13 +782,22 @@ async function sendTelegramMessageToChat(token: string, chatId: string, message:
   }
 }
 
-async function getTelegramOrderNotificationChatIds() {
-  const chatIds = [
-    process.env.TELEGRAM_CHAT_ID || '',
-    ...(process.env.TELEGRAM_ADMIN_IDS || '').split(','),
-  ].map(value => value.trim()).filter(Boolean);
+async function getTelegramOrderNotificationChatIds(channel: 'review' | 'kitchen' | 'delivery') {
+  const envKey = {
+    review: 'TELEGRAM_REVIEW_CHAT_ID',
+    kitchen: 'TELEGRAM_KITCHEN_CHAT_ID',
+    delivery: 'TELEGRAM_DELIVERY_CHAT_ID',
+  }[channel];
+  const chatIds = [process.env[envKey] || ''].map(value => value.trim()).filter(Boolean);
 
-  try {
+  if (channel === 'review' && chatIds.length === 0) {
+    chatIds.push(...[
+      process.env.TELEGRAM_CHAT_ID || '',
+      ...(process.env.TELEGRAM_ADMIN_IDS || '').split(','),
+    ].map(value => value.trim()).filter(Boolean));
+  }
+
+  if (channel === 'review') try {
     const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
     const result = await supabaseRequest(
       supabaseUrl,
@@ -719,6 +817,29 @@ async function getTelegramOrderNotificationChatIds() {
   }
 
   return [...new Set(chatIds)];
+}
+
+async function editTelegramMessage(token: string, chatId: string, messageId: number, text: string) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        reply_markup: { inline_keyboard: [] },
+      }),
+    });
+    if (!response.ok) {
+      console.error('Telegram edit failed:', await response.text());
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Telegram edit error:', error);
+    return false;
+  }
 }
 
 function buildStaffMessage(params: {
@@ -831,31 +952,57 @@ function buildStaffMessage(params: {
   ].join('\n').trim();
 }
 
-function buildOrderKeyboard(
-  orderNo: string,
-  status: OrderStatus,
-  paymentStatus: PaymentStatus,
-  paymentReviewStatus: PaymentReviewStatus,
-): InlineKeyboardMarkup | undefined {
-  if (!canOperateOrder(paymentStatus, paymentReviewStatus)) return undefined;
-  const button = (text: string, action: TelegramOrderAction) => ({
-    text,
-    callback_data: `order:${orderNo}:${action}`,
-  });
+function buildKitchenMessage(order: OrderRecord, items: OrderItemRecord[]) {
+  const tableText = order.order_type === 'dinein' ? `堂食 · ${order.table_no || '-'}桌` : '外卖';
+  const startedText = order.kitchen_started_at ? `\n开始：${formatMalaysiaTime(new Date(order.kitchen_started_at))}` : '';
+  const completedText = order.kitchen_completed_at ? `\n完成：${formatMalaysiaTime(new Date(order.kitchen_completed_at))}` : '';
+  const itemsText = items.map(item => {
+    const code = item.item_code ? `[${item.item_code}] ` : '';
+    const note = item.item_note ? `\n   备注：${item.item_note}` : '';
+    return `${code}${item.name} x${item.quantity}${note}`;
+  }).join('\n');
 
-  if (status === 'pending_confirm') {
-    return { inline_keyboard: [[button('确认订单', 'confirm'), button('取消订单', 'cancel')]] };
-  }
-  if (status === 'preparing') {
-    return { inline_keyboard: [[button('开始配送', 'start_delivery'), button('取消订单', 'cancel')]] };
-  }
-  if (status === 'delivering') {
-    return { inline_keyboard: [[button('已送达', 'delivered')]] };
-  }
-  if (status === 'delivered') {
-    return { inline_keyboard: [[button('完成订单', 'complete')]] };
-  }
-  return undefined;
+  return [
+    `${labelKitchenTelegramStatus(order.status)} ${order.order_no}`,
+    tableText,
+    startedText.trim(),
+    completedText.trim(),
+    '',
+    '🍲 菜品',
+    itemsText || '无',
+    '',
+    `备注：${order.note || '无'}`,
+  ].filter(line => line !== '').join('\n').trim();
+}
+
+function buildDeliveryMessage(order: OrderRecord, items: OrderItemRecord[]) {
+  const itemsText = items.map(item => {
+    const code = item.item_code ? `[${item.item_code}] ` : '';
+    return `${code}${item.name} x${item.quantity}`;
+  }).join('\n');
+  return [
+    `🛵 配送订单 ${order.order_no}`,
+    `状态：${labelOrderStatus(order.status)}`,
+    `顾客：${order.customer_name}`,
+    `电话：${order.customer_phone}`,
+    `地址：${order.delivery_address || '-'}`,
+    `门店：${order.assigned_branch_name || '-'}`,
+    `配送距离：${formatOptionalNumber(order.delivery_distance_km, 'km')}`,
+    `预计时间：${formatOptionalNumber(order.delivery_duration_min, '分钟')}`,
+    '',
+    '🍲 菜品',
+    itemsText || '无',
+    '',
+    `备注：${order.note || '无'}`,
+  ].join('\n').trim();
+}
+
+function labelKitchenTelegramStatus(status: OrderStatus) {
+  if (status === 'waiting_kitchen') return '🟠 待制作';
+  if (status === 'cooking') return '🔵 制作中';
+  if (status === 'kitchen_done') return '✅ 已完成';
+  if (status === 'stock_issue') return '🔴 缺货异常';
+  return `⚪ ${labelOrderStatus(status)}`;
 }
 
 function canOperateOrder(paymentStatus: PaymentStatus, paymentReviewStatus: PaymentReviewStatus) {
@@ -863,16 +1010,28 @@ function canOperateOrder(paymentStatus: PaymentStatus, paymentReviewStatus: Paym
 }
 
 function labelTelegramOperationHint(status: OrderStatus, paymentStatus: PaymentStatus, paymentReviewStatus: PaymentReviewStatus) {
-  if (!canOperateOrder(paymentStatus, paymentReviewStatus)) return '等待付款/审核完成后开放订单操作';
-  if (status === 'pending_confirm') return '可确认或取消订单';
-  if (status === 'preparing') return '可开始配送或取消订单';
-  if (status === 'delivering') return '可标记已送达';
-  if (status === 'delivered') return '可完成订单';
-  return '无需后续操作';
+  if (!canOperateOrder(paymentStatus, paymentReviewStatus)) return '请在后台完成付款/审核处理';
+  if (status === 'pending_confirm') return '请在后台确认或取消订单';
+  if (status === 'waiting_kitchen' || status === 'cooking') return '厨房状态由厨房页面同步';
+  if (status === 'kitchen_done') return '请在后台处理打包/配送';
+  if (status === 'stock_issue') return '请在后台处理缺货异常';
+  if (status === 'delivering' || status === 'delivered') return '请在后台更新配送状态';
+  return '请以后台订单状态为准';
 }
 
 export function isOrderStatus(value: string): value is OrderStatus {
-  return ['pending_confirm', 'preparing', 'delivering', 'delivered', 'completed', 'cancelled'].includes(value);
+  return [
+    'pending_confirm',
+    'waiting_kitchen',
+    'cooking',
+    'kitchen_done',
+    'stock_issue',
+    'preparing',
+    'delivering',
+    'delivered',
+    'completed',
+    'cancelled',
+  ].includes(value);
 }
 
 function paymentStatusFor(paymentMethod: PaymentMethod): PaymentStatus {
@@ -896,6 +1055,10 @@ function staffActionFor(paymentMethod: PaymentMethod) {
 function labelOrderStatus(status: OrderStatus) {
   const labels: Record<OrderStatus, string> = {
     pending_confirm: '待确认',
+    waiting_kitchen: '待制作',
+    cooking: '制作中',
+    kitchen_done: '厨房完成',
+    stock_issue: '缺货异常',
     preparing: '制作中',
     delivering: '配送中',
     delivered: '已送达',
@@ -903,6 +1066,15 @@ function labelOrderStatus(status: OrderStatus) {
     cancelled: '已取消',
   };
   return labels[status];
+}
+
+function formatMalaysiaTime(value: Date) {
+  return value.toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function formatMalaysiaDate(value: Date) {

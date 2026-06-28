@@ -22,6 +22,7 @@ interface MenuProps {
   setDeliveryAddress: React.Dispatch<React.SetStateAction<string>>;
   deliveryAddressLabel: string;
   setDeliveryAddressLabel: React.Dispatch<React.SetStateAction<string>>;
+  setDeliveryAddressId: React.Dispatch<React.SetStateAction<string>>;
   session: AuthMeResponse;
 }
 
@@ -38,6 +39,7 @@ const Menu: React.FC<MenuProps> = ({
   setDeliveryAddress,
   deliveryAddressLabel,
   setDeliveryAddressLabel,
+  setDeliveryAddressId,
   session,
 }) => {
   const { i18n, t } = useTranslation();
@@ -289,9 +291,9 @@ const Menu: React.FC<MenuProps> = ({
                   >
                     <div className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-md bg-white">
                       <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                      {item.recommended && !item.soldOut && (
-                        <span className="absolute left-2 top-2 rounded-full bg-[#C8A97E] px-2 py-1 text-[10px] font-bold text-white shadow">
-                          {t('menuPage.recommended')}
+                      {(item.displayLabel || item.recommended) && (
+                        <span className="absolute left-2 top-2 z-10 rounded-full bg-[#C8A97E] px-2 py-1 text-[10px] font-bold text-white shadow">
+                          {item.displayLabel || t('menuPage.recommended')}
                         </span>
                       )}
                       {item.soldOut && (
@@ -391,9 +393,10 @@ const Menu: React.FC<MenuProps> = ({
         address={deliveryAddress}
         savedAddresses={session.addresses || []}
         onClose={() => setIsAddressDrawerOpen(false)}
-        onConfirm={(nextAddress, _savedAddress, nextAddressLabel) => {
+        onConfirm={(nextAddress, savedAddress, nextAddressLabel) => {
           setDeliveryAddress(nextAddress);
           setDeliveryAddressLabel(nextAddressLabel || '');
+          setDeliveryAddressId(savedAddress?.id || '');
           setIsAddressDrawerOpen(false);
         }}
       />

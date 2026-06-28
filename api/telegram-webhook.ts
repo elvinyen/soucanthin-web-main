@@ -2,18 +2,12 @@ import {
   answerTelegramCallback,
   ApiRequest,
   ApiResponse,
-  findOrderByNo,
   getSupabaseConfig,
-  getOrderItems,
   InlineKeyboardMarkup,
-  notifyStaffFromRecord,
-  recordOrderStatusEvent,
   sendTelegramMessage,
   supabaseRequest,
-  updateOrderByNo,
 } from './_order-utils';
 import { parseJsonBody } from './_auth-utils';
-import type { OrderStatus } from '../types/order';
 
 type TelegramAction = 'confirm' | 'start_delivery' | 'delivered' | 'complete' | 'cancel';
 type TelegramAdminAction = 'add' | 'remove';
@@ -53,14 +47,6 @@ type TelegramUserRecord = {
   is_admin: boolean;
   first_seen_at?: string;
   last_seen_at?: string;
-};
-
-const ACTIONS: Record<TelegramAction, { from: OrderStatus[]; to: OrderStatus; label: string }> = {
-  confirm: { from: ['pending_confirm'], to: 'preparing', label: '订单已进入制作中' },
-  start_delivery: { from: ['preparing'], to: 'delivering', label: '订单已进入配送中' },
-  delivered: { from: ['delivering'], to: 'delivered', label: '订单已标记已送达' },
-  complete: { from: ['delivered'], to: 'completed', label: '订单已完成' },
-  cancel: { from: ['pending_confirm', 'preparing'], to: 'cancelled', label: '订单已取消' },
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -107,57 +93,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       await answerTelegramCallback(callbackId, '无效的订单操作', true);
       return res.status(400).json({ success: false, error: 'Invalid callback data' });
     }
-
-    const transition = ACTIONS[parsed.action];
-    const order = await findOrderByNo(parsed.orderNo);
-    if (!order) {
-      await answerTelegramCallback(callbackId, '订单不存在', true);
-      return res.status(404).json({ success: false, error: 'Order not found' });
-    }
-
-    if (order.payment_status !== 'paid' || order.payment_review_status === 'pending' || order.payment_review_status === 'rejected') {
-      await answerTelegramCallback(callbackId, '付款/审核完成后才能操作订单', true);
-      return res.status(409).json({ success: false, error: 'Payment is not ready' });
-    }
-
-    if (!transition.from.includes(order.status)) {
-      await answerTelegramCallback(callbackId, `当前状态不可执行此操作：${order.status}`, true);
-      return res.status(409).json({ success: false, error: 'Invalid order status transition' });
-    }
-
-    await answerTelegramCallback(callbackId, '正在处理订单...');
-    callbackAnswered = true;
-
-    const operatorName = formatTelegramUserName(callback.from);
-    await updateOrderByNo(parsed.orderNo, {
-      status: transition.to,
-      last_operator_telegram_user_id: adminId,
-      last_operator_name: operatorName,
-      last_status_changed_at: new Date().toISOString(),
-    });
-    await recordOrderStatusEvent({
-      orderId: order.id,
-      orderNo: parsed.orderNo,
-      action: parsed.action,
-      fromStatus: order.status,
-      toStatus: transition.to,
-      operatorTelegramUserId: adminId,
-      operatorUsername: callback.from?.username || null,
-      operatorName,
-    });
-
-    const updatedOrder = await findOrderByNo(parsed.orderNo);
-    if (!updatedOrder) throw new Error('Order disappeared after update');
-    const items = await getOrderItems(updatedOrder.id);
-    const notification = await notifyStaffFromRecord(updatedOrder, items);
-    await updateOrderByNo(parsed.orderNo, {
-      notification_status: notification.status,
-      notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
-      telegram_chat_id: notification.chatId || null,
-      telegram_message_id: notification.messageId || null,
-    });
-
-    return res.status(200).json({ success: true, status: transition.to });
+    await answerTelegramCallback(callbackId, '群内订单按钮已停用，请在后台处理订单。', true);
+    return res.status(200).json({ success: true, disabled: true, orderNo: parsed.orderNo, action: parsed.action });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Telegram webhook failed';
     if (callbackId && !callbackAnswered) await answerTelegramCallback(callbackId, message, true);
@@ -317,10 +254,4 @@ async function getStoredTelegramUsers() {
 function formatTelegramUserLabel(user: TelegramUserRecord) {
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
   return user.username ? `@${user.username}` : name || user.telegram_user_id;
-}
-
-function formatTelegramUserName(user?: TelegramUser) {
-  if (!user) return null;
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
-  return user.username ? `@${user.username}` : name || (user.id ? String(user.id) : null);
 }

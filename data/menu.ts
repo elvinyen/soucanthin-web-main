@@ -10,6 +10,7 @@ export interface MenuItem {
   tags: string[];
   optionGroups?: MenuOptionGroup[];
   recommended?: boolean;
+  displayLabel?: string;
   soldOut?: boolean;
 }
 

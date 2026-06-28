@@ -2,6 +2,7 @@ import { config as loadEnv } from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 
 import adminAuth from '../api/admin-auth';
+import adminAccounts from '../api/admin-accounts';
 import adminMenuImage from '../api/admin-menu-image';
 import adminOrderPaymentReview from '../api/admin-order-payment-review';
 import adminMenuCategories from '../api/admin-menu-categories';
@@ -23,6 +24,7 @@ import stripeWebhook from '../api/stripe-webhook';
 import telegramWebhook from '../api/telegram-webhook';
 import userAddresses from '../api/user-addresses';
 import userProfile from '../api/user-profile';
+import kitchenOrders from '../api/kitchen-orders';
 import walletRechargeStripe from '../api/wallet-recharge-stripe';
 import walletRechargeStripeCancel from '../api/wallet-recharge-stripe-cancel';
 import walletRechargeTng from '../api/wallet-recharge-tng';
@@ -30,8 +32,9 @@ import walletTransactions from '../api/wallet-transactions';
 import type { ApiRequest, ApiResponse } from '../api/_order-utils';
 
 const envFile = process.env.ENV_FILE || (process.env.NODE_ENV === 'production' ? '.env.production' : '.env.local');
-loadEnv({ path: envFile });
-loadEnv();
+loadEnv({ path: envFile, override: true });
+loadEnv({ override: false });
+logSupabaseRuntimeConfig(envFile);
 
 type ApiHandler = (req: ApiRequest, res: ApiResponse) => Promise<void> | void;
 
@@ -71,10 +74,16 @@ mount('/api/wallet/transactions', walletTransactions);
 mount('/api/admin/order-payment-review', adminOrderPaymentReview);
 mount('/api/admin/wallet-recharge-review', adminWalletRechargeReview);
 mount('/api/admin/auth', adminAuth);
+mount('/api/admin/accounts', adminAccounts);
 mount('/api/admin/menu-categories', adminMenuCategories);
 mount('/api/admin/menu-image', adminMenuImage);
 mount('/api/admin/menu-items', adminMenuItems);
 mount('/api/admin/orders', adminOrders);
+mount('/api/kitchen/orders', kitchenOrders);
+mount('/api/kitchen/status', kitchenOrders);
+mount('/api/kitchen/orders/start', kitchenOrders);
+mount('/api/kitchen/orders/complete', kitchenOrders);
+mount('/api/kitchen/orders/stock-issue', kitchenOrders);
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ success: false, error: 'API route not found' });
@@ -93,6 +102,40 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 app.listen(port, host, () => {
   console.log(`API server listening on http://${host}:${port}`);
 });
+
+function logSupabaseRuntimeConfig(envFile: string) {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const keyParts = serviceRoleKey.split('.');
+  let keyMeta: Record<string, unknown> = { present: Boolean(serviceRoleKey), jwt: keyParts.length >= 2 };
+
+  if (keyParts.length >= 2) {
+    try {
+      const payload = JSON.parse(Buffer.from(keyParts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')) as {
+        iat?: number;
+        exp?: number;
+        role?: string;
+        ref?: string;
+      };
+      keyMeta = {
+        ...keyMeta,
+        role: payload.role,
+        ref: payload.ref,
+        iat: payload.iat ? new Date(payload.iat * 1000).toISOString() : null,
+        exp: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
+      };
+    } catch {
+      keyMeta = { ...keyMeta, decode: 'failed' };
+    }
+  }
+
+  console.log('[config] env', {
+    envFile,
+    nodeEnv: process.env.NODE_ENV,
+    systemTime: new Date().toISOString(),
+    supabaseUrlHost: process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).host : null,
+    serviceRoleKey: keyMeta,
+  });
+}
 
 function mount(route: string, handler: ApiHandler) {
   app.all(route, runApi(handler));

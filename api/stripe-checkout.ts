@@ -7,6 +7,7 @@ import {
   getCouponDiscount,
   parseOrderBody,
   updateOrderById,
+  validateMenuItemsAvailable,
   validateOrder,
 } from './_order-utils';
 import { getAuthenticatedUser } from './_auth-utils';
@@ -29,6 +30,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const validationError = validateOrder(order, ['stripe']);
   if (validationError) {
     return res.status(400).json({ success: false, error: validationError });
+  }
+
+  try {
+    const availabilityError = await validateMenuItemsAvailable(order);
+    if (availabilityError) {
+      return res.status(400).json({ success: false, error: availabilityError });
+    }
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error instanceof Error ? error.message : '菜单状态校验失败' });
   }
 
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;

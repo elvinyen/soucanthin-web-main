@@ -12,15 +12,23 @@ export type AdminUserRecord = {
   id: string;
   username: string;
   display_name: string;
-  role: 'owner' | 'manager' | 'staff';
+  role: AdminRole | LegacyAdminRole;
   active: boolean;
   password_hash?: string;
   last_login_at?: string | null;
 };
 
+export type AdminRole = 'admin' | 'kitchen' | 'customer_service' | 'delivery';
+type LegacyAdminRole = 'owner' | 'manager' | 'staff';
+
 export async function requireAdmin(req: ApiRequest) {
+  return requireAdminRole(req, ['admin']);
+}
+
+export async function requireAdminRole(req: ApiRequest, allowedRoles: AdminRole[]) {
   const admin = await getAuthenticatedAdmin(req);
   if (!admin) throw new AdminError('请先登录后台', 401);
+  if (!allowedRoles.includes(admin.role)) throw new AdminError('没有权限访问此功能', 403);
   return admin;
 }
 
@@ -108,8 +116,15 @@ export function sanitizeAdmin(admin: AdminUserRecord) {
     id: admin.id,
     username: admin.username,
     displayName: admin.display_name,
-    role: admin.role,
+    role: normalizeAdminRole(admin.role),
   };
+}
+
+export function normalizeAdminRole(role: string): AdminRole {
+  if (role === 'kitchen') return 'kitchen';
+  if (role === 'customer_service') return 'customer_service';
+  if (role === 'delivery') return 'delivery';
+  return 'admin';
 }
 
 export class AdminError extends Error {
@@ -140,8 +155,21 @@ export function parseAdminBody<T>(body: unknown): T {
 
 export function jsonError(error: unknown) {
   const statusCode = error instanceof AdminError ? error.statusCode : 400;
-  const message = error instanceof Error ? error.message : '后台操作失败';
+  const message = normalizeAdminErrorMessage(error);
   return { statusCode, body: { success: false, error: message } };
+}
+
+function normalizeAdminErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : '后台操作失败';
+  try {
+    const payload = JSON.parse(message) as { code?: string; message?: string };
+    if (payload.code === 'PGRST303') {
+      return 'Supabase 服务密钥时间无效：JWT 签发时间在未来。请检查 SUPABASE_SERVICE_ROLE_KEY 是否正确、运行机器时间是否同步，然后重启后台服务。';
+    }
+    return payload.message || message;
+  } catch {
+    return message;
+  }
 }
 
 function readHeader(req: ApiRequest, name: string) {

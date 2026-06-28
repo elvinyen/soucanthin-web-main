@@ -88,7 +88,7 @@ async function setupFirstAdmin(req: ApiRequest, res: ApiResponse) {
       username,
       password_hash: passwordHash,
       display_name: String(input.displayName || username).trim() || username,
-      role: 'owner',
+      role: 'admin',
       active: true,
     }),
   });

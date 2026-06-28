@@ -6,6 +6,7 @@ import {
   getSupabaseConfig,
   getOrderItems,
   markCouponUsed,
+  notifyKitchenFromRecord,
   notifyStaffFromRecord,
   supabaseRequest,
   updateOrderByStripeSession,
@@ -57,7 +58,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
 
       await updateOrderByStripeSession(sessionId, {
-        status: 'pending_confirm',
+        status: 'waiting_kitchen',
         payment_status: 'paid',
         payment_review_status: 'not_required',
         stripe_payment_intent_id: session.payment_intent || null,
@@ -70,7 +71,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const items = await getOrderItems(order.id);
         const notification = await notifyStaffFromRecord({
           ...order,
-          status: 'pending_confirm',
+          status: 'waiting_kitchen',
+          payment_status: 'paid',
+          stripe_payment_intent_id: session.payment_intent || order.stripe_payment_intent_id,
+        }, items);
+        const kitchenNotification = await notifyKitchenFromRecord({
+          ...order,
+          status: 'waiting_kitchen',
           payment_status: 'paid',
           stripe_payment_intent_id: session.payment_intent || order.stripe_payment_intent_id,
         }, items);
@@ -80,6 +87,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           notified_at: notification.status === 'sent' ? new Date().toISOString() : null,
           telegram_chat_id: notification.chatId || null,
           telegram_message_id: notification.messageId || null,
+          review_tg_chat_id: notification.chatId || null,
+          review_tg_message_id: notification.messageId || null,
+          kitchen_tg_chat_id: kitchenNotification.chatId || null,
+          kitchen_tg_message_id: kitchenNotification.messageId || null,
         });
         console.log(`Stripe order ${order.order_no} notification: ${notification.status}`);
       } else {

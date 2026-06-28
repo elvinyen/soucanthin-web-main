@@ -1,6 +1,6 @@
 import { AdminError, jsonError, parseAdminBody, requireAdmin } from './_admin-utils';
 import type { ApiRequest, ApiResponse } from './_order-utils';
-import { getSupabaseConfig } from './_order-utils';
+import { getSupabaseConfig, supabaseAuthHeaders } from './_order-utils';
 
 type UploadBody = {
   itemCode?: string;
@@ -40,8 +40,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const response = await fetch(`${supabaseUrl}/storage/v1/object/menu-items/${objectPath}`, {
       method: 'POST',
       headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
+        ...supabaseAuthHeaders(serviceRoleKey),
         'Content-Type': contentType,
         'x-upsert': 'true',
       },

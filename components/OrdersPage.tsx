@@ -10,7 +10,7 @@ interface OrdersPageProps {
   onOpenHistory: () => void;
 }
 
-const activeStatuses = new Set(['pending_confirm', 'preparing', 'delivering', 'delivered']);
+const activeStatuses = new Set(['pending_confirm', 'waiting_kitchen', 'cooking', 'kitchen_done', 'preparing', 'delivering', 'delivered']);
 
 const OrdersPage: React.FC<OrdersPageProps> = ({ session, onLogin, onOpenHistory }) => {
   const { t, i18n } = useTranslation();
@@ -192,8 +192,8 @@ function buildSteps(order: UserOrderSummary, t: TFunction) {
 function statusRank(status?: string) {
   if (status === 'completed') return 5;
   if (status === 'delivered') return 4;
-  if (status === 'delivering') return 3;
-  if (status === 'preparing') return 2;
+  if (status === 'delivering' || status === 'kitchen_done') return 3;
+  if (status === 'preparing' || status === 'cooking') return 2;
   return 1;
 }
 
@@ -202,9 +202,9 @@ function labelOrderStatus(status: string | undefined, t: TFunction) {
 }
 
 function labelPreparationStatus(status: string | undefined, t: TFunction) {
-  if (status === 'preparing') return t('ordersPage.prep.preparing');
-  if (status === 'delivering' || status === 'delivered' || status === 'completed') return t('ordersPage.prep.ready');
-  if (status === 'cancelled') return t('ordersPage.prep.cancelled');
+  if (status === 'preparing' || status === 'cooking') return t('ordersPage.prep.preparing');
+  if (status === 'kitchen_done' || status === 'delivering' || status === 'delivered' || status === 'completed') return t('ordersPage.prep.ready');
+  if (status === 'cancelled' || status === 'stock_issue') return t('ordersPage.prep.cancelled');
   return t('ordersPage.prep.pending');
 }
 

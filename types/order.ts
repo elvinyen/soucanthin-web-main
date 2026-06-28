@@ -1,7 +1,17 @@
 
 export type OrderType = "dinein" | "takeaway";
 export type PaymentMethod = "cash" | "tng" | "stripe" | "wallet";
-export type OrderStatus = "pending_confirm" | "preparing" | "delivering" | "delivered" | "completed" | "cancelled";
+export type OrderStatus =
+  | "pending_confirm"
+  | "waiting_kitchen"
+  | "cooking"
+  | "kitchen_done"
+  | "stock_issue"
+  | "preparing"
+  | "delivering"
+  | "delivered"
+  | "completed"
+  | "cancelled";
 
 export interface ReceiptImage {
   fileName: string;

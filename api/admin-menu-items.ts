@@ -197,6 +197,9 @@ async function updateMenuItem(req: ApiRequest, res: ApiResponse) {
     })
     : [];
   await saveMenuTranslations(id, input.translations);
+  if (Object.keys(payload).length && (!Array.isArray(updated) || !updated[0])) {
+    throw new AdminError('菜品状态未更新，请刷新后重试', 500);
+  }
 
   return res.status(200).json({ success: true, item: Array.isArray(updated) ? updated[0] : updated });
 }
@@ -257,7 +260,7 @@ async function deleteMenuItem(req: ApiRequest, res: ApiResponse) {
   } else {
     await supabaseRequest(supabaseUrl, serviceRoleKey, `/menu_items?id=eq.${encodeURIComponent(String(id))}`, {
       method: 'PATCH',
-      body: JSON.stringify({ active: false }),
+      body: JSON.stringify({ active: false, sold_out: false }),
     });
   }
 
@@ -298,6 +301,7 @@ function normalizeMenuPayload(input: AdminMenuItem, isCreate: boolean) {
   if (typeof input.recommended === 'boolean') payload.recommended = input.recommended;
   if (typeof input.sold_out === 'boolean') payload.sold_out = input.sold_out;
   if (typeof input.active === 'boolean') payload.active = input.active;
+  if (payload.active === false) payload.sold_out = false;
   if (input.option_groups !== undefined) payload.option_groups = normalizeOptionGroups(input.option_groups);
 
   return payload;

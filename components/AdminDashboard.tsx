@@ -6,12 +6,12 @@ import {
   Check,
   ChevronRight,
   ClipboardList,
+  CookingPot,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  Fingerprint,
-  KeyRound,
   LogOut,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Save,
@@ -24,9 +24,11 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import KitchenBoard from './admin/KitchenBoard';
 
-type AdminSection = 'menu' | 'orders' | 'wallet' | 'users';
-type OrderStatus = 'pending_confirm' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
+type AdminSection = 'menu' | 'orders' | 'kitchen' | 'wallet' | 'accounts';
+type OrderStatus = 'pending_confirm' | 'waiting_kitchen' | 'cooking' | 'kitchen_done' | 'stock_issue' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
+type MenuSalesStatus = 'active' | 'sold_out' | 'inactive';
 
 type AdminMe = {
   success: true;
@@ -141,6 +143,16 @@ type MenuCategoryRow = {
   item_count: number;
 };
 
+type AdminAccountRow = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: 'admin' | 'kitchen';
+  active: boolean;
+  lastLoginAt?: string | null;
+  createdAt?: string | null;
+};
+
 type MenuFormState = {
   item_code: string;
   name: string;
@@ -186,6 +198,15 @@ type CategoryFormState = {
   active: boolean;
 };
 
+type AccountFormState = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: 'admin' | 'kitchen';
+  password: string;
+  active: boolean;
+};
+
 const emptyCategoryForm: CategoryFormState = {
   id: '',
   label: '',
@@ -193,9 +214,22 @@ const emptyCategoryForm: CategoryFormState = {
   active: true,
 };
 
+const emptyAccountForm: AccountFormState = {
+  id: '',
+  username: '',
+  displayName: '',
+  role: 'kitchen',
+  password: '',
+  active: true,
+};
+
 const orderStatusOptions: { value: OrderStatus | 'all'; label: string }[] = [
   { value: 'all', label: '全部订单' },
   { value: 'pending_confirm', label: '待确认' },
+  { value: 'waiting_kitchen', label: '待制作' },
+  { value: 'cooking', label: '厨房制作中' },
+  { value: 'kitchen_done', label: '厨房完成' },
+  { value: 'stock_issue', label: '缺货异常' },
   { value: 'preparing', label: '制作中' },
   { value: 'delivering', label: '配送中' },
   { value: 'delivered', label: '已送达' },
@@ -206,9 +240,15 @@ const orderStatusOptions: { value: OrderStatus | 'all'; label: string }[] = [
 const sections = [
   { id: 'menu' as const, label: '菜单管理', icon: Soup },
   { id: 'orders' as const, label: '订单管理', icon: ClipboardList },
+  { id: 'kitchen' as const, label: '厨房出餐', icon: CookingPot },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
-  { id: 'users' as const, label: '会员管理', icon: Users },
+  { id: 'accounts' as const, label: '账号管理', icon: Users },
 ];
+
+function initialAdminSection(): AdminSection {
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  return pathname === '/admin/kitchen' ? 'kitchen' : 'menu';
+}
 
 type PendingMenuImage = {
   blob: Blob;
@@ -229,10 +269,19 @@ const emptyDuplicateCheck: DuplicateCheckState = {
 };
 const DUPLICATE_CHECK_MIN_LENGTH = 2;
 const DUPLICATE_CHECK_DELAY_MS = 800;
+type MenuDisplayLabel = 'none' | 'recommended' | 'hot' | 'new' | 'signature';
+const menuDisplayLabelOptions: { value: MenuDisplayLabel; label: string; tag?: string }[] = [
+  { value: 'none', label: '无标签' },
+  { value: 'recommended', label: '推荐' },
+  { value: 'hot', label: '热卖', tag: '热卖' },
+  { value: 'new', label: '新品', tag: '新品' },
+  { value: 'signature', label: '招牌', tag: '招牌' },
+];
+const menuDisplayTags = menuDisplayLabelOptions.map(item => item.tag).filter(Boolean) as string[];
 
 const AdminDashboard: React.FC = () => {
   const [auth, setAuth] = useState<AdminMe | null>(null);
-  const [section, setSection] = useState<AdminSection>('menu');
+  const [section, setSection] = useState<AdminSection>(initialAdminSection);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -245,6 +294,10 @@ const AdminDashboard: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItemRow[]>([]);
   const [menuMode, setMenuMode] = useState<'items' | 'categories'>('items');
   const [menuSearch, setMenuSearch] = useState('');
+  const [menuCategoryFilter, setMenuCategoryFilter] = useState('all');
+  const [menuStatusFilter, setMenuStatusFilter] = useState('all');
+  const [openMenuItemActions, setOpenMenuItemActions] = useState<number | null>(null);
+  const [statusUpdatingItemId, setStatusUpdatingItemId] = useState<number | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItemRow | null>(null);
   const [form, setForm] = useState<MenuFormState>(emptyMenuForm);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -261,9 +314,25 @@ const AdminDashboard: React.FC = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderStatus, setOrderStatus] = useState<OrderStatus | 'all'>('all');
   const [selectedOrder, setSelectedOrder] = useState<{ order: OrderRow; items: OrderItemRow[] } | null>(null);
+  const [accounts, setAccounts] = useState<AdminAccountRow[]>([]);
+  const [accountForm, setAccountForm] = useState<AccountFormState>(emptyAccountForm);
+  const [accountError, setAccountError] = useState('');
 
   const authenticated = Boolean(auth?.authenticated);
   const setupRequired = Boolean(auth?.setupRequired);
+  const filteredMenuItems = menuItems.filter(item => {
+    const categoryMatches = menuCategoryFilter === 'all' || String(item.category_id) === menuCategoryFilter;
+    const salesStatus = getMenuSalesStatus(item);
+    const statusMatches = menuStatusFilter === 'all'
+      || menuStatusFilter === salesStatus;
+    return categoryMatches && statusMatches;
+  });
+  const menuStats = {
+    total: menuItems.length,
+    active: menuItems.filter(item => getMenuSalesStatus(item) === 'active').length,
+    soldOut: menuItems.filter(item => getMenuSalesStatus(item) === 'sold_out').length,
+    inactive: menuItems.filter(item => getMenuSalesStatus(item) === 'inactive').length,
+  };
 
   useEffect(() => {
     void refreshAuth();
@@ -276,6 +345,7 @@ const AdminDashboard: React.FC = () => {
       void loadCategories();
     }
     if (section === 'orders') void loadOrders();
+    if (section === 'accounts') void loadAccounts();
   }, [authenticated, section, orderStatus]);
 
   useEffect(() => {
@@ -349,6 +419,7 @@ const AdminDashboard: React.FC = () => {
     const response = await fetch(path, {
       ...init,
       credentials: 'same-origin',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         ...(init.headers || {}),
@@ -360,6 +431,21 @@ const AdminDashboard: React.FC = () => {
     }
     return payload as T;
   };
+
+  useEffect(() => {
+    if (!authenticated || !auth?.admin) return;
+    const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (auth.admin.role === 'kitchen') {
+      if (pathname !== '/admin/kitchen') {
+        window.history.replaceState({}, '', '/admin/kitchen');
+      }
+      if (section !== 'kitchen') setSection('kitchen');
+      return;
+    }
+    if (pathname === '/admin/kitchen' && section !== 'kitchen') {
+      setSection('kitchen');
+    }
+  }, [authenticated, auth?.admin, section]);
 
   const refreshAuth = async () => {
     try {
@@ -421,7 +507,21 @@ const AdminDashboard: React.FC = () => {
       setSelectedOrder(null);
       setMenuItems([]);
       setOrders([]);
+      setAccounts([]);
+      if ((window.location.pathname.replace(/\/+$/, '') || '/') === '/admin/kitchen') {
+        window.history.replaceState({}, '', '/admin');
+      }
     }
+  };
+
+  const selectSection = (nextSection: AdminSection) => {
+    setSection(nextSection);
+    const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (nextSection === 'kitchen') {
+      if (pathname !== '/admin/kitchen') window.history.replaceState({}, '', '/admin/kitchen');
+      return;
+    }
+    if (pathname === '/admin/kitchen') window.history.replaceState({}, '', '/admin');
   };
 
   const loadMenuItems = async () => {
@@ -462,6 +562,82 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const loadAccounts = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const payload = await api<{ success: true; accounts: AdminAccountRow[] }>('/api/admin/accounts');
+      setAccounts(payload.accounts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '账号加载失败');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startEditAccount = (account: AdminAccountRow) => {
+    setAccountError('');
+    setAccountForm({
+      id: account.id,
+      username: account.username,
+      displayName: account.displayName,
+      role: account.role,
+      password: '',
+      active: account.active,
+    });
+  };
+
+  const resetAccountForm = () => {
+    setAccountError('');
+    setAccountForm(emptyAccountForm);
+  };
+
+  const saveAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setAccountError('');
+    setError('');
+    try {
+      const payload = accountForm.id
+        ? {
+            id: accountForm.id,
+            displayName: accountForm.displayName,
+            role: accountForm.role,
+            active: accountForm.active,
+            ...(accountForm.password.trim() ? { password: accountForm.password } : {}),
+          }
+        : {
+            username: accountForm.username,
+            displayName: accountForm.displayName,
+            role: accountForm.role,
+            password: accountForm.password,
+            active: accountForm.active,
+          };
+      await api('/api/admin/accounts', {
+        method: accountForm.id ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      showNotice(accountForm.id ? '账号已更新' : '账号已创建');
+      resetAccountForm();
+      await loadAccounts();
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : '账号保存失败');
+    }
+  };
+
+  const toggleAccountActive = async (account: AdminAccountRow) => {
+    setError('');
+    try {
+      await api('/api/admin/accounts', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: account.id, active: !account.active }),
+      });
+      showNotice(account.active ? '账号已停用' : '账号已启用');
+      await loadAccounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '账号状态更新失败');
+    }
+  };
+
   const loadOrderDetail = async (id: string) => {
     setError('');
     try {
@@ -476,6 +652,7 @@ const AdminDashboard: React.FC = () => {
 		    clearPendingImage();
 		    setEditorError('');
 		    setDuplicateCheck(emptyDuplicateCheck);
+        setOpenMenuItemActions(null);
 		    setEditingItem(null);
 		    setForm({
 		      ...emptyMenuForm,
@@ -489,6 +666,7 @@ const AdminDashboard: React.FC = () => {
 		    clearPendingImage();
 		    setEditorError('');
 		    setDuplicateCheck(emptyDuplicateCheck);
+        setOpenMenuItemActions(null);
 		    setEditingItem(item);
     setForm({
       item_code: item.item_code || '',
@@ -540,6 +718,7 @@ const AdminDashboard: React.FC = () => {
 	        imageUrl = imagePayload.imageUrl;
 	      }
 
+        const displayPatch = applyMenuDisplayLabel(form.tags, getMenuDisplayLabel(form));
 	      const payload = {
 	        id: editingItem?.id,
 	        item_code: form.item_code || null,
@@ -549,8 +728,8 @@ const AdminDashboard: React.FC = () => {
 	        price: Number(form.price),
 	        category_id: Number(form.category_id),
 	        image_url: imageUrl,
-	        tags: form.tags,
-	        recommended: form.recommended,
+	        tags: displayPatch.tags,
+	        recommended: displayPatch.recommended,
 	        sold_out: form.sold_out,
 	        active: form.active,
 	        option_groups: form.option_groups,
@@ -668,6 +847,29 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const updateMenuItemSalesStatus = async (item: MenuItemRow, status: MenuSalesStatus) => {
+    setError('');
+    setOpenMenuItemActions(null);
+    setStatusUpdatingItemId(item.id);
+    const patch = menuSalesStatusPayload(status);
+    try {
+      const payload = await api<{ success: true; item?: Partial<MenuItemRow> }>('/api/admin/menu-items', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: item.id, ...patch }),
+      });
+      const savedPatch = {
+        active: payload.item?.active ?? patch.active,
+        sold_out: payload.item?.sold_out ?? patch.sold_out,
+      };
+      setMenuItems(prev => prev.map(row => row.id === item.id ? { ...row, ...savedPatch } : row));
+      showNotice(`菜品已设为${labelMenuSalesStatus(status)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '状态更新失败');
+    } finally {
+      setStatusUpdatingItemId(current => current === item.id ? null : current);
+    }
+  };
+
   const moveMenuItem = async (item: MenuItemRow, action: 'move-up' | 'move-down') => {
     setError('');
     try {
@@ -715,56 +917,53 @@ const AdminDashboard: React.FC = () => {
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-[#f3f6fb] text-slate-950">
-        <main className="mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-6 py-10 lg:grid-cols-[1fr_420px]">
-          <section className="hidden flex-col justify-between self-stretch rounded-[28px] border border-slate-200 bg-white p-10 shadow-[0_24px_80px_rgba(15,23,42,0.08)] lg:flex">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
-                <ShieldCheck size={24} />
+      <div className="relative min-h-screen overflow-hidden bg-[#F6F7F9] text-[#111827]">
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,#FAFAF8_0%,#F6F7F9_100%)]" />
+        <div className="absolute inset-0 hidden opacity-[0.28] sm:block [background-image:linear-gradient(rgba(17,24,39,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,24,39,0.035)_1px,transparent_1px)] [background-size:56px_56px]" />
+        <div className="absolute left-[-140px] top-[-180px] hidden h-[420px] w-[420px] rounded-full bg-[#E9D8B9]/[0.28] blur-3xl sm:block" />
+        <div className="absolute left-1/2 top-[-170px] h-[360px] w-[520px] -translate-x-1/2 rounded-full bg-white/70 blur-3xl" />
+        <div className="absolute bottom-[-240px] right-[-180px] hidden h-[520px] w-[520px] rounded-full bg-[#CBD5E1]/[0.32] blur-3xl sm:block" />
+        <div className="absolute bottom-[12%] left-[8%] hidden h-[280px] w-[280px] rounded-full bg-[#C7A46A]/[0.08] blur-3xl lg:block" />
+
+        <main className="relative mx-auto flex min-h-screen w-full items-center justify-center px-4 py-8 sm:px-6">
+          <section className="relative w-full max-w-[420px]">
+            <div className="absolute inset-x-[-44px] top-1/2 h-56 -translate-y-1/2 rounded-full bg-[#C7A46A]/[0.12] blur-3xl sm:inset-x-[-80px] sm:h-72" />
+            <form onSubmit={submitAuth} className="relative w-full rounded-[24px] border border-[#E5E7EB]/90 bg-white p-6 shadow-[0_22px_54px_rgba(15,23,42,0.075),0_4px_18px_rgba(15,23,42,0.035)] sm:rounded-[28px] sm:p-9 lg:p-10">
+              <div className="flex items-center gap-3">
+                <img src="/logo/sct_logo.png" alt="Soup Can Thin" className="h-10 w-10 rounded-2xl object-contain sm:h-11 sm:w-11" />
+                <div>
+                  <p className="text-[13px] font-bold uppercase tracking-[0.08em] text-[#111827]">SCT Admin</p>
+                  <p className="mt-0.5 text-[13px] font-medium text-[#6B7280]">门店后台管理系统</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">SCT Admin</p>
-                <h1 className="text-xl font-bold text-slate-950">后台管理系统</h1>
+
+              <div className="mt-8 sm:mt-9">
+                <h1 className="text-2xl font-bold tracking-normal text-[#111827] sm:text-[28px]">{setupRequired ? '创建首个管理员' : '管理员登录'}</h1>
+                <p className="mt-2 text-sm leading-[22px] text-[#6B7280]">
+                  {setupRequired ? '输入 setup token，创建第一个拥有后台权限的管理员账号。' : '请输入管理员账号和密码，进入门店运营控制台。'}
+                </p>
               </div>
-            </div>
-            <div className="max-w-xl pb-4">
-              <p className="text-sm uppercase tracking-[0.24em] text-blue-600">Secure Console</p>
-              <h2 className="mt-5 text-5xl font-bold leading-[1.06] tracking-normal text-slate-950">门店后台<br />运营管理台</h2>
-              <p className="mt-6 max-w-lg text-sm leading-7 text-slate-500">使用独立管理员账号、服务端 session 与 Supabase service role API 管理菜单和订单。</p>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">Auth</p>
-                <p className="mt-1 text-sm font-bold">Session Cookie</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">Data</p>
-                <p className="mt-1 text-sm font-bold">Supabase</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">Scope</p>
-                <p className="mt-1 text-sm font-bold">Admin API</p>
-              </div>
-            </div>
-          </section>
-          <section className="flex items-center justify-center">
-            <form onSubmit={submitAuth} className="w-full max-w-md rounded-[22px] border border-slate-200 bg-white p-7 shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white">
-                {setupRequired ? <Fingerprint size={23} /> : <KeyRound size={23} />}
-              </div>
-              <h1 className="mt-6 text-3xl font-bold tracking-normal text-slate-950">{setupRequired ? '创建首个管理员' : '管理员登录'}</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-500">{setupRequired ? '数据库还没有管理员账号。输入 setup token 后创建老板账号。' : '请输入管理员账号和密码进入控制台。'}</p>
-              {error && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
-              <div className="mt-6 grid gap-4">
-                <AuthInput label="账号" value={username} onChange={setUsername} placeholder="admin" autoComplete="username" />
+
+              {error && (
+                <div className="mt-6 flex gap-3 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-3 text-[13px] font-semibold text-[#B91C1C]">
+                  <AlertCircle className="mt-0.5 shrink-0" size={17} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="mt-7 grid gap-4">
+                <AuthInput label="账号" value={username} onChange={setUsername} placeholder="请输入管理员账号" autoComplete="username" />
                 {setupRequired && <AuthInput label="显示名称" value={displayName} onChange={setDisplayName} placeholder="老板 / Manager" />}
-                <AuthInput label="密码" value={password} onChange={setPassword} type="password" placeholder="至少 8 位" autoComplete={setupRequired ? 'new-password' : 'current-password'} />
+                <AuthInput label="密码" value={password} onChange={setPassword} type="password" placeholder="请输入密码" autoComplete={setupRequired ? 'new-password' : 'current-password'} />
                 {setupRequired && <AuthInput label="Setup Token" value={setupToken} onChange={setSetupToken} type="password" placeholder="ADMIN_REVIEW_TOKEN" />}
               </div>
-              <button type="submit" disabled={isLoading} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-70">
+
+              <button type="submit" disabled={isLoading} className="mt-7 flex h-[50px] w-full items-center justify-center gap-2 rounded-[14px] border-0 bg-[#111827] px-4 text-[15px] font-semibold text-white transition duration-200 hover:-translate-y-px hover:bg-[#1F2937] hover:shadow-[0_12px_24px_rgba(17,24,39,0.16)] active:translate-y-0 active:shadow-[0_6px_14px_rgba(17,24,39,0.12)] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-75 disabled:shadow-none">
                 <Check size={17} />
                 {setupRequired ? '创建并进入后台' : '登录后台'}
               </button>
+
+              <p className="mt-6 text-center text-xs leading-5 text-[#9CA3AF]">仅限授权管理员访问，所有操作将记录在系统日志中。</p>
             </form>
           </section>
         </main>
@@ -772,18 +971,29 @@ const AdminDashboard: React.FC = () => {
     );
   }
 
+  if (auth.admin?.role === 'kitchen') {
+    return (
+      <KitchenBoard
+        api={api}
+        onLogout={logout}
+        userName={auth.admin.displayName || auth.admin.username}
+        standalone
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#f5f7fb] text-slate-950">
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200 bg-white px-4 py-5 shadow-[12px_0_40px_rgba(15,23,42,0.04)] transition-[width] duration-200 lg:block ${sidebarCollapsed ? 'w-24' : 'w-64'}`}>
-        <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3 px-2'}`}>
-          <div className={`flex items-center gap-3 ${sidebarCollapsed ? '' : 'min-w-0'}`}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
+    <div className="min-h-screen bg-[#F6F8FB] text-slate-950">
+      <aside className={`fixed inset-y-0 left-0 z-30 hidden border-r border-[#E5E7EB] bg-white px-4 py-4 shadow-[10px_0_30px_rgba(15,23,42,0.035)] transition-[width] duration-200 lg:block ${sidebarCollapsed ? 'w-24' : 'w-64'}`}>
+        <div className={`flex h-12 items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3 px-1'}`}>
+          <div className={`flex items-center gap-2.5 ${sidebarCollapsed ? '' : 'min-w-0'}`}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
               <ShieldCheck size={21} />
             </div>
             {!sidebarCollapsed && (
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">SCT Admin</p>
-                <h1 className="truncate text-lg font-bold text-slate-950">深夜食汤</h1>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">SCT ADMIN</p>
+                <h1 className="truncate text-[17px] font-bold text-slate-950">深夜食汤</h1>
               </div>
             )}
           </div>
@@ -796,7 +1006,7 @@ const AdminDashboard: React.FC = () => {
             <PanelLeftOpen size={17} />
           </button>
         )}
-        <nav className="mt-8 space-y-1">
+        <nav className="mt-7 space-y-1.5">
           {sections.map(item => {
             const Icon = item.icon;
             const active = section === item.id;
@@ -804,38 +1014,52 @@ const AdminDashboard: React.FC = () => {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setSection(item.id)}
+                onClick={() => selectSection(item.id)}
                 title={sidebarCollapsed ? item.label : undefined}
-                className={`flex w-full items-center rounded-xl px-3 py-3 text-sm font-bold transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${active ? 'bg-slate-950 text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)]' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'}`}
+                className={`relative flex h-12 w-full items-center rounded-[14px] px-3 text-sm font-bold transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${active ? 'bg-[#F1F5F9] text-[#111827]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}
               >
-                <Icon size={18} />
+                {active && !sidebarCollapsed && <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}
+                <Icon size={18} className={active ? 'text-[#111827]' : ''} />
                 {!sidebarCollapsed && item.label}
               </button>
             );
           })}
         </nav>
-        <div className="absolute bottom-5 left-4 right-4">
-          {!sidebarCollapsed && <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-            <p className="text-xs text-slate-500">当前管理员</p>
-            <p className="mt-1 truncate text-sm font-bold text-slate-950">{auth.admin?.displayName || auth.admin?.username}</p>
+        <div className="absolute bottom-4 left-4 right-4">
+          {!sidebarCollapsed && <div className="mb-2 rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2.5">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-950">{auth.admin?.displayName || auth.admin?.username}</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">管理员</p>
+              </div>
+              <button type="button" onClick={logout} className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-white hover:text-slate-950">
+                退出
+              </button>
+            </div>
           </div>}
-          <button type="button" onClick={logout} title={sidebarCollapsed ? '退出后台' : undefined} className={`flex w-full items-center justify-center rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 ${sidebarCollapsed ? '' : 'gap-2'}`}>
+          {sidebarCollapsed && <button type="button" onClick={logout} title="退出后台" className="flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950">
             <LogOut size={17} />
-            {!sidebarCollapsed && '退出后台'}
-          </button>
+          </button>}
         </div>
       </aside>
 
       <main className={sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'}>
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-[#f5f7fb]/90 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <header className="sticky top-0 z-20 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Operations</p>
-              <h2 className="text-2xl font-bold text-slate-950">{sections.find(item => item.id === section)?.label}</h2>
+              <h2 className="text-[22px] font-bold leading-8 text-slate-950">{sections.find(item => item.id === section)?.label}</h2>
             </div>
+            {section === 'menu' && (
+              <div className="hidden items-center gap-2 lg:flex">
+                <span className="rounded-full border border-[#DDE2E8] bg-white px-3 py-1.5 text-xs font-bold text-[#334155]">共 {menuStats.total} 个菜品</span>
+                <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">可售 {menuStats.active}</span>
+                <span className="rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">售罄 {menuStats.soldOut}</span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-[#64748B]">下架 {menuStats.inactive}</span>
+              </div>
+            )}
             <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
               {sections.map(item => (
-                <button key={item.id} type="button" onClick={() => setSection(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold ${section === item.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-500'}`}>
+                <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold ${section === item.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-500'}`}>
                   {item.label}
                 </button>
               ))}
@@ -843,18 +1067,18 @@ const AdminDashboard: React.FC = () => {
           </div>
         </header>
 
-        <div className="px-4 py-6 sm:px-6 lg:px-8">
-          {notice && <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{notice}</div>}
+        <div className="grid min-h-[calc(100vh-57px)] gap-3 p-3 sm:p-5 lg:p-6">
+          {notice && <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{notice}</div>}
           {error && (
-            <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               <AlertCircle className="mt-0.5 shrink-0" size={16} />
               {error}
             </div>
           )}
 
           {section === 'menu' && (
-            <section className="min-w-0">
-              <div className="mb-4 inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+            <section className="grid h-[calc(100vh-81px)] min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3 sm:h-[calc(100vh-97px)] lg:h-[calc(100vh-105px)]">
+              <div className="inline-flex w-fit rounded-2xl border border-[#E5E7EB] bg-white p-1 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
                 {[
                   { id: 'items' as const, label: '菜品管理' },
                   { id: 'categories' as const, label: '分类管理' },
@@ -863,81 +1087,99 @@ const AdminDashboard: React.FC = () => {
                     key={item.id}
                     type="button"
                     onClick={() => setMenuMode(item.id)}
-                    className={`rounded-xl px-4 py-2 text-sm font-bold transition ${menuMode === item.id ? 'bg-slate-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950'}`}
+                    className={`rounded-xl px-4 py-2 text-sm font-bold transition ${menuMode === item.id ? 'bg-[#111827] text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}
                   >
                     {item.label}
                   </button>
                 ))}
               </div>
               {menuMode === 'items' && (
-                <Panel className="overflow-hidden">
-                  <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="relative min-w-0 flex-1">
+                <div className="flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+                  <div className="grid gap-3 border-b border-[#E5E7EB] bg-white p-4 lg:grid-cols-[minmax(320px,1fr)_170px_150px] lg:items-center xl:grid-cols-[minmax(360px,1fr)_180px_160px_auto]">
+                    <div className="relative min-w-0">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-                      <input value={menuSearch} onChange={event => setMenuSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMenuItems()} className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm text-slate-950 outline-none focus:border-blue-500 focus:bg-white" placeholder="搜索菜名、编码、英文名" />
+                      <input value={menuSearch} onChange={event => setMenuSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMenuItems()} className="h-11 w-full rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] pl-10 pr-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]" placeholder="搜索菜名、编码、英文名" />
                     </div>
-                    <div className="flex gap-2">
+                    <select value={menuCategoryFilter} onChange={event => setMenuCategoryFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] px-3 text-sm font-bold text-[#334155] outline-none transition focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]">
+                      <option value="all">全部分类</option>
+                      {menuCategories.map(category => <option key={category.id} value={category.id}>{category.label}</option>)}
+                    </select>
+                    <select value={menuStatusFilter} onChange={event => setMenuStatusFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] px-3 text-sm font-bold text-[#334155] outline-none transition focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]">
+                      <option value="all">全部状态</option>
+                      <option value="active">可售</option>
+                      <option value="sold_out">售罄</option>
+                      <option value="inactive">下架</option>
+                    </select>
+                    <div className="grid grid-cols-[44px_minmax(0,1fr)] gap-3 sm:flex sm:justify-end lg:col-span-3 xl:col-span-1">
                       <IconButton title="刷新" onClick={() => { void loadMenuItems(); void loadCategories(); }}><RefreshCw size={17} /></IconButton>
-                      <button type="button" onClick={startCreate} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500">
+                      <button type="button" onClick={startCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 sm:min-w-[128px]">
                         <Plus size={17} />
-                        新增
+                        新增菜品
                       </button>
                     </div>
                   </div>
-                  <div className="overflow-x-auto">
-                    <div className="max-h-[72vh] min-w-[1080px] overflow-y-auto">
+                  <div className="hidden min-h-0 flex-1 overflow-x-auto md:block">
+                    <div className="h-full min-w-[1160px] overflow-y-auto">
                       <table className="w-full table-fixed border-collapse text-sm">
                         <colgroup>
-                          <col className="w-[10%]" />
+                          <col className="w-[9%]" />
                           <col className="w-[36%]" />
                           <col className="w-[12%]" />
                           <col className="w-[11%]" />
+                          <col className="w-[10%]" />
+                          <col className="w-[8%]" />
                           <col className="w-[14%]" />
-                          <col className="w-[17%]" />
                         </colgroup>
-                        <thead className="sticky top-0 z-[8] bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500 shadow-[inset_0_-1px_0_#e2e8f0]">
+                        <thead className="sticky top-0 z-[8] bg-[#F8FAFC] text-[13px] text-[#64748B] shadow-[inset_0_-1px_0_#E5E7EB]">
                           <tr>
-                            <th className="px-4 py-3 text-center font-bold">编码</th>
-                            <th className="px-5 py-3 text-left font-bold">菜品</th>
-                            <th className="px-4 py-3 text-center font-bold">分类</th>
-                            <th className="px-4 py-3 text-center font-bold">价格</th>
-                            <th className="px-4 py-3 text-center font-bold">状态</th>
-                            <th className="px-4 py-3 text-center font-bold">操作</th>
+                            <th className="px-4 py-3 text-center font-semibold">编码</th>
+                            <th className="px-5 py-3 text-left font-semibold">菜品</th>
+                            <th className="px-4 py-3 text-center font-semibold">分类</th>
+                            <th className="px-4 py-3 text-center font-semibold">价格</th>
+                            <th className="px-4 py-3 text-center font-semibold">状态</th>
+                            <th className="px-4 py-3 text-center font-semibold">展示标签</th>
+                            <th className="px-4 py-3 text-center font-semibold">操作</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {menuItems.map(item => (
-                            <tr key={item.id} className="transition hover:bg-slate-50/80">
+                        <tbody className="divide-y divide-[#EEF2F7]">
+                          {filteredMenuItems.map(item => (
+                            <tr key={item.id} className="h-20 transition hover:bg-[#F9FAFB]">
                               <td className="px-4 py-3 text-center align-middle">
-                                <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700">{item.item_code || '-'}</span>
+                                <span className="inline-flex rounded-full border border-[#DDE2E8] bg-white px-3 py-1 text-xs font-bold text-[#334155]">{item.item_code || '-'}</span>
                               </td>
                               <td className="px-5 py-3 align-middle">
                                 <div className="flex min-w-0 items-center gap-3">
-                                  <img src={item.image_url} alt={item.name} className="h-16 w-16 shrink-0 rounded-2xl bg-slate-100 object-contain shadow-[0_8px_20px_rgba(15,23,42,0.10)]" />
+                                  <img src={item.image_url} alt={item.name} className="h-14 w-14 shrink-0 rounded-[14px] bg-slate-100 object-cover" />
                                   <div className="min-w-0 text-left">
-                                    <p className="truncate text-sm font-bold text-slate-950">{item.name}</p>
-                                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{item.description}</p>
+                                    <p className="truncate text-[15px] font-semibold leading-5 text-[#111827]">{item.name}</p>
                                   </div>
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center align-middle">
-                                <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{item.category}</span>
+                                <span className="inline-flex rounded-full bg-[#F1F5F9] px-3 py-1 text-xs font-bold text-[#475569]">{item.category}</span>
                               </td>
-                              <td className="px-4 py-3 text-center align-middle text-sm font-bold text-slate-950">RM {Number(item.price).toFixed(2)}</td>
+                              <td className="px-4 py-3 text-center align-middle text-sm font-bold text-[#111827]">RM {Number(item.price).toFixed(2)}</td>
                               <td className="px-4 py-3 text-center align-middle">
-                                <div className="flex flex-wrap justify-center gap-1.5">
-                                  <Badge tone={item.active === false ? 'muted' : 'green'}>{item.active === false ? '已下架' : '上架'}</Badge>
-                                  {item.sold_out && <Badge tone="red">售罄</Badge>}
-                                  {item.recommended && <Badge tone="blue">推荐</Badge>}
-                                </div>
+                                <MenuItemStatusBadge item={item} />
                               </td>
                               <td className="px-4 py-3 text-center align-middle">
-                                <div className="flex justify-center gap-1.5">
-                                  <IconButton title="上移" disabled={!canMoveMenuItem(item, 'move-up')} onClick={() => moveMenuItem(item, 'move-up')}><ArrowUp size={16} /></IconButton>
-                                  <IconButton title="下移" disabled={!canMoveMenuItem(item, 'move-down')} onClick={() => moveMenuItem(item, 'move-down')}><ArrowDown size={16} /></IconButton>
-                                  <IconButton title="编辑" onClick={() => startEdit(item)}><Pencil size={16} /></IconButton>
-                                  <IconButton title="下架" onClick={() => deleteMenuItem(item)}><Trash2 size={16} /></IconButton>
-                                </div>
+                                <MenuItemDisplayBadge item={item} />
+                              </td>
+                              <td className="px-4 py-3 text-center align-middle">
+                                <MenuItemActions
+                                  item={item}
+                                  open={openMenuItemActions === item.id}
+                                  onToggle={() => setOpenMenuItemActions(current => current === item.id ? null : item.id)}
+                                  onQuickStatus={(status) => updateMenuItemSalesStatus(item, status)}
+                                  onEdit={() => startEdit(item)}
+                                  onMoveUp={() => moveMenuItem(item, 'move-up')}
+                                  onMoveDown={() => moveMenuItem(item, 'move-down')}
+                                  onDelete={() => deleteMenuItem(item)}
+                                  canMoveUp={canMoveMenuItem(item, 'move-up')}
+                                  canMoveDown={canMoveMenuItem(item, 'move-down')}
+                                  statusUpdating={statusUpdatingItemId === item.id}
+                                  onClose={() => setOpenMenuItemActions(null)}
+                                />
                               </td>
                             </tr>
                           ))}
@@ -945,7 +1187,27 @@ const AdminDashboard: React.FC = () => {
                       </table>
                     </div>
                   </div>
-                </Panel>
+                  <div className="grid gap-2 bg-[#F8FAFC] p-2 md:hidden">
+                    {filteredMenuItems.map(item => (
+                      <React.Fragment key={item.id}>
+                        <MenuItemMobileCard
+                          item={item}
+                          open={openMenuItemActions === item.id}
+                          onToggle={() => setOpenMenuItemActions(current => current === item.id ? null : item.id)}
+                          onQuickStatus={(status) => updateMenuItemSalesStatus(item, status)}
+                          onEdit={() => startEdit(item)}
+                          onMoveUp={() => moveMenuItem(item, 'move-up')}
+                          onMoveDown={() => moveMenuItem(item, 'move-down')}
+                          onDelete={() => deleteMenuItem(item)}
+                          canMoveUp={canMoveMenuItem(item, 'move-up')}
+                          canMoveDown={canMoveMenuItem(item, 'move-down')}
+                          statusUpdating={statusUpdatingItemId === item.id}
+                          onClose={() => setOpenMenuItemActions(null)}
+                        />
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
               )}
               {menuMode === 'categories' && (
                 <CategoryManager
@@ -1008,12 +1270,34 @@ const AdminDashboard: React.FC = () => {
             </Panel>
           )}
 
-          {(section === 'wallet' || section === 'users') && (
+          {section === 'kitchen' && (
+            <KitchenBoard
+              api={api}
+              onLogout={logout}
+              userName={auth.admin?.displayName || auth.admin?.username || '管理员'}
+            />
+          )}
+
+          {section === 'accounts' && (
+            <AccountManager
+              accounts={accounts}
+              form={accountForm}
+              setForm={setAccountForm}
+              error={accountError}
+              onSubmit={saveAccount}
+              onEdit={startEditAccount}
+              onToggleActive={toggleAccountActive}
+              onCancel={resetAccountForm}
+              onRefresh={loadAccounts}
+            />
+          )}
+
+          {section === 'wallet' && (
             <Panel className="p-10 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
-                {section === 'wallet' ? <WalletCards size={24} /> : <Users size={24} />}
+                <WalletCards size={24} />
               </div>
-              <h3 className="mt-5 text-2xl font-bold">{section === 'wallet' ? '充值审核' : '会员管理'}</h3>
+              <h3 className="mt-5 text-2xl font-bold">充值审核</h3>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">菜单 CRUD、订单状态和管理员账号登录已完成，这个模块的列表与操作入口已预留。</p>
             </Panel>
           )}
@@ -1105,8 +1389,8 @@ function AuthInput({ label, value, onChange, type = 'text', placeholder, autoCom
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
-      <input value={value} onChange={event => onChange(event.target.value)} type={type} placeholder={placeholder} autoComplete={autoComplete} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white" />
+      <span className="block text-[13px] font-medium text-[#374151]">{label}</span>
+      <input value={value} onChange={event => onChange(event.target.value)} type={type} placeholder={placeholder} autoComplete={autoComplete} className="mt-2 h-12 w-full rounded-[14px] border border-[#DDE2E8] bg-[#F9FAFB] px-4 text-[15px] font-medium text-[#111827] outline-none transition placeholder:text-[#9CA3AF] focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_4px_rgba(199,164,106,0.15)]" />
     </label>
   );
 }
@@ -1192,6 +1476,49 @@ function labelTranslationLanguage(lang: TranslationLang) {
 
 function duplicateCheckCacheKey(field: keyof DuplicateCheckState, value: string, excludeId?: number) {
   return `${field}:${excludeId || 'new'}:${value.trim().toLowerCase()}`;
+}
+
+function getMenuSalesStatus(item: Pick<MenuItemRow, 'active' | 'sold_out'>): MenuSalesStatus {
+  if (item.active === false) return 'inactive';
+  return item.sold_out ? 'sold_out' : 'active';
+}
+
+function menuSalesStatusPayload(status: MenuSalesStatus): Pick<MenuFormState, 'active' | 'sold_out'> {
+  return {
+    active: status !== 'inactive',
+    sold_out: status === 'sold_out',
+  };
+}
+
+function labelMenuSalesStatus(status: MenuSalesStatus) {
+  return {
+    active: '可售',
+    sold_out: '售罄',
+    inactive: '下架',
+  }[status];
+}
+
+function getMenuDisplayLabel(item: Pick<MenuItemRow, 'recommended' | 'tags'> | Pick<MenuFormState, 'recommended' | 'tags'>): MenuDisplayLabel {
+  if (item.recommended) return 'recommended';
+  const match = menuDisplayLabelOptions.find(option => option.tag && item.tags?.includes(option.tag));
+  return match?.value || 'none';
+}
+
+function labelMenuDisplayLabel(value: MenuDisplayLabel) {
+  return menuDisplayLabelOptions.find(option => option.value === value)?.label || '';
+}
+
+function applyMenuDisplayLabel(tags: string[], value: MenuDisplayLabel) {
+  const option = menuDisplayLabelOptions.find(item => item.value === value);
+  const propertyTags = tags.filter(tag => !menuDisplayTags.includes(tag));
+  return {
+    recommended: value === 'recommended',
+    tags: option?.tag ? [...propertyTags, option.tag] : propertyTags,
+  };
+}
+
+function propertyMenuTags(tags: string[]) {
+  return tags.filter(tag => !menuDisplayTags.includes(tag));
 }
 
 function MenuEditor({ form, setForm, categories, editingItem, onSubmit, onImageUpload, uploadingImage, pendingImage, error, duplicateCheck, onClose }: {
@@ -1368,7 +1695,30 @@ function MenuEditor({ form, setForm, categories, editingItem, onSubmit, onImageU
         </div>
         <TextArea label="简介" value={form.description} onChange={value => update('description', value)} required />
         <TextArea label="详情" value={form.detail} onChange={value => update('detail', value)} required />
-        <TagEditor label="标签" tags={form.tags} onChange={tags => setForm(prev => ({ ...prev, tags }))} placeholder="输入标签后回车" />
+        <div>
+          <span className="text-xs font-bold text-slate-500">展示标签</span>
+          <div className="mt-1.5 grid grid-cols-3 gap-2 sm:grid-cols-5">
+            {menuDisplayLabelOptions.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  const patch = applyMenuDisplayLabel(form.tags, option.value);
+                  setForm(prev => ({ ...prev, ...patch }));
+                }}
+                className={`rounded-xl border px-3 py-2.5 text-xs font-bold transition ${getMenuDisplayLabel(form) === option.value ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-white hover:text-slate-950'}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <TagEditor
+          label="菜品属性标签"
+          tags={propertyMenuTags(form.tags)}
+          onChange={tags => setForm(prev => ({ ...prev, tags: [...propertyMenuTags(tags), ...prev.tags.filter(tag => menuDisplayTags.includes(tag))] }))}
+          placeholder="输入菜品属性后回车"
+        />
         <OptionGroupsEditor
           groups={form.option_groups}
           onAddGroup={addOptionGroup}
@@ -1387,10 +1737,25 @@ function MenuEditor({ form, setForm, categories, editingItem, onSubmit, onImageU
           onUpdateGroupName={updateTranslatedGroupName}
           onUpdateOptionName={updateTranslatedOptionName}
         />
-        <div className="grid grid-cols-3 gap-2 pt-1">
-          <Toggle label="推荐" checked={form.recommended} onChange={value => update('recommended', value)} />
-          <Toggle label="售罄" checked={form.sold_out} onChange={value => update('sold_out', value)} />
-          <Toggle label="上架" checked={form.active} onChange={value => update('active', value)} />
+        <div className="grid gap-3 pt-1">
+          <div>
+            <span className="text-xs font-bold text-slate-500">销售状态</span>
+            <div className="mt-1.5 grid grid-cols-3 gap-2">
+              {(['active', 'sold_out', 'inactive'] as MenuSalesStatus[]).map(status => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => {
+                    const patch = menuSalesStatusPayload(status);
+                    setForm(prev => ({ ...prev, ...patch }));
+                  }}
+                  className={`rounded-xl border px-3 py-2.5 text-xs font-bold transition ${getMenuSalesStatus(form) === status ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-white hover:text-slate-950'}`}
+                >
+                  {labelMenuSalesStatus(status)}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </form>
@@ -1521,7 +1886,7 @@ function TranslationsEditor({ activeLang, onActiveLangChange, translations, sour
         <Input label={`${labelTranslationLanguage(activeLang)}分类名称`} value={current.category_label} onChange={value => onUpdateTranslation(activeLang, { category_label: value })} placeholder="例如 Soup / Drinks" />
         <TextArea label={`${labelTranslationLanguage(activeLang)}简介`} value={current.description} onChange={value => onUpdateTranslation(activeLang, { description: value })} />
         <TextArea label={`${labelTranslationLanguage(activeLang)}详情`} value={current.detail} onChange={value => onUpdateTranslation(activeLang, { detail: value })} />
-        <TagEditor label={`${labelTranslationLanguage(activeLang)}标签`} tags={current.tags} onChange={tags => onUpdateTranslation(activeLang, { tags })} placeholder="输入译文标签后回车" />
+        <TagEditor label={`${labelTranslationLanguage(activeLang)}菜品属性标签`} tags={current.tags} onChange={tags => onUpdateTranslation(activeLang, { tags })} placeholder="输入译文属性后回车" />
 
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
           <p className="text-xs font-bold text-slate-500">规格 / 加料翻译</p>
@@ -1573,6 +1938,284 @@ function TranslationsEditor({ activeLang, onActiveLangChange, translations, sour
   );
 }
 
+function MenuItemStatusBadge({ item }: { item: Pick<MenuItemRow, 'active' | 'sold_out'> }) {
+  const status = getMenuSalesStatus(item);
+  const tone: 'green' | 'orange' | 'muted' = status === 'active' ? 'green' : status === 'sold_out' ? 'orange' : 'muted';
+  return <Badge tone={tone}>{labelMenuSalesStatus(status)}</Badge>;
+}
+
+function MenuItemDisplayBadge({ item }: { item: Pick<MenuItemRow, 'recommended' | 'tags'> }) {
+  const displayLabel = getMenuDisplayLabel(item);
+  if (displayLabel === 'none') return null;
+  return <Badge tone={displayLabel === 'recommended' ? 'blue' : 'orange'}>{labelMenuDisplayLabel(displayLabel)}</Badge>;
+}
+
+function MenuItemActions({ item, open, onToggle, onQuickStatus, onEdit, onMoveUp, onMoveDown, onDelete, canMoveUp, canMoveDown, statusUpdating, onClose }: {
+  item: MenuItemRow;
+  open: boolean;
+  onToggle: () => void;
+  onQuickStatus: (status: MenuSalesStatus) => void;
+  onEdit: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDelete: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  statusUpdating: boolean;
+  onClose: () => void;
+}) {
+  const actionRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (actionRef.current?.contains(event.target as Node)) return;
+      onClose();
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [open, onClose]);
+
+  const run = (action: () => void) => {
+    onClose();
+    action();
+  };
+  const currentStatus = getMenuSalesStatus(item);
+
+  return (
+    <div ref={actionRef} className="relative flex justify-center gap-1.5">
+      <IconButton title={`编辑 ${item.name}`} onClick={() => run(onEdit)}><Pencil size={16} /></IconButton>
+      <IconButton title={`更多操作 ${item.name}`} onClick={open ? onClose : onToggle}><MoreHorizontal size={17} /></IconButton>
+      {open && (
+        <div className="absolute right-0 top-11 z-20 w-36 overflow-hidden rounded-xl border border-[#E5E7EB] bg-white py-1 text-left shadow-[0_18px_45px_rgba(15,23,42,0.12)]">
+          {(['active', 'sold_out', 'inactive'] as MenuSalesStatus[]).map(status => (
+            <React.Fragment key={status}>
+              <ActionMenuButton
+                disabled={statusUpdating || currentStatus === status}
+                onClick={() => run(() => onQuickStatus(status))}
+              >
+                <Check size={15} className={currentStatus === status ? 'opacity-100' : 'opacity-0'} />
+                {statusUpdating ? '更新中' : labelMenuSalesStatus(status)}
+              </ActionMenuButton>
+            </React.Fragment>
+          ))}
+          <div className="my-1 h-px bg-slate-100" />
+          <ActionMenuButton disabled={!canMoveUp} onClick={() => run(onMoveUp)}>
+            <ArrowUp size={15} />
+            上移
+          </ActionMenuButton>
+          <ActionMenuButton disabled={!canMoveDown} onClick={() => run(onMoveDown)}>
+            <ArrowDown size={15} />
+            下移
+          </ActionMenuButton>
+          <ActionMenuButton danger onClick={() => run(onDelete)}>
+            <Trash2 size={15} />
+            删除
+          </ActionMenuButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionMenuButton({ children, onClick, disabled = false, danger = false }: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onPointerDown={event => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!disabled) onClick();
+      }}
+      disabled={disabled}
+      className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-35 ${danger ? 'text-red-600 hover:bg-red-50' : 'text-[#475569] hover:bg-[#F8FAFC] hover:text-[#111827]'}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuItemMobileCard({ item, open, onToggle, onQuickStatus, onEdit, onMoveUp, onMoveDown, onDelete, canMoveUp, canMoveDown, statusUpdating, onClose }: {
+  item: MenuItemRow;
+  open: boolean;
+  onToggle: () => void;
+  onQuickStatus: (status: MenuSalesStatus) => void;
+  onEdit: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDelete: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  statusUpdating: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <article className="rounded-2xl border border-[#E5E7EB] bg-white p-3 shadow-sm">
+      <div className="flex gap-3">
+        <img src={item.image_url} alt={item.name} className="h-16 w-16 shrink-0 rounded-[14px] bg-slate-100 object-cover" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-[15px] font-semibold leading-5 text-[#111827]">{item.name}</h3>
+            </div>
+            <p className="shrink-0 text-sm font-bold text-[#111827]">RM {Number(item.price).toFixed(2)}</p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex rounded-full border border-[#DDE2E8] bg-white px-2.5 py-1 text-xs font-bold text-[#334155]">{item.item_code || '-'}</span>
+            <span className="inline-flex rounded-full bg-[#F1F5F9] px-2.5 py-1 text-xs font-bold text-[#475569]">{item.category}</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <MenuItemStatusBadge item={item} />
+          <MenuItemDisplayBadge item={item} />
+        </div>
+        <MenuItemActions
+          item={item}
+          open={open}
+          onToggle={onToggle}
+          onQuickStatus={onQuickStatus}
+          onEdit={onEdit}
+          onMoveUp={onMoveUp}
+          onMoveDown={onMoveDown}
+          onDelete={onDelete}
+          canMoveUp={canMoveUp}
+          canMoveDown={canMoveDown}
+          statusUpdating={statusUpdating}
+          onClose={onClose}
+        />
+      </div>
+    </article>
+  );
+}
+
+function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onToggleActive, onCancel, onRefresh }: {
+  accounts: AdminAccountRow[];
+  form: AccountFormState;
+  setForm: React.Dispatch<React.SetStateAction<AccountFormState>>;
+  error: string;
+  onSubmit: (event: React.FormEvent) => void;
+  onEdit: (account: AdminAccountRow) => void;
+  onToggleActive: (account: AdminAccountRow) => void;
+  onCancel: () => void;
+  onRefresh: () => void;
+}) {
+  const editing = Boolean(form.id);
+  const update = (key: keyof AccountFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+
+  return (
+    <div className="grid gap-3 xl:grid-cols-[380px_1fr]">
+      <Panel className="p-4">
+        <div className="mb-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Accounts</p>
+          <h3 className="mt-1 text-xl font-bold text-slate-950">{editing ? '编辑后台账号' : '新增后台账号'}</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">账号密码写入 Supabase admin_users，密码只保存 scrypt 哈希。</p>
+        </div>
+        {error && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+            <AlertCircle className="mt-0.5 shrink-0" size={16} />
+            {error}
+          </div>
+        )}
+        <form onSubmit={onSubmit} className="grid gap-3">
+          <Input label="账号" value={form.username} onChange={value => update('username', value)} placeholder="kitchen01" required disabled={editing} />
+          <Input label="显示名称" value={form.displayName} onChange={value => update('displayName', value)} placeholder="厨房早班" />
+          <SelectInput label="角色" value={form.role} onChange={value => update('role', value as AccountFormState['role'])}>
+            <option value="admin">管理员</option>
+            <option value="kitchen">厨房工人</option>
+          </SelectInput>
+          <Input
+            label={editing ? '新密码（留空则不修改）' : '密码'}
+            value={form.password}
+            onChange={value => update('password', value)}
+            type="password"
+            placeholder="至少 8 位"
+            required={!editing}
+          />
+          <Toggle label={form.active ? '启用账号' : '停用账号'} checked={form.active} onChange={value => update('active', value)} />
+          <div className="flex gap-2 pt-2">
+            <button type="submit" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500">
+              <Save size={16} />
+              {editing ? '保存账号' : '创建账号'}
+            </button>
+            {editing && <IconButton title="取消编辑" onClick={onCancel}><X size={17} /></IconButton>}
+          </div>
+        </form>
+      </Panel>
+
+      <Panel className="overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Account List</p>
+            <h3 className="text-lg font-bold text-slate-950">后台账号列表</h3>
+          </div>
+          <IconButton title="刷新账号" onClick={onRefresh}><RefreshCw size={17} /></IconButton>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[18%]" />
+              <col className="w-[20%]" />
+              <col className="w-[14%]" />
+              <col className="w-[12%]" />
+              <col className="w-[18%]" />
+              <col className="w-[18%]" />
+            </colgroup>
+            <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3 text-center font-bold">账号</th>
+                <th className="px-4 py-3 text-center font-bold">显示名称</th>
+                <th className="px-4 py-3 text-center font-bold">角色</th>
+                <th className="px-4 py-3 text-center font-bold">状态</th>
+                <th className="px-4 py-3 text-center font-bold">最后登录</th>
+                <th className="px-4 py-3 text-center font-bold">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {accounts.map(account => (
+                <tr key={account.id} className="transition hover:bg-slate-50/80">
+                  <td className="px-4 py-4 text-center align-middle font-bold text-slate-950">{account.username}</td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-600">{account.displayName}</td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <Badge tone={account.role === 'admin' ? 'blue' : 'orange'}>{account.role === 'admin' ? '管理员' : '厨房工人'}</Badge>
+                  </td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <Badge tone={account.active ? 'green' : 'muted'}>{account.active ? '启用' : '停用'}</Badge>
+                  </td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-500">{account.lastLoginAt ? formatDate(account.lastLoginAt) : '-'}</td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <div className="flex justify-center gap-2">
+                      <IconButton title="编辑账号" onClick={() => onEdit(account)}><Pencil size={16} /></IconButton>
+                      <button
+                        type="button"
+                        onClick={() => onToggleActive(account)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${account.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                      >
+                        {account.active ? '停用' : '启用'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {accounts.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-slate-400">暂无后台账号</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 function CategoryManager({ categories, form, setForm, editingCategory, onSubmit, onEdit, onDelete, onCancel, onRefresh }: {
   categories: MenuCategoryRow[];
   form: CategoryFormState;
@@ -1587,9 +2230,9 @@ function CategoryManager({ categories, form, setForm, editingCategory, onSubmit,
   const update = (key: keyof CategoryFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-      <Panel className="p-5">
-        <div className="mb-5">
+    <div className="grid gap-3 xl:grid-cols-[360px_1fr]">
+      <Panel className="p-4">
+        <div className="mb-4">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Category</p>
           <h3 className="mt-1 text-xl font-bold text-slate-950">{editingCategory ? '编辑分类' : '新增分类'}</h3>
         </div>
@@ -1608,7 +2251,7 @@ function CategoryManager({ categories, form, setForm, editingCategory, onSubmit,
       </Panel>
 
       <Panel className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-4">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3">
           <div>
             <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Category List</p>
             <h3 className="text-lg font-bold text-slate-950">分类列表</h3>
@@ -1749,7 +2392,7 @@ function blobToBase64(blob: Blob) {
 }
 
 function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.06)] ${className}`}>{children}</section>;
+  return <section className={`rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)] ${className}`}>{children}</section>;
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
@@ -1876,27 +2519,32 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   );
 }
 
-function IconButton({ title, onClick, children, disabled = false }: { title: string; onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
+function IconButton({ title, onClick, children, disabled = false, variant = 'default' }: { title: string; onClick: () => void; children: React.ReactNode; disabled?: boolean; variant?: 'default' | 'danger' }) {
   return (
-    <button type="button" title={title} aria-label={title} onClick={onClick} disabled={disabled} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-slate-200 disabled:hover:bg-white disabled:hover:text-slate-500">
+    <button type="button" title={title} aria-label={title} onClick={onClick} disabled={disabled} className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[#E2E8F0] bg-white transition disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:border-[#E2E8F0] disabled:hover:bg-white disabled:hover:text-slate-500 ${variant === 'danger' ? 'text-red-500 hover:border-red-100 hover:bg-red-50 hover:text-red-600' : 'text-[#64748B] hover:border-slate-300 hover:bg-[#F8FAFC] hover:text-slate-950'}`}>
       {children}
     </button>
   );
 }
 
-function Badge({ tone, children }: { tone: 'green' | 'red' | 'blue' | 'muted'; children: React.ReactNode }) {
+function Badge({ tone, children }: { tone: 'green' | 'red' | 'blue' | 'orange' | 'muted'; children: React.ReactNode }) {
   const className = {
     green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     red: 'bg-red-50 text-red-700 border-red-200',
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
+    orange: 'bg-amber-50 text-amber-700 border-amber-200',
     muted: 'bg-slate-100 text-slate-500 border-slate-200',
   }[tone];
-  return <span className={`rounded-full border px-2 py-1 text-[11px] font-bold ${className}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold leading-none ${className}`}>{children}</span>;
 }
 
 function labelOrderStatus(status: OrderStatus) {
   return {
     pending_confirm: '待确认',
+    waiting_kitchen: '待制作',
+    cooking: '厨房制作中',
+    kitchen_done: '厨房完成',
+    stock_issue: '缺货异常',
     preparing: '制作中',
     delivering: '配送中',
     delivered: '已送达',
@@ -1905,10 +2553,11 @@ function labelOrderStatus(status: OrderStatus) {
   }[status];
 }
 
-function toneForOrder(status: OrderStatus): 'green' | 'red' | 'blue' | 'muted' {
-  if (status === 'completed' || status === 'delivered') return 'green';
-  if (status === 'cancelled') return 'red';
-  if (status === 'pending_confirm') return 'blue';
+function toneForOrder(status: OrderStatus): 'green' | 'red' | 'blue' | 'orange' | 'muted' {
+  if (status === 'completed' || status === 'delivered' || status === 'kitchen_done') return 'green';
+  if (status === 'cancelled' || status === 'stock_issue') return 'red';
+  if (status === 'pending_confirm' || status === 'cooking') return 'blue';
+  if (status === 'waiting_kitchen') return 'orange';
   return 'muted';
 }
 

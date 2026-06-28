@@ -21,6 +21,7 @@ interface CartProps {
   setAddress: React.Dispatch<React.SetStateAction<string>>;
   addressLabel: string;
   setAddressLabel: React.Dispatch<React.SetStateAction<string>>;
+  setAddressId: React.Dispatch<React.SetStateAction<string>>;
   session: AuthMeResponse;
   onOrderSuccess: () => void;
   onRefreshSession: () => Promise<void>;
@@ -67,6 +68,7 @@ const Cart: React.FC<CartProps> = ({
   setAddress,
   addressLabel,
   setAddressLabel,
+  setAddressId,
   session,
   onOrderSuccess,
   onRefreshSession,
@@ -130,6 +132,7 @@ const Cart: React.FC<CartProps> = ({
           if (!address.trim()) {
             setAddress(defaultAddress.address);
             setAddressLabel(defaultAddress.label || '');
+            setAddressId(defaultAddress.id);
           }
         }
       }
@@ -962,6 +965,7 @@ const Cart: React.FC<CartProps> = ({
         onConfirm={(nextAddress, savedAddress, nextAddressLabel) => {
           setAddress(nextAddress);
           setAddressLabel(nextAddressLabel || '');
+          setAddressId(savedAddress?.id || '');
           if (savedAddress) {
             setName(savedAddress.recipientName);
             setPhone(savedAddress.phone);
