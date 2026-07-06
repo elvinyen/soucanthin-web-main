@@ -218,7 +218,7 @@ create table if not exists public.store_branches (
 insert into public.store_branches (id, name, address, latitude, longitude, active, sort_order)
 values
   ('pudu', 'PUDU 区', '10-12a, Jalan Metro Pudu 2, Fraser Business Park, 55200 Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur', null, null, true, 10),
-  ('cheras', 'Cheras 区', 'No 34G, Block E, Jalan 1/101c, Cheras Business Centre, 56100 Cheras, Wilayah Persekutuan Kuala Lumpur', null, null, true, 20)
+  ('cheras', 'Cheras 区', 'No 34G, Block E, Jalan 1/101c, Cheras Business Centre, 56100 Cheras, Wilayah Persekutuan Kuala Lumpur', null, null, false, 20)
 on conflict (id) do update set
   name = excluded.name,
   address = excluded.address,
@@ -232,6 +232,8 @@ alter table public.store_branches enable row level security;
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_no text not null unique,
+  order_source text not null default 'web',
+  created_by_admin_id uuid references public.admin_users(id) on delete set null,
   order_type text not null,
   payment_method text not null,
   customer_name text not null,
@@ -269,6 +271,8 @@ create table if not exists public.orders (
 );
 
 alter table public.orders add column if not exists payment_status text not null default 'pay_at_counter';
+alter table public.orders add column if not exists order_source text not null default 'web';
+alter table public.orders add column if not exists created_by_admin_id uuid references public.admin_users(id) on delete set null;
 alter table public.orders add column if not exists payment_review_status text not null default 'not_required';
 alter table public.orders add column if not exists receipt_url text;
 alter table public.orders add column if not exists stripe_checkout_session_id text;
@@ -323,9 +327,13 @@ alter table public.orders drop constraint if exists orders_status_check;
 alter table public.orders drop constraint if exists orders_payment_status_check;
 alter table public.orders drop constraint if exists orders_payment_review_status_check;
 alter table public.orders drop constraint if exists orders_notification_status_check;
+alter table public.orders drop constraint if exists orders_order_source_check;
 
 alter table public.orders
   add constraint orders_order_type_check check (order_type in ('dinein', 'takeaway'));
+
+alter table public.orders
+  add constraint orders_order_source_check check (order_source in ('web', 'admin_created'));
 
 alter table public.orders
   add constraint orders_payment_method_check check (payment_method in ('cash', 'tng', 'stripe', 'wallet'));
@@ -367,6 +375,8 @@ alter table public.order_items add column if not exists item_note text;
 update public.order_items set unit_base_price = unit_price where unit_base_price is null;
 
 create index if not exists orders_created_at_idx on public.orders (created_at desc);
+create index if not exists orders_order_source_idx on public.orders (order_source);
+create index if not exists orders_created_by_admin_id_idx on public.orders (created_by_admin_id);
 create index if not exists orders_status_idx on public.orders (status);
 create index if not exists orders_kitchen_queue_idx on public.orders (status, created_at);
 create index if not exists orders_kitchen_completed_idx on public.orders (kitchen_completed_at desc);
@@ -375,6 +385,48 @@ create index if not exists orders_stripe_checkout_session_idx on public.orders (
 create index if not exists orders_user_id_idx on public.orders (user_id);
 create index if not exists orders_coupon_id_idx on public.orders (coupon_id);
 create index if not exists order_items_order_id_idx on public.order_items (order_id);
+
+create table if not exists public.delivery_tasks (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null unique references public.orders(id) on delete cascade,
+  provider text not null,
+  rider_name text,
+  rider_phone text,
+  external_order_no text,
+  status text not null default 'assigned',
+  estimated_pickup_at timestamptz,
+  estimated_delivery_at timestamptz,
+  assigned_at timestamptz not null default now(),
+  picked_up_at timestamptz,
+  delivered_at timestamptz,
+  cancelled_at timestamptz,
+  actual_delivery_cost numeric(10, 2) not null default 0,
+  assigned_by uuid references public.admin_users(id) on delete set null,
+  assigned_by_name text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.delivery_tasks drop constraint if exists delivery_tasks_provider_check;
+alter table public.delivery_tasks drop constraint if exists delivery_tasks_status_check;
+alter table public.delivery_tasks drop constraint if exists delivery_tasks_cost_check;
+
+alter table public.delivery_tasks
+  add constraint delivery_tasks_provider_check check (provider in ('in_house', 'grab', 'lalamove', 'other'));
+
+alter table public.delivery_tasks
+  add constraint delivery_tasks_status_check check (status in ('assigned', 'picked_up', 'delivered', 'cancelled'));
+
+alter table public.delivery_tasks
+  add constraint delivery_tasks_cost_check check (actual_delivery_cost >= 0);
+
+create index if not exists delivery_tasks_status_updated_idx on public.delivery_tasks (status, updated_at desc);
+create index if not exists delivery_tasks_assigned_by_idx on public.delivery_tasks (assigned_by, assigned_at desc);
+
+alter table public.delivery_tasks enable row level security;
+revoke all on table public.delivery_tasks from anon, authenticated;
+grant select, insert, update, delete on table public.delivery_tasks to service_role;
 
 create table if not exists public.order_status_events (
   id uuid primary key default gen_random_uuid(),
@@ -444,12 +496,20 @@ create table if not exists public.users (
   name text,
   email text,
   birthday date,
+  source text not null default 'otp',
+  created_by_admin_id uuid references public.admin_users(id) on delete set null,
   created_at timestamptz not null default now(),
   last_login_at timestamptz
 );
 
 alter table public.users add column if not exists email text;
 alter table public.users add column if not exists birthday date;
+alter table public.users add column if not exists source text not null default 'otp';
+alter table public.users add column if not exists created_by_admin_id uuid references public.admin_users(id) on delete set null;
+
+alter table public.users drop constraint if exists users_source_check;
+alter table public.users
+  add constraint users_source_check check (source in ('otp', 'admin_created'));
 
 create table if not exists public.user_sessions (
   id uuid primary key default gen_random_uuid(),
@@ -544,6 +604,8 @@ alter table public.orders
 
 create index if not exists user_sessions_token_hash_idx on public.user_sessions (token_hash);
 create index if not exists user_sessions_expires_at_idx on public.user_sessions (expires_at);
+create index if not exists users_source_idx on public.users (source);
+create index if not exists users_created_by_admin_id_idx on public.users (created_by_admin_id);
 create index if not exists wallets_user_id_idx on public.wallets (user_id);
 create index if not exists wallet_transactions_user_id_idx on public.wallet_transactions (user_id, created_at desc);
 create index if not exists wallet_transactions_status_idx on public.wallet_transactions (status);

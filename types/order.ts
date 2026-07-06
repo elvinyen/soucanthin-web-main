@@ -27,6 +27,10 @@ export interface Order {
     phone: string;
   };
   userId?: string;
+  assignedBranch?: {
+    id: string;
+    name: string;
+  };
   dineIn?: {
     tableNo: string;
   };

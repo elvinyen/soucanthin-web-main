@@ -61,13 +61,17 @@ export async function applyDeliveryQuoteToOrder(order: Order) {
     throw new DeliveryQuoteError('GEOCODE_FAILED', '请填写外卖地址');
   }
 
-  const quote = await getDeliveryQuoteForAddress(address);
+  const quote = await getDeliveryQuoteForAddress(address, order.assignedBranch?.id || order.deliveryQuote?.branchId);
   order.deliveryFee = quote.deliveryFee;
   order.deliveryQuote = quote;
+  order.assignedBranch = {
+    id: quote.branchId,
+    name: quote.branchName,
+  };
   return quote;
 }
 
-export async function getDeliveryQuoteForAddress(address: string): Promise<DeliveryQuote> {
+export async function getDeliveryQuoteForAddress(address: string, preferredBranchId?: string): Promise<DeliveryQuote> {
   const normalizedAddress = address.trim();
   if (!normalizedAddress) {
     throw new DeliveryQuoteError('GEOCODE_FAILED', '请填写外卖地址');
@@ -75,9 +79,12 @@ export async function getDeliveryQuoteForAddress(address: string): Promise<Deliv
 
   const apiKey = getGoogleMapsApiKey();
   const destination = await geocodeAddress(normalizedAddress, apiKey);
-  const branches = await getActiveBranches(apiKey);
+  const activeBranches = await getActiveBranches(apiKey);
+  const branches = preferredBranchId
+    ? activeBranches.filter(branch => branch.id === preferredBranchId)
+    : activeBranches;
   if (branches.length === 0) {
-    throw new DeliveryQuoteError('ROUTE_FAILED', '暂时无法读取门店配送资料', 500);
+    throw new DeliveryQuoteError('ROUTE_FAILED', preferredBranchId ? '所选门店不可用或未启用' : '暂时无法读取门店配送资料', 500);
   }
 
   const routes = await getBestRoute(branches, destination, apiKey);

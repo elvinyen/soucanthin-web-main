@@ -26,10 +26,13 @@ const apiRoutes: Record<string, string> = {
   '/api/admin/wallet-recharge-review': '/api/admin-wallet-recharge-review.ts',
   '/api/admin/auth': '/api/admin-auth.ts',
   '/api/admin/accounts': '/api/admin-accounts.ts',
+  '/api/admin/customers': '/api/admin-customers.ts',
+  '/api/admin/delivery': '/api/admin-delivery.ts',
   '/api/admin/menu-categories': '/api/admin-menu-categories.ts',
   '/api/admin/menu-image': '/api/admin-menu-image.ts',
   '/api/admin/menu-items': '/api/admin-menu-items.ts',
   '/api/admin/orders': '/api/admin-orders.ts',
+  '/api/admin/store-branches': '/api/admin-store-branches.ts',
   '/api/kitchen/orders': '/api/kitchen-orders.ts',
   '/api/kitchen/status': '/api/kitchen-orders.ts',
   '/api/kitchen/orders/start': '/api/kitchen-orders.ts',
@@ -82,9 +85,10 @@ function localApiPlugin() {
         } catch (error) {
           console.error(`[dev-api] ${route}`, error);
           if (!res.headersSent) {
+            const message = error instanceof Error ? error.message : 'Local API failed';
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ success: false, error: 'Local API failed' }));
+            res.end(JSON.stringify({ success: false, error: message || 'Local API failed' }));
           }
         }
       });

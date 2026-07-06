@@ -51,6 +51,8 @@ export type InlineKeyboardMarkup = {
 export type OrderRecord = {
   id: string;
   order_no: string;
+  order_source?: 'web' | 'admin_created';
+  created_by_admin_id?: string | null;
   user_id?: string | null;
   order_type: OrderType;
   payment_method: PaymentMethod;
@@ -239,6 +241,8 @@ export function calculateTotals(order: Order) {
 export async function createOrderWithItems(params: {
   order: Order;
   orderNo: string;
+  orderSource?: 'web' | 'admin_created';
+  createdByAdminId?: string | null;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentReviewStatus: PaymentReviewStatus;
@@ -254,6 +258,8 @@ export async function createOrderWithItems(params: {
 
   const orderRecord = await insertOrder(supabaseUrl, serviceRoleKey, {
     order_no: params.orderNo,
+    order_source: params.orderSource || 'web',
+    created_by_admin_id: params.createdByAdminId || null,
     user_id: params.order.userId || null,
     order_type: params.order.orderType,
     payment_method: params.order.paymentMethod,
@@ -261,8 +267,8 @@ export async function createOrderWithItems(params: {
     customer_phone: params.order.customer.phone.trim(),
     table_no: params.order.orderType === 'dinein' ? params.order.dineIn?.tableNo.trim() : null,
     delivery_address: params.order.orderType === 'takeaway' ? params.order.takeaway?.address.trim() : null,
-    assigned_branch_id: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.branchId || null : null,
-    assigned_branch_name: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.branchName || null : null,
+    assigned_branch_id: params.order.assignedBranch?.id || (params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.branchId : null) || null,
+    assigned_branch_name: params.order.assignedBranch?.name || (params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.branchName : null) || null,
     delivery_latitude: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.addressLatitude ?? null : null,
     delivery_longitude: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.addressLongitude ?? null : null,
     delivery_distance_km: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.distanceKm ?? null : null,
@@ -528,7 +534,7 @@ export async function notifyStaffFromOrder(order: Order, orderNo: string, extra:
     customerPhone: order.customer.phone,
     tableNo: order.orderType === 'dinein' ? order.dineIn?.tableNo : null,
     deliveryAddress: order.orderType === 'takeaway' ? order.takeaway?.address : null,
-    assignedBranchName: order.orderType === 'takeaway' ? order.deliveryQuote?.branchName : null,
+    assignedBranchName: order.assignedBranch?.name || (order.orderType === 'takeaway' ? order.deliveryQuote?.branchName : null),
     deliveryDistanceKm: order.orderType === 'takeaway' ? order.deliveryQuote?.distanceKm : null,
     deliveryDurationMin: order.orderType === 'takeaway' ? order.deliveryQuote?.durationMin : null,
     items: order.items.map(item => ({

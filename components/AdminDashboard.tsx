@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
+  Bike,
   Check,
   ChevronRight,
   ClipboardList,
@@ -17,7 +18,9 @@ import {
   Save,
   Search,
   ShieldCheck,
+  ShoppingCart,
   Soup,
+  Store,
   Trash2,
   Upload,
   Users,
@@ -25,8 +28,10 @@ import {
   X,
 } from 'lucide-react';
 import KitchenBoard from './admin/KitchenBoard';
+import { DeliveryBoard } from './admin/DeliveryBoard';
 
-type AdminSection = 'menu' | 'orders' | 'kitchen' | 'wallet' | 'accounts';
+type AdminSection = 'menu' | 'orders' | 'customerOrder' | 'kitchen' | 'delivery' | 'wallet' | 'accounts' | 'storeBranches';
+type AdminRole = 'admin' | 'customer_service' | 'kitchen' | 'delivery';
 type OrderStatus = 'pending_confirm' | 'waiting_kitchen' | 'cooking' | 'kitchen_done' | 'stock_issue' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
 type MenuSalesStatus = 'active' | 'sold_out' | 'inactive';
 
@@ -37,7 +42,7 @@ type AdminMe = {
   admin?: {
     username: string;
     displayName: string;
-    role: string;
+    role: AdminRole;
   } | null;
 };
 
@@ -147,10 +152,41 @@ type AdminAccountRow = {
   id: string;
   username: string;
   displayName: string;
-  role: 'admin' | 'kitchen';
+  role: AdminRole;
   active: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
+};
+
+type StoreBranchRow = {
+  id: string;
+  name: string;
+  address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  active: boolean;
+  sort_order: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type CustomerRow = {
+  id: string;
+  phone: string;
+  displayPhone: string;
+  name: string;
+  source: 'otp' | 'admin_created';
+  createdAt: string;
+  lastLoginAt?: string | null;
+};
+
+type OrderMenuItem = {
+  id: number;
+  code?: string;
+  name: string;
+  price: number;
+  category: string;
+  soldOut?: boolean;
 };
 
 type MenuFormState = {
@@ -202,9 +238,41 @@ type AccountFormState = {
   id: string;
   username: string;
   displayName: string;
-  role: 'admin' | 'kitchen';
+  role: AdminRole;
   password: string;
   active: boolean;
+};
+
+type StoreBranchFormState = {
+  id: string;
+  name: string;
+  address: string;
+  latitude: string;
+  longitude: string;
+  active: boolean;
+  sort_order: string;
+};
+
+type CustomerFormState = {
+  phone: string;
+  name: string;
+};
+
+type CustomerOrderLine = {
+  lineId: string;
+  menuItemId: string;
+  quantity: number;
+  note: string;
+};
+
+type CustomerOrderFormState = {
+  orderType: 'dinein' | 'takeaway';
+  branchId: string;
+  tableNo: string;
+  address: string;
+  note: string;
+  draftMenuItemId: string;
+  items: CustomerOrderLine[];
 };
 
 const emptyCategoryForm: CategoryFormState = {
@@ -221,6 +289,31 @@ const emptyAccountForm: AccountFormState = {
   role: 'kitchen',
   password: '',
   active: true,
+};
+
+const emptyStoreBranchForm: StoreBranchFormState = {
+  id: '',
+  name: '',
+  address: '',
+  latitude: '',
+  longitude: '',
+  active: true,
+  sort_order: '0',
+};
+
+const emptyCustomerForm: CustomerFormState = {
+  phone: '',
+  name: '',
+};
+
+const emptyCustomerOrderForm: CustomerOrderFormState = {
+  orderType: 'dinein',
+  branchId: '',
+  tableNo: '',
+  address: '',
+  note: '',
+  draftMenuItemId: '',
+  items: [],
 };
 
 const orderStatusOptions: { value: OrderStatus | 'all'; label: string }[] = [
@@ -240,14 +333,23 @@ const orderStatusOptions: { value: OrderStatus | 'all'; label: string }[] = [
 const sections = [
   { id: 'menu' as const, label: '菜单管理', icon: Soup },
   { id: 'orders' as const, label: '订单管理', icon: ClipboardList },
+  { id: 'customerOrder' as const, label: '用户下单', icon: ShoppingCart },
   { id: 'kitchen' as const, label: '厨房出餐', icon: CookingPot },
+  { id: 'delivery' as const, label: '配送工作台', icon: Bike },
+  { id: 'storeBranches' as const, label: '门店管理', icon: Store },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
   { id: 'accounts' as const, label: '账号管理', icon: Users },
 ];
 
 function initialAdminSection(): AdminSection {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-  return pathname === '/admin/kitchen' ? 'kitchen' : 'menu';
+  if (pathname === '/admin/kitchen') return 'kitchen';
+  if (pathname === '/admin/delivery') return 'delivery';
+  if (pathname === '/admin/store-branches') return 'storeBranches';
+  if (pathname === '/admin/orders') return 'orders';
+  if (pathname === '/admin/customer-order') return 'customerOrder';
+  if (pathname === '/admin/accounts') return 'accounts';
+  return 'menu';
 }
 
 type PendingMenuImage = {
@@ -314,12 +416,32 @@ const AdminDashboard: React.FC = () => {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderStatus, setOrderStatus] = useState<OrderStatus | 'all'>('all');
   const [selectedOrder, setSelectedOrder] = useState<{ order: OrderRow; items: OrderItemRow[] } | null>(null);
+  const [customers, setCustomers] = useState<CustomerRow[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
+  const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm);
+  const [customerOrderForm, setCustomerOrderForm] = useState<CustomerOrderFormState>(emptyCustomerOrderForm);
+  const [customerOrderMenuItems, setCustomerOrderMenuItems] = useState<OrderMenuItem[]>([]);
+  const [customerOrderError, setCustomerOrderError] = useState('');
+  const [customerOrderSubmitting, setCustomerOrderSubmitting] = useState(false);
+  const [deliveryPreview, setDeliveryPreview] = useState<{ deliveryFee: number; distanceKm: number; durationMin: number } | null>(null);
+  const [deliveryPreviewLoading, setDeliveryPreviewLoading] = useState(false);
   const [accounts, setAccounts] = useState<AdminAccountRow[]>([]);
   const [accountForm, setAccountForm] = useState<AccountFormState>(emptyAccountForm);
   const [accountError, setAccountError] = useState('');
+  const [storeBranches, setStoreBranches] = useState<StoreBranchRow[]>([]);
+  const [storeBranchForm, setStoreBranchForm] = useState<StoreBranchFormState>(emptyStoreBranchForm);
+  const [storeBranchError, setStoreBranchError] = useState('');
 
   const authenticated = Boolean(auth?.authenticated);
   const setupRequired = Boolean(auth?.setupRequired);
+  const availableSections = sections.filter(item => {
+    const role = auth?.admin?.role;
+    if (!role || role === 'admin') return true;
+    if (role === 'customer_service') return item.id === 'orders' || item.id === 'customerOrder' || item.id === 'delivery';
+    if (role === 'delivery') return item.id === 'delivery';
+    return item.id === 'kitchen';
+  });
   const filteredMenuItems = menuItems.filter(item => {
     const categoryMatches = menuCategoryFilter === 'all' || String(item.category_id) === menuCategoryFilter;
     const salesStatus = getMenuSalesStatus(item);
@@ -345,7 +467,13 @@ const AdminDashboard: React.FC = () => {
       void loadCategories();
     }
     if (section === 'orders') void loadOrders();
+    if (section === 'customerOrder') {
+      void loadCustomers();
+      void loadCustomerOrderMenu();
+      void loadStoreBranches();
+    }
     if (section === 'accounts') void loadAccounts();
+    if (section === 'storeBranches') void loadStoreBranches();
   }, [authenticated, section, orderStatus]);
 
   useEffect(() => {
@@ -415,6 +543,10 @@ const AdminDashboard: React.FC = () => {
     };
   }, [isEditorOpen, editingItem?.id, editingItem?.item_code, editingItem?.name, form.item_code, form.name]);
 
+  useEffect(() => {
+    setDeliveryPreview(null);
+  }, [customerOrderForm.orderType, customerOrderForm.address, customerOrderForm.branchId]);
+
   const api = async <T,>(path: string, init: RequestInit = {}) => {
     const response = await fetch(path, {
       ...init,
@@ -442,8 +574,21 @@ const AdminDashboard: React.FC = () => {
       if (section !== 'kitchen') setSection('kitchen');
       return;
     }
-    if (pathname === '/admin/kitchen' && section !== 'kitchen') {
-      setSection('kitchen');
+    if (auth.admin.role === 'customer_service') {
+      const nextSection = pathname === '/admin/orders' ? 'orders' : pathname === '/admin/customer-order' ? 'customerOrder' : 'delivery';
+      if (section !== nextSection) setSection(nextSection);
+      const nextPath = pathForSection(nextSection);
+      if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
+      return;
+    }
+    if (auth.admin.role === 'delivery') {
+      if (section !== 'delivery') setSection('delivery');
+      if (pathname !== '/admin/delivery') window.history.replaceState({}, '', '/admin/delivery');
+      return;
+    }
+    const pathSection = sectionForPath(pathname);
+    if (pathSection && pathSection !== section) {
+      setSection(pathSection);
     }
   }, [authenticated, auth?.admin, section]);
 
@@ -508,20 +653,19 @@ const AdminDashboard: React.FC = () => {
       setMenuItems([]);
       setOrders([]);
       setAccounts([]);
-      if ((window.location.pathname.replace(/\/+$/, '') || '/') === '/admin/kitchen') {
+      setStoreBranches([]);
+      if ((window.location.pathname.replace(/\/+$/, '') || '/').startsWith('/admin/')) {
         window.history.replaceState({}, '', '/admin');
       }
     }
   };
 
   const selectSection = (nextSection: AdminSection) => {
+    if (!availableSections.some(item => item.id === nextSection)) return;
     setSection(nextSection);
     const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
-    if (nextSection === 'kitchen') {
-      if (pathname !== '/admin/kitchen') window.history.replaceState({}, '', '/admin/kitchen');
-      return;
-    }
-    if (pathname === '/admin/kitchen') window.history.replaceState({}, '', '/admin');
+    const nextPath = pathForSection(nextSection);
+    if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
   };
 
   const loadMenuItems = async () => {
@@ -559,6 +703,155 @@ const AdminDashboard: React.FC = () => {
       setError(err instanceof Error ? err.message : '订单加载失败');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadCustomers = async () => {
+    setIsLoading(true);
+    setCustomerOrderError('');
+    try {
+      const query = customerSearch.trim() ? `?search=${encodeURIComponent(customerSearch.trim())}` : '';
+      const payload = await api<{ success: true; customers: CustomerRow[] }>(`/api/admin/customers${query}`);
+      setCustomers(payload.customers);
+    } catch (err) {
+      setCustomerOrderError(err instanceof Error ? err.message : '顾客加载失败');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadCustomerOrderMenu = async () => {
+    setCustomerOrderError('');
+    try {
+      const payload = await api<{ success: true; items: OrderMenuItem[] }>('/api/menu?lang=zh');
+      const items = payload.items.filter(item => !item.soldOut);
+      setCustomerOrderMenuItems(items);
+      setCustomerOrderForm(prev => ({
+        ...prev,
+        draftMenuItemId: prev.draftMenuItemId || String(items[0]?.id || ''),
+      }));
+    } catch (err) {
+      setCustomerOrderError(err instanceof Error ? err.message : '菜单加载失败');
+    }
+  };
+
+  const createCustomer = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setCustomerOrderError('');
+    try {
+      const payload = await api<{ success: true; customer: CustomerRow }>('/api/admin/customers', {
+        method: 'POST',
+        body: JSON.stringify(customerForm),
+      });
+      setSelectedCustomer(payload.customer);
+      setCustomers(prev => [payload.customer, ...prev.filter(customer => customer.id !== payload.customer.id)]);
+      setCustomerForm(emptyCustomerForm);
+      showNotice('顾客已创建');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '顾客创建失败';
+      setCustomerOrderError(message);
+      if (message.includes('已存在')) void loadCustomers();
+    }
+  };
+
+  const addCustomerOrderLine = () => {
+    const menuItemId = customerOrderForm.draftMenuItemId || String(customerOrderMenuItems[0]?.id || '');
+    if (!menuItemId) return;
+    setCustomerOrderForm(prev => {
+      const existing = prev.items.find(item => item.menuItemId === menuItemId && !item.note);
+      if (existing) {
+        return {
+          ...prev,
+          items: prev.items.map(item => item.lineId === existing.lineId ? { ...item, quantity: item.quantity + 1 } : item),
+        };
+      }
+      return {
+        ...prev,
+        draftMenuItemId: menuItemId,
+        items: [
+          ...prev.items,
+          {
+            lineId: `${menuItemId}-${Date.now()}`,
+            menuItemId,
+            quantity: 1,
+            note: '',
+          },
+        ],
+      };
+    });
+  };
+
+  const updateCustomerOrderLine = (lineId: string, patch: Partial<CustomerOrderLine>) => {
+    setCustomerOrderForm(prev => ({
+      ...prev,
+      items: prev.items.map(item => item.lineId === lineId ? { ...item, ...patch } : item),
+    }));
+  };
+
+  const removeCustomerOrderLine = (lineId: string) => {
+    setCustomerOrderForm(prev => ({
+      ...prev,
+      items: prev.items.filter(item => item.lineId !== lineId),
+    }));
+  };
+
+  const loadDeliveryPreview = async () => {
+    if (customerOrderForm.orderType !== 'takeaway') return;
+    setDeliveryPreviewLoading(true);
+    setCustomerOrderError('');
+    try {
+      const payload = await api<{ success: true; deliveryFee: number; distanceKm: number; durationMin: number }>('/api/delivery-quote', {
+        method: 'POST',
+        body: JSON.stringify({ address: customerOrderForm.address, branchId: customerOrderForm.branchId }),
+      });
+      setDeliveryPreview({
+        deliveryFee: Number(payload.deliveryFee || 0),
+        distanceKm: Number(payload.distanceKm || 0),
+        durationMin: Number(payload.durationMin || 0),
+      });
+    } catch (err) {
+      setDeliveryPreview(null);
+      setCustomerOrderError(err instanceof Error ? err.message : '配送费计算失败');
+    } finally {
+      setDeliveryPreviewLoading(false);
+    }
+  };
+
+  const submitCustomerOrder = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setCustomerOrderError('');
+    if (!selectedCustomer) {
+      setCustomerOrderError('请选择顾客');
+      return;
+    }
+    if (!customerOrderForm.items.length) {
+      setCustomerOrderError('请添加菜品');
+      return;
+    }
+    if (!customerOrderForm.branchId) {
+      setCustomerOrderError('请选择门店');
+      return;
+    }
+
+    setCustomerOrderSubmitting(true);
+    try {
+      const order = buildCustomerOrderPayload(selectedCustomer, customerOrderForm, customerOrderMenuItems, deliveryPreview, storeBranches);
+      const payload = await api<{ success: true; orderId: string }>('/api/admin/orders', {
+        method: 'POST',
+        body: JSON.stringify({ customerId: selectedCustomer.id, order }),
+      });
+      showNotice(`订单已创建：${payload.orderId}`);
+      setCustomerOrderForm({
+        ...emptyCustomerOrderForm,
+        branchId: storeBranches.find(branch => branch.active)?.id || '',
+        draftMenuItemId: String(customerOrderMenuItems[0]?.id || ''),
+      });
+      setDeliveryPreview(null);
+      await loadOrders();
+    } catch (err) {
+      setCustomerOrderError(err instanceof Error ? err.message : '代客下单失败');
+    } finally {
+      setCustomerOrderSubmitting(false);
     }
   };
 
@@ -600,6 +893,7 @@ const AdminDashboard: React.FC = () => {
       const payload = accountForm.id
         ? {
             id: accountForm.id,
+            username: accountForm.username,
             displayName: accountForm.displayName,
             role: accountForm.role,
             active: accountForm.active,
@@ -635,6 +929,119 @@ const AdminDashboard: React.FC = () => {
       await loadAccounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : '账号状态更新失败');
+    }
+  };
+
+  const deleteAccount = async (account: AdminAccountRow) => {
+    if (!window.confirm(`确认删除账号“${account.username}”？删除后该账号将立即无法登录。`)) return;
+    setError('');
+    try {
+      await api('/api/admin/accounts', {
+        method: 'DELETE',
+        body: JSON.stringify({ id: account.id }),
+      });
+      if (accountForm.id === account.id) resetAccountForm();
+      showNotice('账号已删除');
+      await loadAccounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '账号删除失败');
+    }
+  };
+
+  const loadStoreBranches = async () => {
+    setIsLoading(true);
+    setStoreBranchError('');
+    setError('');
+    try {
+      const payload = await api<{ success: true; branches: StoreBranchRow[] }>('/api/admin/store-branches');
+      setStoreBranches(payload.branches);
+      const activeBranches = payload.branches.filter(branch => branch.active);
+      setCustomerOrderForm(prev => {
+        if (prev.branchId && activeBranches.some(branch => branch.id === prev.branchId)) return prev;
+        return {
+          ...prev,
+          branchId: activeBranches[0]?.id || '',
+        };
+      });
+    } catch (err) {
+      setStoreBranchError(err instanceof Error ? err.message : '门店加载失败');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startEditStoreBranch = (branch: StoreBranchRow) => {
+    setStoreBranchError('');
+    setStoreBranchForm({
+      id: branch.id,
+      name: branch.name,
+      address: branch.address,
+      latitude: branch.latitude === null || branch.latitude === undefined ? '' : String(branch.latitude),
+      longitude: branch.longitude === null || branch.longitude === undefined ? '' : String(branch.longitude),
+      active: branch.active,
+      sort_order: String(branch.sort_order ?? 0),
+    });
+  };
+
+  const resetStoreBranchForm = () => {
+    setStoreBranchError('');
+    setStoreBranchForm(emptyStoreBranchForm);
+  };
+
+  const saveStoreBranch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setStoreBranchError('');
+    setError('');
+    if (!storeBranchForm.id) {
+      setStoreBranchError('请选择要编辑的门店');
+      return;
+    }
+
+    try {
+      const existing = storeBranches.find(branch => branch.id === storeBranchForm.id);
+      const payload: Record<string, unknown> = {
+        id: storeBranchForm.id,
+        name: storeBranchForm.name,
+        address: storeBranchForm.address,
+        active: storeBranchForm.active,
+        sort_order: Number(storeBranchForm.sort_order || 0),
+      };
+      const existingLatitude = existing?.latitude === null || existing?.latitude === undefined ? '' : String(existing.latitude);
+      const existingLongitude = existing?.longitude === null || existing?.longitude === undefined ? '' : String(existing.longitude);
+      const addressChanged = Boolean(existing && storeBranchForm.address.trim() !== existing.address);
+      const coordinatesChanged = storeBranchForm.latitude.trim() !== existingLatitude || storeBranchForm.longitude.trim() !== existingLongitude;
+      if (!addressChanged || coordinatesChanged) {
+        payload.latitude = storeBranchForm.latitude.trim() ? Number(storeBranchForm.latitude) : null;
+        payload.longitude = storeBranchForm.longitude.trim() ? Number(storeBranchForm.longitude) : null;
+      }
+
+      await api('/api/admin/store-branches', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      showNotice('门店已更新');
+      resetStoreBranchForm();
+      await loadStoreBranches();
+    } catch (err) {
+      setStoreBranchError(err instanceof Error ? err.message : '门店保存失败');
+    }
+  };
+
+  const toggleStoreBranchActive = async (branch: StoreBranchRow) => {
+    setStoreBranchError('');
+    setError('');
+    try {
+      await api('/api/admin/store-branches', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: branch.id, active: !branch.active }),
+      });
+      showNotice(branch.active ? '门店已停用' : '门店已启用');
+      if (storeBranchForm.id === branch.id) {
+        setStoreBranchForm(prev => ({ ...prev, active: !branch.active }));
+      }
+      await loadStoreBranches();
+    } catch (err) {
+      setStoreBranchError(err instanceof Error ? err.message : '门店状态更新失败');
     }
   };
 
@@ -1007,7 +1414,7 @@ const AdminDashboard: React.FC = () => {
           </button>
         )}
         <nav className="mt-7 space-y-1.5">
-          {sections.map(item => {
+          {availableSections.map(item => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
@@ -1030,7 +1437,7 @@ const AdminDashboard: React.FC = () => {
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-slate-950">{auth.admin?.displayName || auth.admin?.username}</p>
-                <p className="mt-0.5 text-xs text-[#64748B]">管理员</p>
+                <p className="mt-0.5 text-xs text-[#64748B]">{labelAdminRole(auth.admin?.role || 'admin')}</p>
               </div>
               <button type="button" onClick={logout} className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-white hover:text-slate-950">
                 退出
@@ -1058,7 +1465,7 @@ const AdminDashboard: React.FC = () => {
               </div>
             )}
             <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-              {sections.map(item => (
+              {availableSections.map(item => (
                 <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold ${section === item.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-500'}`}>
                   {item.label}
                 </button>
@@ -1270,11 +1677,55 @@ const AdminDashboard: React.FC = () => {
             </Panel>
           )}
 
+          {section === 'customerOrder' && (
+            <CustomerOrderManager
+              customers={customers}
+              customerSearch={customerSearch}
+              setCustomerSearch={setCustomerSearch}
+              selectedCustomer={selectedCustomer}
+              setSelectedCustomer={setSelectedCustomer}
+              customerForm={customerForm}
+              setCustomerForm={setCustomerForm}
+              orderForm={customerOrderForm}
+              setOrderForm={setCustomerOrderForm}
+              menuItems={customerOrderMenuItems}
+              branches={storeBranches.filter(branch => branch.active)}
+              error={customerOrderError}
+              submitting={customerOrderSubmitting}
+              deliveryPreview={deliveryPreview}
+              deliveryPreviewLoading={deliveryPreviewLoading}
+              onSearch={loadCustomers}
+              onCreateCustomer={createCustomer}
+              onRefreshMenu={loadCustomerOrderMenu}
+              onAddLine={addCustomerOrderLine}
+              onUpdateLine={updateCustomerOrderLine}
+              onRemoveLine={removeCustomerOrderLine}
+              onLoadDeliveryPreview={loadDeliveryPreview}
+              onSubmit={submitCustomerOrder}
+            />
+          )}
+
           {section === 'kitchen' && (
             <KitchenBoard
               api={api}
               onLogout={logout}
               userName={auth.admin?.displayName || auth.admin?.username || '管理员'}
+            />
+          )}
+
+          {section === 'delivery' && <DeliveryBoard api={api} />}
+
+          {section === 'storeBranches' && (
+            <StoreBranchManager
+              branches={storeBranches}
+              form={storeBranchForm}
+              setForm={setStoreBranchForm}
+              error={storeBranchError}
+              onSubmit={saveStoreBranch}
+              onEdit={startEditStoreBranch}
+              onToggleActive={toggleStoreBranchActive}
+              onCancel={resetStoreBranchForm}
+              onRefresh={loadStoreBranches}
             />
           )}
 
@@ -1287,6 +1738,7 @@ const AdminDashboard: React.FC = () => {
               onSubmit={saveAccount}
               onEdit={startEditAccount}
               onToggleActive={toggleAccountActive}
+              onDelete={deleteAccount}
               onCancel={resetAccountForm}
               onRefresh={loadAccounts}
             />
@@ -1408,6 +1860,13 @@ function formatDeliveryMeta(order: OrderRow) {
 function formatNumber(value: number | null | undefined, digits: number) {
   const numberValue = Number(value || 0);
   return Number.isFinite(numberValue) && numberValue > 0 ? numberValue.toFixed(digits) : '-';
+}
+
+function formatCoordinates(branch: Pick<StoreBranchRow, 'latitude' | 'longitude'>) {
+  const latitude = Number(branch.latitude);
+  const longitude = Number(branch.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return '待自动解析';
+  return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
 function createEmptyTranslations(): Record<TranslationLang, MenuTranslationForm> {
@@ -2095,7 +2554,346 @@ function MenuItemMobileCard({ item, open, onToggle, onQuickStatus, onEdit, onMov
   );
 }
 
-function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onToggleActive, onCancel, onRefresh }: {
+function CustomerOrderManager({ customers, customerSearch, setCustomerSearch, selectedCustomer, setSelectedCustomer, customerForm, setCustomerForm, orderForm, setOrderForm, menuItems, branches, error, submitting, deliveryPreview, deliveryPreviewLoading, onSearch, onCreateCustomer, onRefreshMenu, onAddLine, onUpdateLine, onRemoveLine, onLoadDeliveryPreview, onSubmit }: {
+  customers: CustomerRow[];
+  customerSearch: string;
+  setCustomerSearch: (value: string) => void;
+  selectedCustomer: CustomerRow | null;
+  setSelectedCustomer: (customer: CustomerRow | null) => void;
+  customerForm: CustomerFormState;
+  setCustomerForm: React.Dispatch<React.SetStateAction<CustomerFormState>>;
+  orderForm: CustomerOrderFormState;
+  setOrderForm: React.Dispatch<React.SetStateAction<CustomerOrderFormState>>;
+  menuItems: OrderMenuItem[];
+  branches: StoreBranchRow[];
+  error: string;
+  submitting: boolean;
+  deliveryPreview: { deliveryFee: number; distanceKm: number; durationMin: number } | null;
+  deliveryPreviewLoading: boolean;
+  onSearch: () => void;
+  onCreateCustomer: (event: React.FormEvent) => void;
+  onRefreshMenu: () => void;
+  onAddLine: () => void;
+  onUpdateLine: (lineId: string, patch: Partial<CustomerOrderLine>) => void;
+  onRemoveLine: (lineId: string) => void;
+  onLoadDeliveryPreview: () => void;
+  onSubmit: (event: React.FormEvent) => void;
+}) {
+  const updateCustomer = (key: keyof CustomerFormState, value: string) => setCustomerForm(prev => ({ ...prev, [key]: value }));
+  const updateOrder = (key: keyof CustomerOrderFormState, value: string | CustomerOrderFormState['items']) => setOrderForm(prev => ({ ...prev, [key]: value }));
+  const totals = calculateCustomerOrderTotals(orderForm, menuItems, deliveryPreview);
+  const selectedLines = orderForm.items.map(line => ({
+    line,
+    menuItem: menuItems.find(item => String(item.id) === line.menuItemId),
+  })).filter(item => item.menuItem);
+
+  return (
+    <div className="grid gap-3 xl:grid-cols-[380px_1fr]">
+      <div className="grid gap-3">
+        <Panel className="p-4">
+          <div className="mb-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Customers</p>
+            <h3 className="mt-1 text-xl font-bold text-slate-950">选择顾客</h3>
+          </div>
+          {error && (
+            <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+              <AlertCircle className="mt-0.5 shrink-0" size={16} />
+              {error}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                value={customerSearch}
+                onChange={event => setCustomerSearch(event.target.value)}
+                onKeyDown={event => event.key === 'Enter' && onSearch()}
+                placeholder="手机号或姓名"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white"
+              />
+            </div>
+            <IconButton title="搜索顾客" onClick={onSearch}><Search size={17} /></IconButton>
+          </div>
+          <div className="mt-3 max-h-72 space-y-2 overflow-y-auto">
+            {customers.map(customer => (
+              <button
+                key={customer.id}
+                type="button"
+                onClick={() => setSelectedCustomer(customer)}
+                className={`w-full rounded-xl border px-3 py-3 text-left transition ${selectedCustomer?.id === customer.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-bold text-slate-950">{customer.name || '未命名顾客'}</p>
+                  <Badge tone={customer.source === 'admin_created' ? 'blue' : 'muted'}>{customer.source === 'admin_created' ? '后台创建' : '自助注册'}</Badge>
+                </div>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{customer.displayPhone}</p>
+              </button>
+            ))}
+            {customers.length === 0 && <p className="rounded-xl border border-dashed border-slate-200 px-3 py-8 text-center text-sm font-bold text-slate-400">暂无顾客</p>}
+          </div>
+        </Panel>
+
+        <Panel className="p-4">
+          <div className="mb-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Create</p>
+            <h3 className="mt-1 text-xl font-bold text-slate-950">新建顾客</h3>
+          </div>
+          <form onSubmit={onCreateCustomer} className="grid gap-3">
+            <Input label="手机号" value={customerForm.phone} onChange={value => updateCustomer('phone', value)} placeholder="0123456789" required />
+            <Input label="顾客姓名" value={customerForm.name} onChange={value => updateCustomer('name', value)} placeholder="顾客姓名" required />
+            <button type="submit" className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500">
+              <Plus size={16} />
+              创建并选择
+            </button>
+          </form>
+        </Panel>
+      </div>
+
+      <Panel className="overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Order</p>
+            <h3 className="text-xl font-bold text-slate-950">{selectedCustomer ? `为 ${selectedCustomer.name || selectedCustomer.displayPhone} 下单` : '代客下单'}</h3>
+          </div>
+          <IconButton title="刷新菜单" onClick={onRefreshMenu}><RefreshCw size={17} /></IconButton>
+        </div>
+        <form onSubmit={onSubmit} className="grid gap-4 p-4">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <SelectInput label="订单类型" value={orderForm.orderType} onChange={value => updateOrder('orderType', value)}>
+              <option value="dinein">堂食</option>
+              <option value="takeaway">外卖</option>
+            </SelectInput>
+            <SelectInput label="门店" value={orderForm.branchId} onChange={value => updateOrder('branchId', value)} required>
+              <option value="">请选择门店</option>
+              {branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </SelectInput>
+            {orderForm.orderType === 'dinein' ? (
+              <Input label="桌号" value={orderForm.tableNo} onChange={value => updateOrder('tableNo', value)} placeholder="A1" required />
+            ) : (
+              <div className="grid gap-2">
+                <Input label="配送地址" value={orderForm.address} onChange={value => updateOrder('address', value)} placeholder="详细地址" required />
+                <button type="button" onClick={onLoadDeliveryPreview} disabled={deliveryPreviewLoading || !orderForm.address.trim() || !orderForm.branchId} className="flex h-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-4 text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">
+                  {deliveryPreviewLoading ? '计算中...' : '计算配送费'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[minmax(0,1fr)_auto]">
+            <SelectInput label="添加菜品" value={orderForm.draftMenuItemId} onChange={value => updateOrder('draftMenuItemId', value)}>
+              {menuItems.map(item => <option key={item.id} value={item.id}>{item.code ? `${item.code} · ` : ''}{item.name} · RM {Number(item.price).toFixed(2)}</option>)}
+            </SelectInput>
+            <button type="button" onClick={onAddLine} disabled={!menuItems.length} className="self-end flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+              <Plus size={16} />
+              加入
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
+              <colgroup>
+                <col className="w-[34%]" />
+                <col className="w-[15%]" />
+                <col className="w-[15%]" />
+                <col className="w-[24%]" />
+                <col className="w-[12%]" />
+              </colgroup>
+              <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-bold">菜品</th>
+                  <th className="px-4 py-3 text-center font-bold">单价</th>
+                  <th className="px-4 py-3 text-center font-bold">数量</th>
+                  <th className="px-4 py-3 text-center font-bold">备注</th>
+                  <th className="px-4 py-3 text-center font-bold">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {selectedLines.map(({ line, menuItem }) => (
+                  <tr key={line.lineId}>
+                    <td className="px-4 py-3 align-middle font-bold text-slate-950">{menuItem?.code ? `${menuItem.code} · ` : ''}{menuItem?.name}</td>
+                    <td className="px-4 py-3 text-center align-middle text-slate-600">RM {Number(menuItem?.price || 0).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-center align-middle">
+                      <input
+                        type="number"
+                        min={1}
+                        value={line.quantity}
+                        onChange={event => onUpdateLine(line.lineId, { quantity: Math.max(1, Number(event.target.value || 1)) })}
+                        className="h-10 w-20 rounded-xl border border-slate-200 bg-slate-50 px-3 text-center text-sm font-bold text-slate-950 outline-none focus:border-blue-500 focus:bg-white"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-center align-middle">
+                      <input
+                        value={line.note}
+                        onChange={event => onUpdateLine(line.lineId, { note: event.target.value })}
+                        placeholder="少辣 / 不要葱"
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-center align-middle">
+                      <IconButton title="移除菜品" onClick={() => onRemoveLine(line.lineId)} variant="danger"><Trash2 size={16} /></IconButton>
+                    </td>
+                  </tr>
+                ))}
+                {selectedLines.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-10 text-center text-sm font-bold text-slate-400">请先添加菜品</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <TextArea label="订单备注" value={orderForm.note} onChange={value => updateOrder('note', value)} />
+
+          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_auto] md:items-end">
+            <div className="grid gap-2 text-sm">
+              <SummaryRow label="小计" value={`RM ${totals.subtotal.toFixed(2)}`} />
+              <SummaryRow
+                label="配送费"
+                value={orderForm.orderType === 'takeaway' ? deliveryPreview ? `RM ${totals.deliveryFee.toFixed(2)} · ${deliveryPreview.distanceKm.toFixed(2)}km · ${deliveryPreview.durationMin}分钟` : '待计算' : 'RM 0.00'}
+              />
+              <SummaryRow label="应付" value={`RM ${totals.total.toFixed(2)}`} strong />
+            </div>
+            <button type="submit" disabled={submitting || !selectedCustomer || selectedLines.length === 0} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+              <ShoppingCart size={17} />
+              {submitting ? '提交中...' : '创建订单'}
+            </button>
+          </div>
+        </form>
+      </Panel>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between gap-4 ${strong ? 'text-base font-bold text-slate-950' : 'font-semibold text-slate-600'}`}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function StoreBranchManager({ branches, form, setForm, error, onSubmit, onEdit, onToggleActive, onCancel, onRefresh }: {
+  branches: StoreBranchRow[];
+  form: StoreBranchFormState;
+  setForm: React.Dispatch<React.SetStateAction<StoreBranchFormState>>;
+  error: string;
+  onSubmit: (event: React.FormEvent) => void;
+  onEdit: (branch: StoreBranchRow) => void;
+  onToggleActive: (branch: StoreBranchRow) => void;
+  onCancel: () => void;
+  onRefresh: () => void;
+}) {
+  const editing = Boolean(form.id);
+  const update = (key: keyof StoreBranchFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+
+  return (
+    <div className="grid gap-3 xl:grid-cols-[400px_1fr]">
+      <Panel className="p-4">
+        <div className="mb-4">
+          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Branches</p>
+          <h3 className="mt-1 text-xl font-bold text-slate-950">{editing ? '编辑门店' : '选择门店'}</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">停用门店后，新配送报价不会再从该门店出发。</p>
+        </div>
+        {error && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+            <AlertCircle className="mt-0.5 shrink-0" size={16} />
+            {error}
+          </div>
+        )}
+        <form onSubmit={onSubmit} className="grid gap-3">
+          <Input label="门店 ID" value={form.id || '请从右侧列表选择'} onChange={() => undefined} disabled />
+          <Input label="门店名称" value={form.name} onChange={value => update('name', value)} placeholder="PUDU 区" required disabled={!editing} />
+          <TextArea label="门店地址" value={form.address} onChange={value => update('address', value)} required disabled={!editing} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input label="纬度" value={form.latitude} onChange={value => update('latitude', value)} type="number" placeholder="自动解析可留空" disabled={!editing} />
+            <Input label="经度" value={form.longitude} onChange={value => update('longitude', value)} type="number" placeholder="自动解析可留空" disabled={!editing} />
+          </div>
+          <Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" disabled={!editing} />
+          <Toggle label={form.active ? '启用门店' : '停用门店'} checked={form.active} onChange={value => update('active', value)} disabled={!editing} />
+          <div className="flex gap-2 pt-2">
+            <button type="submit" disabled={!editing} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+              <Save size={16} />
+              保存门店
+            </button>
+            {editing && <IconButton title="取消编辑" onClick={onCancel}><X size={17} /></IconButton>}
+          </div>
+        </form>
+      </Panel>
+
+      <Panel className="overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Branch List</p>
+            <h3 className="text-lg font-bold text-slate-950">门店列表</h3>
+          </div>
+          <IconButton title="刷新门店" onClick={onRefresh}><RefreshCw size={17} /></IconButton>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
+            <colgroup>
+              <col className="w-[11%]" />
+              <col className="w-[16%]" />
+              <col className="w-[31%]" />
+              <col className="w-[16%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
+              <col className="w-[10%]" />
+            </colgroup>
+            <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3 text-center font-bold">ID</th>
+                <th className="px-4 py-3 text-center font-bold">门店</th>
+                <th className="px-4 py-3 text-center font-bold">地址</th>
+                <th className="px-4 py-3 text-center font-bold">坐标</th>
+                <th className="px-4 py-3 text-center font-bold">排序</th>
+                <th className="px-4 py-3 text-center font-bold">状态</th>
+                <th className="px-4 py-3 text-center font-bold">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {branches.map(branch => (
+                <tr key={branch.id} className="transition hover:bg-slate-50/80">
+                  <td className="px-4 py-4 text-center align-middle font-bold text-slate-950">{branch.id}</td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <p className="font-bold text-slate-950">{branch.name}</p>
+                    <p className="mt-1 text-xs text-slate-400">{branch.updated_at ? formatDate(branch.updated_at) : '-'}</p>
+                  </td>
+                  <td className="px-4 py-4 text-left align-middle text-slate-600">{branch.address}</td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-500">{formatCoordinates(branch)}</td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-600">{branch.sort_order}</td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <Badge tone={branch.active ? 'green' : 'muted'}>{branch.active ? '启用' : '停用'}</Badge>
+                  </td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <div className="flex justify-center gap-2">
+                      <IconButton title="编辑门店" onClick={() => onEdit(branch)}><Pencil size={16} /></IconButton>
+                      <button
+                        type="button"
+                        onClick={() => onToggleActive(branch)}
+                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${branch.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                      >
+                        {branch.active ? '停用' : '启用'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {branches.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm font-bold text-slate-400">暂无门店资料</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onToggleActive, onDelete, onCancel, onRefresh }: {
   accounts: AdminAccountRow[];
   form: AccountFormState;
   setForm: React.Dispatch<React.SetStateAction<AccountFormState>>;
@@ -2103,6 +2901,7 @@ function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onTo
   onSubmit: (event: React.FormEvent) => void;
   onEdit: (account: AdminAccountRow) => void;
   onToggleActive: (account: AdminAccountRow) => void;
+  onDelete: (account: AdminAccountRow) => void;
   onCancel: () => void;
   onRefresh: () => void;
 }) {
@@ -2124,11 +2923,13 @@ function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onTo
           </div>
         )}
         <form onSubmit={onSubmit} className="grid gap-3">
-          <Input label="账号" value={form.username} onChange={value => update('username', value)} placeholder="kitchen01" required disabled={editing} />
+          <Input label="账号" value={form.username} onChange={value => update('username', value)} placeholder="service01" required />
           <Input label="显示名称" value={form.displayName} onChange={value => update('displayName', value)} placeholder="厨房早班" />
           <SelectInput label="角色" value={form.role} onChange={value => update('role', value as AccountFormState['role'])}>
             <option value="admin">管理员</option>
+            <option value="customer_service">客服助理</option>
             <option value="kitchen">厨房工人</option>
+            <option value="delivery">配送人员</option>
           </SelectInput>
           <Input
             label={editing ? '新密码（留空则不修改）' : '密码'}
@@ -2183,7 +2984,7 @@ function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onTo
                   <td className="px-4 py-4 text-center align-middle font-bold text-slate-950">{account.username}</td>
                   <td className="px-4 py-4 text-center align-middle text-slate-600">{account.displayName}</td>
                   <td className="px-4 py-4 text-center align-middle">
-                    <Badge tone={account.role === 'admin' ? 'blue' : 'orange'}>{account.role === 'admin' ? '管理员' : '厨房工人'}</Badge>
+                    <Badge tone={toneForAdminRole(account.role)}>{labelAdminRole(account.role)}</Badge>
                   </td>
                   <td className="px-4 py-4 text-center align-middle">
                     <Badge tone={account.active ? 'green' : 'muted'}>{account.active ? '启用' : '停用'}</Badge>
@@ -2199,6 +3000,7 @@ function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onTo
                       >
                         {account.active ? '停用' : '启用'}
                       </button>
+                      <IconButton title="删除账号" onClick={() => onDelete(account)} variant="danger"><Trash2 size={16} /></IconButton>
                     </div>
                   </td>
                 </tr>
@@ -2438,11 +3240,11 @@ function SelectInput({ label, value, onChange, required, children }: {
   );
 }
 
-function TextArea({ label, value, onChange, required }: { label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
+function TextArea({ label, value, onChange, required, disabled }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; disabled?: boolean }) {
   return (
     <label className="block">
       <span className="text-xs font-bold text-slate-500">{label}</span>
-      <textarea value={value} onChange={event => onChange(event.target.value)} required={required} rows={3} className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-950 outline-none transition focus:border-blue-500 focus:bg-white" />
+      <textarea value={value} onChange={event => onChange(event.target.value)} required={required} disabled={disabled} rows={3} className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-950 outline-none transition focus:border-blue-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400" />
     </label>
   );
 }
@@ -2510,10 +3312,10 @@ function TagEditor({ label, tags, onChange, placeholder }: {
   );
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function Toggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   return (
-    <label className={`flex cursor-pointer items-center justify-center rounded-xl border px-3 py-2.5 text-xs font-bold ${checked ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
-      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} className="sr-only" />
+    <label className={`flex items-center justify-center rounded-xl border px-3 py-2.5 text-xs font-bold ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${checked ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+      <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} disabled={disabled} className="sr-only" />
       {label}
     </label>
   );
@@ -2551,6 +3353,103 @@ function labelOrderStatus(status: OrderStatus) {
     completed: '已完成',
     cancelled: '已取消',
   }[status];
+}
+
+function calculateCustomerOrderTotals(
+  form: CustomerOrderFormState,
+  menuItems: OrderMenuItem[],
+  deliveryPreview: { deliveryFee: number } | null,
+) {
+  const subtotal = form.items.reduce((sum, line) => {
+    const menuItem = menuItems.find(item => String(item.id) === line.menuItemId);
+    return sum + Number(menuItem?.price || 0) * line.quantity;
+  }, 0);
+  const deliveryFee = form.orderType === 'takeaway' ? Number(deliveryPreview?.deliveryFee || 0) : 0;
+  return {
+    subtotal: roundCurrency(subtotal),
+    deliveryFee: roundCurrency(deliveryFee),
+    total: roundCurrency(subtotal + deliveryFee),
+  };
+}
+
+function buildCustomerOrderPayload(
+  customer: CustomerRow,
+  form: CustomerOrderFormState,
+  menuItems: OrderMenuItem[],
+  deliveryPreview: { deliveryFee: number } | null,
+  branches: StoreBranchRow[],
+) {
+  const totals = calculateCustomerOrderTotals(form, menuItems, deliveryPreview);
+  const branch = branches.find(item => item.id === form.branchId);
+  if (!branch) throw new Error('请选择有效门店');
+  return {
+    orderType: form.orderType,
+    paymentMethod: 'cash',
+    customer: {
+      name: customer.name || customer.displayPhone,
+      phone: customer.displayPhone,
+    },
+    assignedBranch: {
+      id: branch.id,
+      name: branch.name,
+    },
+    dineIn: form.orderType === 'dinein' ? { tableNo: form.tableNo.trim() } : undefined,
+    takeaway: form.orderType === 'takeaway' ? { address: form.address.trim() } : undefined,
+    items: form.items.map(line => {
+      const menuItem = menuItems.find(item => String(item.id) === line.menuItemId);
+      if (!menuItem) throw new Error('菜品不存在，请刷新菜单后重试');
+      return {
+        id: String(menuItem.id),
+        code: menuItem.code,
+        name: menuItem.name,
+        price: Number(menuItem.price || 0),
+        qty: line.quantity,
+        options: [],
+        note: line.note.trim() || undefined,
+      };
+    }),
+    subtotal: totals.subtotal,
+    deliveryFee: totals.deliveryFee,
+    serviceCharge: 0,
+    total: totals.total,
+    note: form.note.trim() || undefined,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function roundCurrency(value: number) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function pathForSection(section: AdminSection) {
+  if (section === 'menu') return '/admin';
+  if (section === 'customerOrder') return '/admin/customer-order';
+  if (section === 'storeBranches') return '/admin/store-branches';
+  return `/admin/${section}`;
+}
+
+function sectionForPath(pathname: string): AdminSection | null {
+  if (pathname === '/admin' || pathname === '/') return 'menu';
+  if (pathname === '/admin/customer-order') return 'customerOrder';
+  if (pathname === '/admin/store-branches') return 'storeBranches';
+  const section = pathname.slice('/admin/'.length) as AdminSection;
+  return sections.some(item => item.id === section) ? section : null;
+}
+
+function labelAdminRole(role: AdminRole) {
+  return {
+    admin: '管理员',
+    customer_service: '客服助理',
+    kitchen: '厨房工人',
+    delivery: '配送人员',
+  }[role];
+}
+
+function toneForAdminRole(role: AdminRole): 'green' | 'red' | 'blue' | 'orange' | 'muted' {
+  if (role === 'admin') return 'blue';
+  if (role === 'customer_service') return 'green';
+  if (role === 'kitchen') return 'orange';
+  return 'muted';
 }
 
 function toneForOrder(status: OrderStatus): 'green' | 'red' | 'blue' | 'orange' | 'muted' {

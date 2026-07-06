@@ -34,9 +34,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return res.status(400).json({ success: false, error: 'Invalid JSON body' });
   }
 
-  const validationError = validateOrder(order, ['tng', 'wallet']);
+  const validationError = validateOrder(order, ['cash', 'tng', 'wallet']);
   if (validationError) {
     return res.status(400).json({ success: false, error: validationError });
+  }
+
+  if (order.paymentMethod === 'cash' && order.orderType !== 'dinein') {
+    return res.status(400).json({ success: false, error: '现金支付仅支持堂食订单' });
   }
 
   try {
@@ -78,11 +82,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? await uploadReceipt(orderNo, order.receiptImage!)
       : null;
 
-    const paymentStatus = order.paymentMethod === 'wallet'
+    const paymentStatus = order.paymentMethod === 'cash'
+      ? 'pay_at_counter'
+      : order.paymentMethod === 'wallet'
       ? 'paid'
       : 'pending_review';
     const paymentReviewStatus = order.paymentMethod === 'tng' ? 'pending' : 'not_required';
-    const status = paymentStatus === 'paid' && paymentReviewStatus !== 'pending'
+    const status = (paymentStatus === 'paid' || paymentStatus === 'pay_at_counter') && paymentReviewStatus !== 'pending'
       ? 'waiting_kitchen'
       : 'pending_confirm';
     const paymentReviewToken = order.paymentMethod === 'tng' ? randomBytes(24).toString('base64url') : null;
@@ -104,6 +110,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       await markCouponUsed(order.couponId, user.id);
     } else if (order.paymentMethod === 'wallet' && user) {
       await updateOrderById(orderRecord.id, { paid_at: new Date().toISOString() });
+      await markCouponUsed(order.couponId, user.id);
+    } else if (order.paymentMethod === 'cash' && user) {
       await markCouponUsed(order.couponId, user.id);
     }
 

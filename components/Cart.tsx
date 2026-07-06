@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2 } from 'lucide-react';
+import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2, Banknote } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CartLine } from '../data/menu';
 import { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
@@ -121,7 +121,7 @@ const Cart: React.FC<CartProps> = ({
       setDeliveryQuote(null);
       setDeliveryQuoteStatus('idle');
       setDeliveryQuoteError('');
-      setPaymentMethod('wallet');
+      setPaymentMethod(orderType === 'dinein' ? 'cash' : 'wallet');
       if (session.user) {
         setName(session.user.name || '');
         setPhone(session.user.displayPhone || '');
@@ -142,11 +142,28 @@ const Cart: React.FC<CartProps> = ({
         setTableNo(scannedTableNo);
         setIsTableLocked(true);
         setOrderType('dinein');
+        setPaymentMethod('cash');
       } else if (!tableNo.trim()) {
         setIsTableLocked(false);
       }
     }
   }, [isOpen, tableNumber]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setPaymentMethod(current => {
+      if (orderType === 'dinein' && current !== 'cash') return 'cash';
+      if (orderType === 'takeaway' && current === 'cash') return 'wallet';
+      return current;
+    });
+  }, [isOpen, orderType]);
+
+  useEffect(() => {
+    if (paymentMethod === 'tng') return;
+    setReceiptFile(null);
+    setReceiptPreview('');
+    setIsReceiptPreviewOpen(false);
+  }, [paymentMethod]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -351,7 +368,7 @@ const Cart: React.FC<CartProps> = ({
     let receiptImage: ReceiptImage | undefined;
 
     try {
-      receiptImage = await buildReceiptImage();
+      receiptImage = paymentMethod === 'tng' ? await buildReceiptImage() : undefined;
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : t('cart.validation.readReceipt'));
       return;
@@ -469,6 +486,8 @@ const Cart: React.FC<CartProps> = ({
             <p className="text-stone-400 text-sm mb-8">
               {successPaymentMethod === 'tng'
                 ? t('cart.successTng', { name: successName || t('common.fallbackCustomer') })
+                : successPaymentMethod === 'cash'
+                  ? t('cart.successCash', { name: successName || t('common.fallbackCustomer') })
                 : t('cart.successDefault', { name: successName || t('common.fallbackCustomer') })}
             </p>
             
@@ -777,7 +796,10 @@ const Cart: React.FC<CartProps> = ({
 
                       <div className={checkoutCard}>
                         <h3 className={checkoutTitle}>{t('cart.paymentMethod')}</h3>
-                        <div className={`mt-4 grid gap-2 ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                        <div className={`mt-4 grid gap-2 ${orderType === 'dinein' ? ONLINE_PAYMENT_ENABLED ? 'grid-cols-4' : 'grid-cols-3' : ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                          {orderType === 'dinein' && (
+                            <PaymentTab active={paymentMethod === 'cash'} icon={<Banknote size={16} />} label={t('cart.cashPayment')} onClick={() => setPaymentMethod('cash')} />
+                          )}
                           <PaymentTab active={paymentMethod === 'wallet'} icon={<WalletCards size={16} />} label="Wallet" onClick={() => setPaymentMethod('wallet')} />
                           <PaymentTab active={paymentMethod === 'tng'} icon={<WalletCards size={16} />} label="Touch 'n Go" onClick={() => setPaymentMethod('tng')} />
                           {ONLINE_PAYMENT_ENABLED && (
@@ -791,6 +813,20 @@ const Cart: React.FC<CartProps> = ({
                             <PriceLine label={t('cart.thisPayment')} value={payableTotal} />
                             <PriceLine label={t('cart.balanceAfter')} value={Math.max(walletAfterPayment, 0)} highlight={walletInsufficient} />
                             {walletInsufficient && <p className="text-[11px] leading-5 text-amber-700">{t('cart.walletInsufficient')}</p>}
+                          </div>
+                        )}
+
+                        {paymentMethod === 'cash' && (
+                          <div className="mt-4 rounded-2xl bg-stone-50 p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#C8A97E]">
+                                <Banknote size={20} />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-[#2D2D2D]">{t('cart.cashPayment')}</p>
+                                <p className={checkoutHelp}>{t('cart.cashHint')}</p>
+                              </div>
+                            </div>
                           </div>
                         )}
 

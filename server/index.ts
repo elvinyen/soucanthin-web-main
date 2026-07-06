@@ -3,11 +3,14 @@ import express, { type NextFunction, type Request, type Response } from 'express
 
 import adminAuth from '../api/admin-auth';
 import adminAccounts from '../api/admin-accounts';
+import adminCustomers from '../api/admin-customers';
+import adminDelivery from '../api/admin-delivery';
 import adminMenuImage from '../api/admin-menu-image';
 import adminOrderPaymentReview from '../api/admin-order-payment-review';
 import adminMenuCategories from '../api/admin-menu-categories';
 import adminMenuItems from '../api/admin-menu-items';
 import adminOrders from '../api/admin-orders';
+import adminStoreBranches from '../api/admin-store-branches';
 import adminWalletRechargeReview from '../api/admin-wallet-recharge-review';
 import addressAutocomplete from '../api/address-autocomplete';
 import addressPlaceDetails from '../api/address-place-details';
@@ -75,10 +78,13 @@ mount('/api/admin/order-payment-review', adminOrderPaymentReview);
 mount('/api/admin/wallet-recharge-review', adminWalletRechargeReview);
 mount('/api/admin/auth', adminAuth);
 mount('/api/admin/accounts', adminAccounts);
+mount('/api/admin/customers', adminCustomers);
+mount('/api/admin/delivery', adminDelivery);
 mount('/api/admin/menu-categories', adminMenuCategories);
 mount('/api/admin/menu-image', adminMenuImage);
 mount('/api/admin/menu-items', adminMenuItems);
 mount('/api/admin/orders', adminOrders);
+mount('/api/admin/store-branches', adminStoreBranches);
 mount('/api/kitchen/orders', kitchenOrders);
 mount('/api/kitchen/status', kitchenOrders);
 mount('/api/kitchen/orders/start', kitchenOrders);

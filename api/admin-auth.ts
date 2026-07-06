@@ -26,10 +26,10 @@ type SetupBody = LoginBody & {
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const method = req.method || 'GET';
-    if (method === 'GET') return getMe(req, res);
-    if (method === 'POST') return login(req, res);
-    if (method === 'PUT') return setupFirstAdmin(req, res);
-    if (method === 'DELETE') return logout(req, res);
+    if (method === 'GET') return await getMe(req, res);
+    if (method === 'POST') return await login(req, res);
+    if (method === 'PUT') return await setupFirstAdmin(req, res);
+    if (method === 'DELETE') return await logout(req, res);
 
     res.setHeader?.('Allow', 'GET, POST, PUT, DELETE');
     return res.status(405).json({ success: false, error: 'Method not allowed' });

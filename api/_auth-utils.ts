@@ -14,6 +14,8 @@ export type UserRecord = {
   name?: string | null;
   email?: string | null;
   birthday?: string | null;
+  source?: 'otp' | 'admin_created';
+  created_by_admin_id?: string | null;
   created_at: string;
   last_login_at?: string | null;
 };

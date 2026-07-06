@@ -3,6 +3,7 @@ import { DeliveryQuoteError, getDeliveryQuoteForAddress } from './_delivery-util
 
 type DeliveryQuoteBody = {
   address?: string;
+  branchId?: string;
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -14,10 +15,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const input = parseBody(req.body);
     const address = String(input.address || '').trim();
-    const quote = await getDeliveryQuoteForAddress(address);
+    const branchId = String(input.branchId || '').trim();
+    const quote = await getDeliveryQuoteForAddress(address, branchId || undefined);
     return res.status(200).json({
       success: true,
       deliverable: true,
+      branchId: quote.branchId,
+      branchName: quote.branchName,
       deliveryFee: quote.deliveryFee,
       distanceKm: quote.distanceKm,
       durationMin: quote.durationMin,

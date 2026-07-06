@@ -69,9 +69,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (method === 'POST') {
-      if (path.endsWith('/start')) return updateKitchenOrder(req, res, admin, 'start');
-      if (path.endsWith('/complete')) return updateKitchenOrder(req, res, admin, 'complete');
-      if (path.endsWith('/stock-issue')) return updateKitchenOrder(req, res, admin, 'stock-issue');
+      if (path.endsWith('/start')) return await updateKitchenOrder(req, res, admin, 'start');
+      if (path.endsWith('/complete')) return await updateKitchenOrder(req, res, admin, 'complete');
+      if (path.endsWith('/stock-issue')) return await updateKitchenOrder(req, res, admin, 'stock-issue');
     }
 
     res.setHeader?.('Allow', 'GET, POST');
