@@ -11,6 +11,7 @@ import {
   verifyPassword,
 } from './_admin-utils';
 import type { ApiRequest, ApiResponse } from './_order-utils';
+import type { AdminUserRecord } from './_admin-utils';
 import { getSupabaseConfig, supabaseRequest } from './_order-utils';
 
 type LoginBody = {
@@ -57,7 +58,7 @@ async function login(req: ApiRequest, res: ApiResponse) {
     `/admin_users?username=eq.${encodeURIComponent(username)}&active=eq.true&select=*`,
     { method: 'GET' },
   );
-  const admin = Array.isArray(rows) ? rows[0] as { id: string; password_hash: string } | undefined : undefined;
+  const admin = Array.isArray(rows) ? rows[0] as (AdminUserRecord & { password_hash: string }) | undefined : undefined;
   if (!admin?.id || !(await verifyPassword(password, admin.password_hash))) {
     throw new AdminError('账号或密码不正确', 401);
   }
@@ -67,8 +68,7 @@ async function login(req: ApiRequest, res: ApiResponse) {
     body: JSON.stringify({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
   });
   await createAdminSession(res, admin.id);
-  const currentAdmin = await findAdminById(admin.id);
-  return res.status(200).json({ success: true, admin: currentAdmin && sanitizeAdmin(currentAdmin) });
+  return res.status(200).json({ success: true, admin: sanitizeAdmin(admin) });
 }
 
 async function setupFirstAdmin(req: ApiRequest, res: ApiResponse) {
@@ -118,11 +118,24 @@ async function adminUserExists() {
 
 async function findAdminById(id: string) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
-  const rows = await supabaseRequest(
-    supabaseUrl,
-    serviceRoleKey,
-    `/admin_users?id=eq.${encodeURIComponent(id)}&select=id,username,display_name,role,active,last_login_at`,
-    { method: 'GET' },
-  );
+  const path = `/admin_users?id=eq.${encodeURIComponent(id)}`;
+  let rows: unknown;
+  try {
+    rows = await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `${path}&select=id,username,display_name,role,active,assigned_branch_id,last_login_at`,
+      { method: 'GET' },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    if (!message.includes('assigned_branch_id')) throw error;
+    rows = await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `${path}&select=id,username,display_name,role,active,last_login_at`,
+      { method: 'GET' },
+    );
+  }
   return Array.isArray(rows) ? rows[0] : null;
 }

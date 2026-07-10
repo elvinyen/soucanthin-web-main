@@ -34,17 +34,54 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       await requireAdminRole(req, ['admin', 'customer_service']);
       return await listBranches(res);
     }
+    if (method === 'POST') {
+      await requireAdmin(req);
+      return await createBranch(req, res);
+    }
     if (method === 'PATCH' || method === 'PUT') {
       await requireAdmin(req);
       return await updateBranch(req, res);
     }
 
-    res.setHeader?.('Allow', 'GET, PATCH, PUT');
+    res.setHeader?.('Allow', 'GET, POST, PATCH, PUT');
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   } catch (error) {
     const { statusCode, body } = jsonError(error);
     return res.status(statusCode).json(body);
   }
+}
+
+async function createBranch(req: ApiRequest, res: ApiResponse) {
+  const input = parseAdminBody<StoreBranchInput>(req.body);
+  const id = String(input.id || '').trim().toLowerCase();
+  if (!id) throw new AdminError('门店 ID 必填');
+  if (!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id)) throw new AdminError('门店 ID 只能使用小写字母、数字、横线或下划线');
+  if (await findBranchById(id)) throw new AdminError('门店 ID 已存在');
+
+  const payload: Record<string, unknown> = {
+    ...normalizeBranchPayload(input, {
+      id,
+      name: '',
+      address: '',
+      active: true,
+      sort_order: 0,
+    }),
+    id,
+  };
+  if (!payload.name) throw new AdminError('门店名称必填');
+  if (!payload.address) throw new AdminError('门店地址必填');
+  if (payload.active === undefined) payload.active = true;
+  if (payload.sort_order === undefined) payload.sort_order = 0;
+
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/store_branches', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(payload),
+  });
+  const branch = Array.isArray(created) ? created[0] as StoreBranchRow | undefined : created as StoreBranchRow | undefined;
+  if (!branch?.id) throw new AdminError('门店新增失败', 500);
+  return res.status(201).json({ success: true, branch: mapBranch(branch) });
 }
 
 async function listBranches(res: ApiResponse) {

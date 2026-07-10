@@ -1,5 +1,5 @@
 import type { ApiRequest, ApiResponse, OrderRecord } from './_order-utils';
-import { getOrderItems, getSupabaseConfig, markCouponUsed, notifyKitchenFromRecord, notifyStaffFromRecord, supabaseRequest } from './_order-utils';
+import { getOrderItems, getSupabaseConfig, markCouponUsed, notifyKitchenFromRecord, notifyStaffFromRecord, releaseCoupon, supabaseRequest } from './_order-utils';
 import { parseJsonBody } from './_auth-utils';
 
 type ReviewAction = 'approve' | 'reject';
@@ -65,7 +65,7 @@ async function approveOrderPayment(orderId: string, reviewToken: string) {
       }),
     },
   );
-  await markCouponUsed(order.coupon_id || undefined, order.user_id || undefined);
+  await markCouponUsed(order.coupon_id || undefined, order.user_id || undefined, order.id);
   const approvedOrder = await findOrderById(orderId);
   if (approvedOrder) {
     const items = await getOrderItems(approvedOrder.id);
@@ -109,6 +109,7 @@ async function rejectOrderPayment(orderId: string, reviewToken: string) {
       }),
     },
   );
+  await releaseCoupon(order.coupon_id || undefined, order.user_id || undefined);
   return order;
 }
 

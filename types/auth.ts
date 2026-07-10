@@ -77,6 +77,14 @@ export interface UserCoupon {
   title: string;
   description?: string | null;
   discountAmount: number;
+  discountType: 'fixed' | 'percentage';
+  discountValue: number;
+  minOrderAmount: number;
+  maxDiscountAmount?: number | null;
+  applicableOrderTypes: ('dinein' | 'takeaway')[];
+  applicablePaymentMethods: string[];
+  applicableBranchIds: string[];
+  excludeDeliveryFee: boolean;
   status: string;
   expiresAt?: string | null;
   usedAt?: string | null;

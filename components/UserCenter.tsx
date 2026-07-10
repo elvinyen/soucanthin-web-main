@@ -759,11 +759,15 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                         <p className="mt-1 font-mono text-xs text-[#C8A97E]">{coupon.code}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-[#C8A97E]">- RM {coupon.discountAmount.toFixed(2)}</p>
+                        <p className="text-sm font-bold text-[#C8A97E]">{coupon.discountType === 'percentage' ? `${coupon.discountValue}% OFF` : `- RM ${coupon.discountValue.toFixed(2)}`}</p>
                         <p className="mt-1 text-[11px] text-stone-400">{labelCouponStatus(coupon.status, t)}</p>
                       </div>
                     </div>
                     {coupon.description && <p className="mt-2 text-xs text-stone-500">{coupon.description}</p>}
+                    <p className="mt-2 text-[11px] text-stone-500">
+                      {coupon.minOrderAmount > 0 ? `满 RM ${coupon.minOrderAmount.toFixed(2)} · ` : ''}
+                      {coupon.applicableOrderTypes.length === 1 ? (coupon.applicableOrderTypes[0] === 'dinein' ? '仅限堂食' : '仅限外卖') : '堂食/外卖可用'}
+                    </p>
                     <p className="mt-2 text-[11px] text-stone-400">{t('userCenter.expiry')}：{coupon.expiresAt ? formatDate(coupon.expiresAt, i18n.language) : t('common.longTerm')}</p>
                   </div>
                 ))

@@ -5,6 +5,8 @@ import {
   ArrowUp,
   Bike,
   Check,
+  CircleDollarSign,
+  ChevronDown,
   ChevronRight,
   ClipboardList,
   CookingPot,
@@ -13,6 +15,8 @@ import {
   Pencil,
   LogOut,
   MoreHorizontal,
+  Megaphone,
+  Minus,
   Plus,
   RefreshCw,
   Save,
@@ -29,9 +33,11 @@ import {
 } from 'lucide-react';
 import KitchenBoard from './admin/KitchenBoard';
 import { DeliveryBoard } from './admin/DeliveryBoard';
+import { FinanceCenter } from './admin/FinanceCenter';
+import { CouponCenter } from './admin/CouponCenter';
 
-type AdminSection = 'menu' | 'orders' | 'customerOrder' | 'kitchen' | 'delivery' | 'wallet' | 'accounts' | 'storeBranches';
-type AdminRole = 'admin' | 'customer_service' | 'kitchen' | 'delivery';
+type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'wallet' | 'accounts' | 'storeBranches';
+type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'customer_service' | 'kitchen' | 'delivery';
 type OrderStatus = 'pending_confirm' | 'waiting_kitchen' | 'cooking' | 'kitchen_done' | 'stock_issue' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
 type MenuSalesStatus = 'active' | 'sold_out' | 'inactive';
 
@@ -43,6 +49,7 @@ type AdminMe = {
     username: string;
     displayName: string;
     role: AdminRole;
+    assignedBranchId?: string | null;
   } | null;
 };
 
@@ -109,6 +116,9 @@ type MenuOptionTranslation = {
 type OrderRow = {
   id: string;
   order_no: string;
+  order_source?: 'web' | 'admin_created' | string | null;
+  created_by_admin_id?: string | null;
+  user_id?: string | null;
   order_type: 'dinein' | 'takeaway';
   payment_method: string;
   customer_name: string;
@@ -121,12 +131,19 @@ type OrderRow = {
   delivery_duration_min?: number | null;
   delivery_quote_provider?: string | null;
   note?: string | null;
+  subtotal?: number | null;
+  delivery_fee?: number | null;
+  service_charge?: number | null;
   total: number;
+  discount_amount?: number | null;
   payable_total?: number | null;
   status: OrderStatus;
   payment_status: string;
   payment_review_status: string;
   receipt_url?: string | null;
+  notification_status?: string | null;
+  last_operator_name?: string | null;
+  last_status_changed_at?: string | null;
   created_at: string;
 };
 
@@ -135,9 +152,33 @@ type OrderItemRow = {
   item_code?: string | null;
   name: string;
   quantity: number;
+  unit_base_price?: number | null;
+  unit_options_total?: number | null;
   unit_price: number;
   line_total: number;
+  selected_options?: {
+    groupId?: string;
+    groupName?: string;
+    optionId?: string;
+    name?: string;
+    priceDelta?: number;
+  }[] | null;
   item_note?: string | null;
+};
+
+type OrderChangeRecord = {
+  id: string;
+  order_id: string;
+  order_no: string;
+  change_type: 'payment_method';
+  action: 'submitted' | 'approved' | 'rejected';
+  before_data: Record<string, unknown>;
+  after_data: Record<string, unknown>;
+  reason?: string | null;
+  related_event_id?: string | null;
+  created_by_admin_id?: string | null;
+  operator_name: string;
+  created_at: string;
 };
 
 type MenuCategoryRow = {
@@ -153,6 +194,7 @@ type AdminAccountRow = {
   username: string;
   displayName: string;
   role: AdminRole;
+  assignedBranchId?: string | null;
   active: boolean;
   lastLoginAt?: string | null;
   createdAt?: string | null;
@@ -186,6 +228,7 @@ type OrderMenuItem = {
   name: string;
   price: number;
   category: string;
+  image?: string;
   soldOut?: boolean;
 };
 
@@ -241,6 +284,7 @@ type AccountFormState = {
   role: AdminRole;
   password: string;
   active: boolean;
+  assignedBranchId: string;
 };
 
 type StoreBranchFormState = {
@@ -289,6 +333,7 @@ const emptyAccountForm: AccountFormState = {
   role: 'kitchen',
   password: '',
   active: true,
+  assignedBranchId: '',
 };
 
 const emptyStoreBranchForm: StoreBranchFormState = {
@@ -331,11 +376,14 @@ const orderStatusOptions: { value: OrderStatus | 'all'; label: string }[] = [
 ];
 
 const sections = [
-  { id: 'menu' as const, label: '菜单管理', icon: Soup },
+  { id: 'menuItems' as const, label: '菜品管理', icon: Soup },
+  { id: 'menuCategories' as const, label: '分类管理', icon: Soup },
   { id: 'orders' as const, label: '订单管理', icon: ClipboardList },
   { id: 'customerOrder' as const, label: '用户下单', icon: ShoppingCart },
   { id: 'kitchen' as const, label: '厨房出餐', icon: CookingPot },
   { id: 'delivery' as const, label: '配送工作台', icon: Bike },
+  { id: 'finance' as const, label: '财务中心', icon: CircleDollarSign },
+  { id: 'coupons' as const, label: '营销中心', icon: Megaphone },
   { id: 'storeBranches' as const, label: '门店管理', icon: Store },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
   { id: 'accounts' as const, label: '账号管理', icon: Users },
@@ -343,13 +391,16 @@ const sections = [
 
 function initialAdminSection(): AdminSection {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (pathname === '/admin/menu-categories') return 'menuCategories';
   if (pathname === '/admin/kitchen') return 'kitchen';
   if (pathname === '/admin/delivery') return 'delivery';
+  if (pathname === '/admin/finance') return 'finance';
+  if (pathname === '/admin/coupons') return 'coupons';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   if (pathname === '/admin/orders') return 'orders';
   if (pathname === '/admin/customer-order') return 'customerOrder';
   if (pathname === '/admin/accounts') return 'accounts';
-  return 'menu';
+  return 'menuItems';
 }
 
 type PendingMenuImage = {
@@ -394,7 +445,6 @@ const AdminDashboard: React.FC = () => {
   const [setupToken, setSetupToken] = useState('');
 
   const [menuItems, setMenuItems] = useState<MenuItemRow[]>([]);
-  const [menuMode, setMenuMode] = useState<'items' | 'categories'>('items');
   const [menuSearch, setMenuSearch] = useState('');
   const [menuCategoryFilter, setMenuCategoryFilter] = useState('all');
   const [menuStatusFilter, setMenuStatusFilter] = useState('all');
@@ -411,11 +461,19 @@ const AdminDashboard: React.FC = () => {
   const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
   const [categoryForm, setCategoryForm] = useState<CategoryFormState>(emptyCategoryForm);
   const [editingCategory, setEditingCategory] = useState<MenuCategoryRow | null>(null);
+  const [isCategoryEditorOpen, setIsCategoryEditorOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [menuNavOpen, setMenuNavOpen] = useState(true);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderStatus, setOrderStatus] = useState<OrderStatus | 'all'>('all');
-  const [selectedOrder, setSelectedOrder] = useState<{ order: OrderRow; items: OrderItemRow[] } | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<{ order: OrderRow; items: OrderItemRow[]; changes: OrderChangeRecord[] } | null>(null);
+  const [isOrderChangeOpen, setIsOrderChangeOpen] = useState(false);
+  const [paymentChangeReason, setPaymentChangeReason] = useState('');
+  const [paymentReceiptFile, setPaymentReceiptFile] = useState<File | null>(null);
+  const [paymentChangeSubmitting, setPaymentChangeSubmitting] = useState(false);
+  const [paymentReviewReason, setPaymentReviewReason] = useState('');
+  const [paymentReviewSubmitting, setPaymentReviewSubmitting] = useState(false);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
@@ -429,16 +487,22 @@ const AdminDashboard: React.FC = () => {
   const [accounts, setAccounts] = useState<AdminAccountRow[]>([]);
   const [accountForm, setAccountForm] = useState<AccountFormState>(emptyAccountForm);
   const [accountError, setAccountError] = useState('');
+  const [isAccountEditorOpen, setIsAccountEditorOpen] = useState(false);
   const [storeBranches, setStoreBranches] = useState<StoreBranchRow[]>([]);
   const [storeBranchForm, setStoreBranchForm] = useState<StoreBranchFormState>(emptyStoreBranchForm);
   const [storeBranchError, setStoreBranchError] = useState('');
+  const [isStoreBranchEditorOpen, setIsStoreBranchEditorOpen] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Partial<Record<AdminSection, Date>>>({});
+  const lastPassiveRefreshAt = useRef(0);
 
   const authenticated = Boolean(auth?.authenticated);
   const setupRequired = Boolean(auth?.setupRequired);
   const availableSections = sections.filter(item => {
     const role = auth?.admin?.role;
-    if (!role || role === 'admin') return true;
-    if (role === 'customer_service') return item.id === 'orders' || item.id === 'customerOrder' || item.id === 'delivery';
+    if (!role || role === 'admin' || role === 'owner') return true;
+    if (role === 'manager') return ['orders', 'customerOrder', 'kitchen', 'delivery', 'finance', 'coupons'].includes(item.id);
+    if (role === 'staff') return item.id === 'finance';
+    if (role === 'customer_service') return item.id === 'orders' || item.id === 'customerOrder' || item.id === 'delivery' || item.id === 'coupons';
     if (role === 'delivery') return item.id === 'delivery';
     return item.id === 'kitchen';
   });
@@ -455,6 +519,9 @@ const AdminDashboard: React.FC = () => {
     soldOut: menuItems.filter(item => getMenuSalesStatus(item) === 'sold_out').length,
     inactive: menuItems.filter(item => getMenuSalesStatus(item) === 'inactive').length,
   };
+  const markSectionUpdated = (target: AdminSection) => {
+    setLastUpdatedAt(current => ({ ...current, [target]: new Date() }));
+  };
 
   useEffect(() => {
     void refreshAuth();
@@ -462,7 +529,7 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     if (!authenticated) return;
-    if (section === 'menu') {
+    if (section === 'menuItems' || section === 'menuCategories') {
       void loadMenuItems();
       void loadCategories();
     }
@@ -473,7 +540,54 @@ const AdminDashboard: React.FC = () => {
       void loadStoreBranches();
     }
     if (section === 'accounts') void loadAccounts();
+    if (section === 'accounts') void loadStoreBranches();
     if (section === 'storeBranches') void loadStoreBranches();
+  }, [authenticated, section, orderStatus]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    const refreshActiveSection = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastPassiveRefreshAt.current < 1200) return;
+      lastPassiveRefreshAt.current = now;
+      if (section === 'menuItems') {
+        void loadMenuItems();
+        void loadCategories();
+      } else if (section === 'menuCategories') {
+        void loadCategories();
+        void loadMenuItems();
+      } else if (section === 'orders') {
+        void loadOrders(true);
+      } else if (section === 'customerOrder') {
+        void loadCustomers();
+        void loadCustomerOrderMenu();
+        void loadStoreBranches();
+      } else if (section === 'accounts') {
+        void loadAccounts();
+      } else if (section === 'storeBranches') {
+        void loadStoreBranches();
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshActiveSection();
+    };
+    window.addEventListener('focus', refreshActiveSection);
+    window.addEventListener('online', refreshActiveSection);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', refreshActiveSection);
+      window.removeEventListener('online', refreshActiveSection);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [authenticated, section, orderStatus]);
+
+  useEffect(() => {
+    if (!authenticated || section !== 'orders') return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadOrders(true);
+    }, 15000);
+    return () => window.clearInterval(interval);
   }, [authenticated, section, orderStatus]);
 
   useEffect(() => {
@@ -575,7 +689,13 @@ const AdminDashboard: React.FC = () => {
       return;
     }
     if (auth.admin.role === 'customer_service') {
-      const nextSection = pathname === '/admin/orders' ? 'orders' : pathname === '/admin/customer-order' ? 'customerOrder' : 'delivery';
+      const nextSection: AdminSection = pathname === '/admin/orders'
+        ? 'orders'
+        : pathname === '/admin/customer-order'
+        ? 'customerOrder'
+        : pathname === '/admin/coupons'
+        ? 'coupons'
+        : 'delivery';
       if (section !== nextSection) setSection(nextSection);
       const nextPath = pathForSection(nextSection);
       if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
@@ -584,6 +704,14 @@ const AdminDashboard: React.FC = () => {
     if (auth.admin.role === 'delivery') {
       if (section !== 'delivery') setSection('delivery');
       if (pathname !== '/admin/delivery') window.history.replaceState({}, '', '/admin/delivery');
+      return;
+    }
+    if (auth.admin.role === 'staff') {
+      if (section !== 'finance') setSection('finance');
+      return;
+    }
+    if (auth.admin.role === 'manager' && !availableSections.some(item => item.id === section)) {
+      setSection('finance');
       return;
     }
     const pathSection = sectionForPath(pathname);
@@ -675,6 +803,7 @@ const AdminDashboard: React.FC = () => {
       const query = menuSearch.trim() ? `?search=${encodeURIComponent(menuSearch.trim())}` : '';
       const payload = await api<{ success: true; items: MenuItemRow[] }>(`/api/admin/menu-items${query}`);
       setMenuItems(payload.items);
+      markSectionUpdated('menuItems');
     } catch (err) {
       setError(err instanceof Error ? err.message : '菜单加载失败');
       if ((err as Error).message.includes('登录')) setAuth({ success: true, authenticated: false, setupRequired: false });
@@ -688,21 +817,23 @@ const AdminDashboard: React.FC = () => {
     try {
       const payload = await api<{ success: true; categories: MenuCategoryRow[] }>('/api/admin/menu-categories');
       setMenuCategories(payload.categories);
+      markSectionUpdated('menuCategories');
     } catch (err) {
       setError(err instanceof Error ? err.message : '分类加载失败');
     }
   };
 
-  const loadOrders = async () => {
-    setIsLoading(true);
+  const loadOrders = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     setError('');
     try {
       const payload = await api<{ success: true; orders: OrderRow[] }>(`/api/admin/orders?status=${orderStatus}`);
       setOrders(payload.orders);
+      markSectionUpdated('orders');
     } catch (err) {
       setError(err instanceof Error ? err.message : '订单加载失败');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
@@ -713,6 +844,7 @@ const AdminDashboard: React.FC = () => {
       const query = customerSearch.trim() ? `?search=${encodeURIComponent(customerSearch.trim())}` : '';
       const payload = await api<{ success: true; customers: CustomerRow[] }>(`/api/admin/customers${query}`);
       setCustomers(payload.customers);
+      markSectionUpdated('customerOrder');
     } catch (err) {
       setCustomerOrderError(err instanceof Error ? err.message : '顾客加载失败');
     } finally {
@@ -726,6 +858,7 @@ const AdminDashboard: React.FC = () => {
       const payload = await api<{ success: true; items: OrderMenuItem[] }>('/api/menu?lang=zh');
       const items = payload.items.filter(item => !item.soldOut);
       setCustomerOrderMenuItems(items);
+      markSectionUpdated('customerOrder');
       setCustomerOrderForm(prev => ({
         ...prev,
         draftMenuItemId: prev.draftMenuItemId || String(items[0]?.id || ''),
@@ -754,8 +887,8 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const addCustomerOrderLine = () => {
-    const menuItemId = customerOrderForm.draftMenuItemId || String(customerOrderMenuItems[0]?.id || '');
+  const addCustomerOrderLine = (requestedMenuItemId?: string) => {
+    const menuItemId = requestedMenuItemId || customerOrderForm.draftMenuItemId || String(customerOrderMenuItems[0]?.id || '');
     if (!menuItemId) return;
     setCustomerOrderForm(prev => {
       const existing = prev.items.find(item => item.menuItemId === menuItemId && !item.note);
@@ -861,6 +994,7 @@ const AdminDashboard: React.FC = () => {
     try {
       const payload = await api<{ success: true; accounts: AdminAccountRow[] }>('/api/admin/accounts');
       setAccounts(payload.accounts);
+      markSectionUpdated('accounts');
     } catch (err) {
       setError(err instanceof Error ? err.message : '账号加载失败');
     } finally {
@@ -877,12 +1011,21 @@ const AdminDashboard: React.FC = () => {
       role: account.role,
       password: '',
       active: account.active,
+      assignedBranchId: account.assignedBranchId || '',
     });
+    setIsAccountEditorOpen(true);
+  };
+
+  const startCreateAccount = () => {
+    setAccountError('');
+    setAccountForm(emptyAccountForm);
+    setIsAccountEditorOpen(true);
   };
 
   const resetAccountForm = () => {
     setAccountError('');
     setAccountForm(emptyAccountForm);
+    setIsAccountEditorOpen(false);
   };
 
   const saveAccount = async (event: React.FormEvent) => {
@@ -897,6 +1040,7 @@ const AdminDashboard: React.FC = () => {
             displayName: accountForm.displayName,
             role: accountForm.role,
             active: accountForm.active,
+            assignedBranchId: accountForm.assignedBranchId || null,
             ...(accountForm.password.trim() ? { password: accountForm.password } : {}),
           }
         : {
@@ -905,6 +1049,7 @@ const AdminDashboard: React.FC = () => {
             role: accountForm.role,
             password: accountForm.password,
             active: accountForm.active,
+            assignedBranchId: accountForm.assignedBranchId || null,
           };
       await api('/api/admin/accounts', {
         method: accountForm.id ? 'PATCH' : 'POST',
@@ -955,6 +1100,8 @@ const AdminDashboard: React.FC = () => {
     try {
       const payload = await api<{ success: true; branches: StoreBranchRow[] }>('/api/admin/store-branches');
       setStoreBranches(payload.branches);
+      markSectionUpdated('storeBranches');
+      markSectionUpdated('customerOrder');
       const activeBranches = payload.branches.filter(branch => branch.active);
       setCustomerOrderForm(prev => {
         if (prev.branchId && activeBranches.some(branch => branch.id === prev.branchId)) return prev;
@@ -981,19 +1128,30 @@ const AdminDashboard: React.FC = () => {
       active: branch.active,
       sort_order: String(branch.sort_order ?? 0),
     });
+    setIsStoreBranchEditorOpen(true);
+  };
+
+  const startCreateStoreBranch = () => {
+    setStoreBranchError('');
+    setStoreBranchForm({
+      ...emptyStoreBranchForm,
+      sort_order: String((storeBranches.at(-1)?.sort_order ?? -10) + 10),
+    });
+    setIsStoreBranchEditorOpen(true);
   };
 
   const resetStoreBranchForm = () => {
     setStoreBranchError('');
     setStoreBranchForm(emptyStoreBranchForm);
+    setIsStoreBranchEditorOpen(false);
   };
 
   const saveStoreBranch = async (event: React.FormEvent) => {
     event.preventDefault();
     setStoreBranchError('');
     setError('');
-    if (!storeBranchForm.id) {
-      setStoreBranchError('请选择要编辑的门店');
+    if (!storeBranchForm.id.trim()) {
+      setStoreBranchError('请填写门店 ID');
       return;
     }
 
@@ -1016,10 +1174,10 @@ const AdminDashboard: React.FC = () => {
       }
 
       await api('/api/admin/store-branches', {
-        method: 'PATCH',
+        method: existing ? 'PATCH' : 'POST',
         body: JSON.stringify(payload),
       });
-      showNotice('门店已更新');
+      showNotice(existing ? '门店已更新' : '门店已新增');
       resetStoreBranchForm();
       await loadStoreBranches();
     } catch (err) {
@@ -1048,8 +1206,8 @@ const AdminDashboard: React.FC = () => {
   const loadOrderDetail = async (id: string) => {
     setError('');
     try {
-      const payload = await api<{ success: true; order: OrderRow; items: OrderItemRow[] }>(`/api/admin/orders?id=${encodeURIComponent(id)}`);
-      setSelectedOrder({ order: payload.order, items: payload.items });
+      const payload = await api<{ success: true; order: OrderRow; items: OrderItemRow[]; changes?: OrderChangeRecord[] }>(`/api/admin/orders?id=${encodeURIComponent(id)}`);
+      setSelectedOrder({ order: payload.order, items: payload.items, changes: payload.changes || [] });
     } catch (err) {
       setError(err instanceof Error ? err.message : '订单详情加载失败');
     }
@@ -1166,11 +1324,22 @@ const AdminDashboard: React.FC = () => {
       sort_order: String(category.sort_order ?? 0),
       active: category.active,
     });
+    setIsCategoryEditorOpen(true);
   };
 
   const resetCategoryForm = () => {
     setEditingCategory(null);
     setCategoryForm(emptyCategoryForm);
+    setIsCategoryEditorOpen(false);
+  };
+
+  const startCreateCategory = () => {
+    setEditingCategory(null);
+    setCategoryForm({
+      ...emptyCategoryForm,
+      sort_order: String((menuCategories.at(-1)?.sort_order ?? -10) + 10),
+    });
+    setIsCategoryEditorOpen(true);
   };
 
   const saveCategory = async (event: React.FormEvent) => {
@@ -1207,6 +1376,20 @@ const AdminDashboard: React.FC = () => {
       await loadCategories();
     } catch (err) {
       setError(err instanceof Error ? err.message : '分类删除失败');
+    }
+  };
+
+  const toggleCategoryActive = async (category: MenuCategoryRow) => {
+    setError('');
+    try {
+      await api('/api/admin/menu-categories', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: category.id, active: !category.active }),
+      });
+      showNotice(category.active ? '分类已停用' : '分类已启用');
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '分类状态更新失败');
     }
   };
 
@@ -1314,6 +1497,75 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const submitPaymentMethodChange = async () => {
+    if (!selectedOrder) return;
+    setError('');
+    if (!paymentReceiptFile) {
+      setError('请上传顾客付款截图');
+      return;
+    }
+    if (paymentChangeReason.trim().length < 2) {
+      setError('请填写修改原因');
+      return;
+    }
+
+    setPaymentChangeSubmitting(true);
+    try {
+      const receiptImage = await buildReceiptImage(paymentReceiptFile);
+      await api('/api/admin/orders', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'change_payment_method',
+          id: selectedOrder.order.id,
+          paymentMethod: 'tng',
+          reason: paymentChangeReason.trim(),
+          receiptImage,
+        }),
+      });
+      showNotice('支付方式已更正，等待管理员审核');
+      setIsOrderChangeOpen(false);
+      setPaymentChangeReason('');
+      setPaymentReceiptFile(null);
+      await loadOrders();
+      await loadOrderDetail(selectedOrder.order.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '支付方式修改失败');
+    } finally {
+      setPaymentChangeSubmitting(false);
+    }
+  };
+
+  const reviewPaymentMethodChange = async (changeId: string, decision: 'approve' | 'reject') => {
+    if (!selectedOrder) return;
+    setError('');
+    if (decision === 'reject' && paymentReviewReason.trim().length < 2) {
+      setError('请填写拒绝原因');
+      return;
+    }
+
+    setPaymentReviewSubmitting(true);
+    try {
+      await api('/api/admin/orders', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'review_payment_change',
+          id: selectedOrder.order.id,
+          changeId,
+          decision,
+          reason: paymentReviewReason.trim(),
+        }),
+      });
+      showNotice(decision === 'approve' ? '付款截图已审核通过' : '付款截图已拒绝，订单恢复现金待支付');
+      setPaymentReviewReason('');
+      await loadOrders();
+      await loadOrderDetail(selectedOrder.order.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '付款审核失败');
+    } finally {
+      setPaymentReviewSubmitting(false);
+    }
+  };
+
   if (!auth) {
     return (
       <div className="grid min-h-screen place-items-center bg-slate-50 text-slate-950">
@@ -1414,7 +1666,39 @@ const AdminDashboard: React.FC = () => {
           </button>
         )}
         <nav className="mt-7 space-y-1.5">
-          {availableSections.map(item => {
+          {availableSections.some(item => item.id === 'menuItems') && (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => sidebarCollapsed ? selectSection('menuItems') : setMenuNavOpen(open => !open)}
+                title={sidebarCollapsed ? '菜单管理' : undefined}
+                className={`relative flex h-12 w-full items-center rounded-[14px] px-3 text-sm font-bold transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${section === 'menuItems' || section === 'menuCategories' ? 'bg-[#F1F5F9] text-[#111827]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}
+              >
+                {(section === 'menuItems' || section === 'menuCategories') && !sidebarCollapsed && <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}
+                <Soup size={18} />
+                {!sidebarCollapsed && <><span className="flex-1 text-left">菜单管理</span><ChevronDown size={15} className={`text-slate-400 transition-transform ${menuNavOpen ? 'rotate-180' : ''}`} /></>}
+              </button>
+              {!sidebarCollapsed && menuNavOpen && (
+                <div className="ml-4 grid gap-1 border-l border-slate-200 pl-3">
+                  {[
+                    { id: 'menuItems' as const, label: '菜品管理' },
+                    { id: 'menuCategories' as const, label: '分类管理' },
+                  ].map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => selectSection(item.id)}
+                      className={`relative flex h-10 items-center rounded-xl px-3 text-[13px] font-bold transition ${section === item.id ? 'bg-[#F1F5F9] text-[#111827]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950'}`}
+                    >
+                      {section === item.id && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {availableSections.filter(item => item.id !== 'menuItems' && item.id !== 'menuCategories').map(item => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
@@ -1450,13 +1734,18 @@ const AdminDashboard: React.FC = () => {
         </div>
       </aside>
 
-      <main className={sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'}>
-        <header className="sticky top-0 z-20 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
+      <main className={`${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
+        <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-[22px] font-bold leading-8 text-slate-950">{sections.find(item => item.id === section)?.label}</h2>
+              {section !== 'kitchen' && section !== 'delivery' && section !== 'wallet' && (
+                <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                  {lastUpdatedAt[section] ? `更新于 ${lastUpdatedAt[section]?.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : '进入页面后自动同步'}
+                </p>
+              )}
             </div>
-            {section === 'menu' && (
+            {(section === 'menuItems' || section === 'menuCategories') && (
               <div className="hidden items-center gap-2 lg:flex">
                 <span className="rounded-full border border-[#DDE2E8] bg-white px-3 py-1.5 text-xs font-bold text-[#334155]">共 {menuStats.total} 个菜品</span>
                 <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">可售 {menuStats.active}</span>
@@ -1474,7 +1763,9 @@ const AdminDashboard: React.FC = () => {
           </div>
         </header>
 
-        <div className="grid min-h-[calc(100vh-57px)] gap-3 p-3 sm:p-5 lg:p-6">
+        <div className={section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons'
+          ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 lg:p-6'
+          : 'grid min-h-[calc(100vh-57px)] gap-3 p-3 sm:p-5 lg:p-6'}>
           {notice && <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{notice}</div>}
           {error && (
             <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
@@ -1483,24 +1774,8 @@ const AdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {section === 'menu' && (
-            <section className="grid h-[calc(100vh-81px)] min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-3 sm:h-[calc(100vh-97px)] lg:h-[calc(100vh-105px)]">
-              <div className="inline-flex w-fit rounded-2xl border border-[#E5E7EB] bg-white p-1 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                {[
-                  { id: 'items' as const, label: '菜品管理' },
-                  { id: 'categories' as const, label: '分类管理' },
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setMenuMode(item.id)}
-                    className={`rounded-xl px-4 py-2 text-sm font-bold transition ${menuMode === item.id ? 'bg-[#111827] text-white shadow-[0_8px_18px_rgba(15,23,42,0.12)]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              {menuMode === 'items' && (
+          {section === 'menuItems' && (
+            <section className="grid h-[calc(100vh-81px)] min-w-0 sm:h-[calc(100vh-97px)] lg:h-[calc(100vh-105px)]">
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
                   <div className="grid gap-3 border-b border-[#E5E7EB] bg-white p-4 lg:grid-cols-[minmax(320px,1fr)_170px_150px] lg:items-center xl:grid-cols-[minmax(360px,1fr)_180px_160px_auto]">
                     <div className="relative min-w-0">
@@ -1517,8 +1792,7 @@ const AdminDashboard: React.FC = () => {
                       <option value="sold_out">售罄</option>
                       <option value="inactive">下架</option>
                     </select>
-                    <div className="grid grid-cols-[44px_minmax(0,1fr)] gap-3 sm:flex sm:justify-end lg:col-span-3 xl:col-span-1">
-                      <IconButton title="刷新" onClick={() => { void loadMenuItems(); void loadCategories(); }}><RefreshCw size={17} /></IconButton>
+                    <div className="flex justify-end lg:col-span-3 xl:col-span-1">
                       <button type="button" onClick={startCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 sm:min-w-[128px]">
                         <Plus size={17} />
                         新增菜品
@@ -1615,21 +1889,24 @@ const AdminDashboard: React.FC = () => {
                     ))}
                   </div>
                 </div>
-              )}
-              {menuMode === 'categories' && (
+            </section>
+          )}
+          {section === 'menuCategories' && (
+            <section className="min-w-0">
                 <CategoryManager
                   categories={menuCategories}
                   form={categoryForm}
                   setForm={setCategoryForm}
                   editingCategory={editingCategory}
+                  editorOpen={isCategoryEditorOpen}
                   onSubmit={saveCategory}
+                  onCreate={startCreateCategory}
                   onEdit={startEditCategory}
+                  onToggleActive={toggleCategoryActive}
                   onDelete={deleteCategory}
                   onCancel={resetCategoryForm}
-                  onRefresh={loadCategories}
                 />
-              )}
-              </section>
+            </section>
           )}
 
           {section === 'orders' && (
@@ -1642,7 +1919,7 @@ const AdminDashboard: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <button type="button" onClick={loadOrders} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 hover:border-slate-300">
+                <button type="button" onClick={() => void loadOrders()} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 hover:border-slate-300">
                   <RefreshCw size={17} />
                   刷新
                 </button>
@@ -1715,32 +1992,43 @@ const AdminDashboard: React.FC = () => {
 
           {section === 'delivery' && <DeliveryBoard api={api} />}
 
+          {section === 'finance' && auth.admin && (
+            <FinanceCenter api={api} admin={auth.admin} onNotice={showNotice} />
+          )}
+
+          {section === 'coupons' && auth.admin && (
+            <CouponCenter api={api} admin={auth.admin} onNotice={showNotice} />
+          )}
+
           {section === 'storeBranches' && (
             <StoreBranchManager
               branches={storeBranches}
               form={storeBranchForm}
               setForm={setStoreBranchForm}
               error={storeBranchError}
+              editorOpen={isStoreBranchEditorOpen}
               onSubmit={saveStoreBranch}
+              onCreate={startCreateStoreBranch}
               onEdit={startEditStoreBranch}
               onToggleActive={toggleStoreBranchActive}
               onCancel={resetStoreBranchForm}
-              onRefresh={loadStoreBranches}
             />
           )}
 
           {section === 'accounts' && (
             <AccountManager
               accounts={accounts}
+              branches={storeBranches}
               form={accountForm}
               setForm={setAccountForm}
               error={accountError}
+              editorOpen={isAccountEditorOpen}
               onSubmit={saveAccount}
+              onCreate={startCreateAccount}
               onEdit={startEditAccount}
               onToggleActive={toggleAccountActive}
               onDelete={deleteAccount}
               onCancel={resetAccountForm}
-              onRefresh={loadAccounts}
             />
           )}
 
@@ -1784,45 +2072,275 @@ const AdminDashboard: React.FC = () => {
                 <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Order Detail</p>
                 <h3 className="text-2xl font-bold text-slate-950">{selectedOrder.order.order_no}</h3>
               </div>
-              <IconButton title="关闭" onClick={() => setSelectedOrder(null)}><X size={18} /></IconButton>
+              <div className="flex items-center gap-2">
+                {selectedOrder.order.order_source === 'admin_created' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentChangeReason('');
+                      setPaymentReceiptFile(null);
+                      setIsOrderChangeOpen(true);
+                    }}
+                    className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
+                  >
+                    <Pencil size={16} />
+                    修改订单
+                  </button>
+                )}
+                <IconButton title="关闭" onClick={() => { setSelectedOrder(null); setIsOrderChangeOpen(false); }}><X size={18} /></IconButton>
+              </div>
             </div>
             <div className="space-y-5 p-5">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="font-bold text-slate-950">{selectedOrder.order.customer_name}</p>
-                <p className="mt-1 text-sm text-slate-400">{selectedOrder.order.customer_phone}</p>
-                <p className="mt-1 text-sm text-slate-400">{selectedOrder.order.order_type === 'dinein' ? `桌号 ${selectedOrder.order.table_no || '-'}` : selectedOrder.order.delivery_address}</p>
-                {selectedOrder.order.order_type === 'takeaway' && (
-                  <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
-                    <p className="font-bold">分配门店：{selectedOrder.order.assigned_branch_name || '-'}</p>
-                    <p>配送距离：{formatNumber(selectedOrder.order.delivery_distance_km, 2)} km · 预计 {formatNumber(selectedOrder.order.delivery_duration_min, 0)} 分钟</p>
+              <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.08)]">
+                <div className="border-b border-slate-100 bg-slate-950 px-5 py-4 text-white">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Soup Can Thin</p>
+                      <h4 className="mt-1 text-2xl font-black tracking-normal">{selectedOrder.order.order_no}</h4>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-slate-300">订单状态</p>
+                      <p className="mt-1 text-base font-black">{labelOrderStatus(selectedOrder.order.status)}</p>
+                    </div>
                   </div>
-                )}
+                  <p className="mt-3 text-xs font-semibold text-slate-300">{formatDateTime(selectedOrder.order.created_at)}</p>
+                </div>
+
+                <div className="grid gap-4 p-5">
+                  <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm">
+                    <ReceiptRow label="顾客" value={selectedOrder.order.customer_name} />
+                    <ReceiptRow label="电话" value={selectedOrder.order.customer_phone} />
+                    <ReceiptRow
+                      label={selectedOrder.order.order_type === 'dinein' ? '堂食桌号' : '配送地址'}
+                      value={selectedOrder.order.order_type === 'dinein' ? selectedOrder.order.table_no || '-' : selectedOrder.order.delivery_address || '-'}
+                    />
+                    <ReceiptRow label="门店" value={selectedOrder.order.assigned_branch_name || '-'} />
+                    {selectedOrder.order.order_type === 'takeaway' && (
+                      <ReceiptRow label="配送" value={`${formatNumber(selectedOrder.order.delivery_distance_km, 2)} km · 约 ${formatNumber(selectedOrder.order.delivery_duration_min, 0)} 分钟`} />
+                    )}
+                  </div>
+
+                  <div className="divide-y divide-slate-100 rounded-2xl border border-slate-100">
+                    {selectedOrder.items.map(item => (
+                      <div key={`receipt-${item.id || item.name}`} className="flex justify-between gap-4 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-950">{item.name}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">x{item.quantity} · RM {Number(item.unit_price).toFixed(2)}</p>
+                          {Array.isArray(item.selected_options) && item.selected_options.length > 0 && (
+                            <p className="mt-1 text-xs font-semibold text-slate-500">{formatOrderItemOptions(item.selected_options)}</p>
+                          )}
+                          {item.item_note && <p className="mt-1 text-xs font-semibold text-amber-700">{item.item_note}</p>}
+                        </div>
+                        <p className="shrink-0 text-sm font-black text-slate-950">RM {Number(item.line_total).toFixed(2)}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm">
+                    <ReceiptRow label="小计" value={`RM ${Number(selectedOrder.order.subtotal ?? selectedOrder.order.total ?? 0).toFixed(2)}`} />
+                    {Number(selectedOrder.order.delivery_fee || 0) > 0 && <ReceiptRow label="配送费" value={`RM ${Number(selectedOrder.order.delivery_fee || 0).toFixed(2)}`} />}
+                    {Number(selectedOrder.order.discount_amount || 0) > 0 && <ReceiptRow label="优惠" value={`-RM ${Number(selectedOrder.order.discount_amount || 0).toFixed(2)}`} />}
+                    <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3">
+                      <span className="text-base font-black text-slate-950">应付总额</span>
+                      <span className="text-2xl font-black text-slate-950">RM {Number(selectedOrder.order.payable_total ?? selectedOrder.order.total).toFixed(2)}</span>
+                    </div>
+                    <ReceiptRow label="支付方式" value={labelPayment(selectedOrder.order.payment_method)} />
+                    <ReceiptRow label="支付状态" value={labelPaymentStatus(selectedOrder.order.payment_status)} />
+                  </div>
+
+                  {selectedOrder.order.note && (
+                    <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold leading-6 text-amber-800">{selectedOrder.order.note}</p>
+                  )}
+                </div>
+              </section>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={toneForOrder(selectedOrder.order.status)}>{labelOrderStatus(selectedOrder.order.status)}</Badge>
+                  <Badge tone="muted">{labelOrderType(selectedOrder.order.order_type)}</Badge>
+                  <Badge tone={selectedOrder.order.order_source === 'admin_created' ? 'blue' : 'muted'}>{labelOrderSource(selectedOrder.order.order_source)}</Badge>
+                </div>
+                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <DetailItem label="下单时间" value={formatDateTime(selectedOrder.order.created_at)} />
+                  <DetailItem label="最近操作" value={selectedOrder.order.last_status_changed_at ? `${selectedOrder.order.last_operator_name || '后台'} · ${formatDateTime(selectedOrder.order.last_status_changed_at)}` : '-'} />
+                  <DetailItem label="订单编号" value={selectedOrder.order.order_no} />
+                  <DetailItem label="用户 ID" value={selectedOrder.order.user_id || '-'} />
+                </div>
               </div>
+
+              <DetailSection title="顾客信息">
+                <DetailGrid>
+                  <DetailItem label="姓名" value={selectedOrder.order.customer_name} />
+                  <DetailItem label="电话" value={selectedOrder.order.customer_phone} />
+                  <DetailItem label={selectedOrder.order.order_type === 'dinein' ? '桌号' : '配送地址'} value={selectedOrder.order.order_type === 'dinein' ? selectedOrder.order.table_no || '-' : selectedOrder.order.delivery_address || '-'} wide={selectedOrder.order.order_type === 'takeaway'} />
+                  <DetailItem label="分配门店" value={selectedOrder.order.assigned_branch_name || '-'} />
+                </DetailGrid>
+              </DetailSection>
+
+              {selectedOrder.order.order_type === 'takeaway' && (
+                <DetailSection title="配送信息">
+                  <DetailGrid>
+                    <DetailItem label="距离" value={`${formatNumber(selectedOrder.order.delivery_distance_km, 2)} km`} />
+                    <DetailItem label="预计时间" value={`${formatNumber(selectedOrder.order.delivery_duration_min, 0)} 分钟`} />
+                    <DetailItem label="报价来源" value={selectedOrder.order.delivery_quote_provider || '-'} />
+                    <DetailItem label="配送费" value={`RM ${Number(selectedOrder.order.delivery_fee || 0).toFixed(2)}`} />
+                  </DetailGrid>
+                </DetailSection>
+              )}
+
+              <DetailSection title="支付与金额">
+                <DetailGrid>
+                  <DetailItem label="支付方式" value={labelPayment(selectedOrder.order.payment_method)} />
+                  <DetailItem label="支付状态" value={labelPaymentStatus(selectedOrder.order.payment_status)} />
+                  <DetailItem label="审核状态" value={labelPaymentReviewStatus(selectedOrder.order.payment_review_status)} />
+                  <DetailItem label="通知状态" value={selectedOrder.order.notification_status || '-'} />
+                  <DetailItem label="小计" value={`RM ${Number(selectedOrder.order.subtotal ?? selectedOrder.order.total ?? 0).toFixed(2)}`} />
+                  <DetailItem label="服务费" value={`RM ${Number(selectedOrder.order.service_charge || 0).toFixed(2)}`} />
+                  <DetailItem label="优惠" value={`RM ${Number(selectedOrder.order.discount_amount || 0).toFixed(2)}`} />
+                  <DetailItem label="应付总额" value={`RM ${Number(selectedOrder.order.payable_total ?? selectedOrder.order.total).toFixed(2)}`} />
+                </DetailGrid>
+              </DetailSection>
+
               <div>
                 <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">订单状态</label>
                 <select value={selectedOrder.order.status} onChange={event => updateOrderStatus(selectedOrder.order.id, event.target.value as OrderStatus)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-blue-500">
                   {orderStatusOptions.filter(item => item.value !== 'all').map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </div>
-              <div className="rounded-2xl border border-slate-200">
+
+              <DetailSection title="菜品明细">
+                <div className="rounded-2xl border border-slate-200">
                 {selectedOrder.items.map(item => (
                   <div key={item.id || item.name} className="flex justify-between gap-4 border-b border-slate-100 p-4 last:border-b-0">
                     <div>
                       <p className="font-bold text-slate-950">{item.item_code ? `${item.item_code} · ` : ''}{item.name}</p>
                       <p className="mt-1 text-xs text-slate-500">x{item.quantity} · RM {Number(item.unit_price).toFixed(2)}</p>
+                      {Array.isArray(item.selected_options) && item.selected_options.length > 0 && (
+                        <p className="mt-1 text-xs text-slate-500">{formatOrderItemOptions(item.selected_options)}</p>
+                      )}
                       {item.item_note && <p className="mt-1 text-xs text-slate-500">{item.item_note}</p>}
                     </div>
                     <p className="font-bold text-slate-950">RM {Number(item.line_total).toFixed(2)}</p>
                   </div>
                 ))}
-              </div>
+                </div>
+              </DetailSection>
+
+              {selectedOrder.order.note && (
+                <DetailSection title="订单备注">
+                  <p className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800">{selectedOrder.order.note}</p>
+                </DetailSection>
+              )}
+
               {selectedOrder.order.receipt_url && (
                 <a href={selectedOrder.order.receipt_url} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-700 hover:border-slate-400">
                   查看付款截图
                 </a>
               )}
+
+              <DetailSection title="修改记录">
+                {selectedOrder.changes.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 px-4 py-5 text-center text-sm font-semibold text-slate-400">暂无修改记录</p>
+                ) : (
+                  <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200">
+                    {selectedOrder.changes.map(change => {
+                      const hasReview = selectedOrder.changes.some(item => item.related_event_id === change.id);
+                      const receiptUrl = stringFromChangeData(change.after_data, 'receipt_url');
+                      const isPendingSubmission = change.action === 'submitted'
+                        && !hasReview
+                        && selectedOrder.order.payment_review_status === 'pending';
+                      return (
+                        <div key={change.id} className="p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-black text-slate-950">{labelOrderChangeAction(change.action)}</p>
+                              <p className="mt-1 text-xs font-semibold text-slate-500">{change.operator_name} · {formatDateTime(change.created_at)}</p>
+                            </div>
+                            <Badge tone={change.action === 'approved' ? 'green' : change.action === 'rejected' ? 'red' : 'orange'}>
+                              {change.action === 'submitted' ? '待审核' : change.action === 'approved' ? '已通过' : '已拒绝'}
+                            </Badge>
+                          </div>
+                          <p className="mt-3 text-sm font-semibold text-slate-700">
+                            {labelPayment(stringFromChangeData(change.before_data, 'payment_method'))}
+                            {' → '}
+                            {labelPayment(stringFromChangeData(change.after_data, 'payment_method'))}
+                          </p>
+                          {change.reason && <p className="mt-2 text-sm leading-6 text-slate-600">原因：{change.reason}</p>}
+                          {receiptUrl && (
+                            <a href={receiptUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-bold text-blue-600 hover:text-blue-500">查看本次付款截图</a>
+                          )}
+                          {isPendingSubmission && (auth.admin?.role === 'admin' || auth.admin?.role === 'owner') && (
+                            <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-3">
+                              <textarea
+                                value={paymentReviewReason}
+                                onChange={event => setPaymentReviewReason(event.target.value)}
+                                rows={2}
+                                placeholder="拒绝时填写原因"
+                                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <button type="button" disabled={paymentReviewSubmitting} onClick={() => reviewPaymentMethodChange(change.id, 'reject')} className="h-10 rounded-xl border border-red-200 bg-white text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-50">拒绝</button>
+                                <button type="button" disabled={paymentReviewSubmitting} onClick={() => reviewPaymentMethodChange(change.id, 'approve')} className="h-10 rounded-xl bg-emerald-600 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50">通过</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </DetailSection>
             </div>
           </aside>
+        </div>
+      )}
+
+      {selectedOrder && isOrderChangeOpen && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm">
+          <section className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase text-slate-400">{selectedOrder.order.order_no}</p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">修改订单</h3>
+              </div>
+              <IconButton title="关闭" onClick={() => setIsOrderChangeOpen(false)}><X size={18} /></IconButton>
+            </div>
+            <div className="grid gap-4 p-5">
+              <div className="rounded-xl border border-slate-200 p-4">
+                <p className="text-sm font-black text-slate-950">支付方式</p>
+                <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm font-bold">
+                  <span className="rounded-lg bg-slate-100 px-3 py-2 text-center text-slate-700">{labelPayment(selectedOrder.order.payment_method)}</span>
+                  <ChevronRight size={16} className="text-slate-400" />
+                  <span className="rounded-lg bg-blue-50 px-3 py-2 text-center text-blue-700">Touch 'n Go</span>
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-700">修改原因</span>
+                <textarea value={paymentChangeReason} onChange={event => setPaymentChangeReason(event.target.value)} rows={3} placeholder="例如：顾客实际使用转账付款" className="mt-2 w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-blue-500" />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-700">付款截图</span>
+                <span className="mt-2 flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-600 transition hover:border-blue-400 hover:text-blue-600">
+                  <Upload size={16} />
+                  <span className="min-w-0 truncate">{paymentReceiptFile?.name || '选择 JPG 或 PNG 图片'}</span>
+                  <input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={event => setPaymentReceiptFile(event.target.files?.[0] || null)} />
+                </span>
+              </label>
+
+              {!canSubmitPaymentChange(selectedOrder.order) && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">当前付款状态不可修改</p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setIsOrderChangeOpen(false)} className="h-11 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50">取消</button>
+                <button type="button" disabled={!canSubmitPaymentChange(selectedOrder.order) || paymentChangeSubmitting} onClick={submitPaymentMethodChange} className="h-11 rounded-xl bg-blue-600 text-sm font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  {paymentChangeSubmitting ? '提交中' : '提交修改'}
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
       )}
 
@@ -2573,6 +3091,145 @@ function CustomerOrderManager({ customers, customerSearch, setCustomerSearch, se
   onSearch: () => void;
   onCreateCustomer: (event: React.FormEvent) => void;
   onRefreshMenu: () => void;
+  onAddLine: (menuItemId?: string) => void;
+  onUpdateLine: (lineId: string, patch: Partial<CustomerOrderLine>) => void;
+  onRemoveLine: (lineId: string) => void;
+  onLoadDeliveryPreview: () => void;
+  onSubmit: (event: React.FormEvent) => void;
+}) {
+  const [activeStep, setActiveStep] = useState(selectedCustomer ? 1 : 0);
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [menuQuery, setMenuQuery] = useState('');
+  const [menuCategory, setMenuCategory] = useState('all');
+  const updateCustomer = (key: keyof CustomerFormState, value: string) => setCustomerForm(prev => ({ ...prev, [key]: value }));
+  const updateOrder = (key: keyof CustomerOrderFormState, value: string | CustomerOrderFormState['items']) => setOrderForm(prev => ({ ...prev, [key]: value }));
+  const totals = calculateCustomerOrderTotals(orderForm, menuItems, deliveryPreview);
+  const categories = Array.from(new Set(menuItems.map(item => item.category).filter(Boolean)));
+  const visibleMenuItems = menuItems.filter(item => {
+    const query = menuQuery.trim().toLowerCase();
+    return (menuCategory === 'all' || item.category === menuCategory)
+      && (!query || item.name.toLowerCase().includes(query) || String(item.code || '').toLowerCase().includes(query));
+  });
+  const selectedLines = orderForm.items.map(line => ({ line, menuItem: menuItems.find(item => String(item.id) === line.menuItemId) })).filter(item => item.menuItem);
+  const diningInfoReady = Boolean(
+    orderForm.branchId
+    && (orderForm.orderType === 'dinein' ? orderForm.tableNo.trim() : orderForm.address.trim()),
+  );
+  const stepLabels = ['选择顾客', '用餐信息', '选择菜品', '确认订单'];
+  const maxUnlockedStep = !selectedCustomer ? 0 : !diningInfoReady ? 1 : selectedLines.length === 0 ? 2 : 3;
+  useEffect(() => {
+    if (selectedCustomer && activeStep === 0) setActiveStep(1);
+  }, [selectedCustomer?.id]);
+  useEffect(() => {
+    if (activeStep > maxUnlockedStep) setActiveStep(maxUnlockedStep);
+  }, [activeStep, maxUnlockedStep]);
+  const chooseCustomer = (customer: CustomerRow) => {
+    setSelectedCustomer(customer);
+    setCreateCustomerOpen(false);
+    setActiveStep(1);
+  };
+  const goToStep = (step: number) => {
+    if (step <= maxUnlockedStep) setActiveStep(step);
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+      <Panel className="z-[15] shrink-0 px-3 py-2 shadow-[0_10px_26px_rgba(15,23,42,0.06)]">
+        <div className="relative grid grid-cols-4">
+          <span className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-[14px] h-px bg-slate-200" />
+          <span className="pointer-events-none absolute left-[12.5%] top-[14px] h-px bg-emerald-400 transition-all duration-300" style={{ width: `${activeStep * 25}%` }} />
+        {stepLabels.map((label, index) => {
+          const active = index === activeStep;
+          const completed = index < activeStep;
+          const unlocked = index <= maxUnlockedStep;
+          return <button key={label} type="button" disabled={!unlocked} onClick={() => goToStep(index)} className={`group relative z-[1] flex min-w-0 flex-col items-center gap-1 px-1 text-[11px] font-bold transition disabled:cursor-not-allowed ${active ? 'text-blue-700' : completed ? 'text-emerald-700' : 'text-slate-400'}`}><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 transition ${active ? 'border-blue-600 bg-blue-600 text-white shadow-[0_0_0_3px_rgba(37,99,235,0.12)]' : completed ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-200 bg-white text-slate-400'}`}>{completed ? <Check size={13} strokeWidth={3} /> : index + 1}</span><span className="hidden truncate sm:block">{label}</span></button>;
+        })}
+        </div>
+      </Panel>
+
+      {error && <div className="flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700"><AlertCircle size={16} />{error}</div>}
+
+      <div className={`grid min-h-0 min-w-0 flex-1 gap-3 overflow-hidden ${activeStep >= 2 ? 'xl:grid-cols-[minmax(0,1fr)_380px]' : 'grid-cols-1'}`}>
+        <Panel className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="flex min-h-[50px] shrink-0 items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/50 px-4 py-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="h-6 w-1 shrink-0 rounded-full bg-blue-600" />
+              <div className="flex min-w-0 items-center gap-2.5">
+                <h2 className="shrink-0 text-[15px] font-black text-slate-950">{stepLabels[activeStep]}</h2>
+                <span className="hidden h-3 w-px bg-slate-300 sm:block" />
+                <p className="hidden truncate text-xs text-slate-500 sm:block">{activeStep === 0 ? '搜索并选择本次下单的顾客' : activeStep === 1 ? '设置订单类型、门店和就餐信息' : activeStep === 2 ? '选择菜品并调整订单数量' : '核对全部信息后创建订单'}</p>
+              </div>
+            </div>
+            <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500">{activeStep + 1} / 4</span>
+          </div>
+
+          {activeStep === 0 && <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+              <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} /><input value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && onSearch()} placeholder="输入手机号或顾客姓名" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:bg-white" /></div>
+              <button type="button" onClick={onSearch} className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-600 hover:bg-slate-50">搜索</button>
+              <button type="button" onClick={() => setCreateCustomerOpen(open => !open)} className="h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white"><Plus size={16} className="mr-1 inline" />新建顾客</button>
+            </div>
+            {createCustomerOpen && <form onSubmit={onCreateCustomer} className="grid gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end"><Input label="手机号" value={customerForm.phone} onChange={value => updateCustomer('phone', value)} placeholder="0123456789" required /><Input label="顾客姓名" value={customerForm.name} onChange={value => updateCustomer('name', value)} placeholder="顾客姓名" required /><button type="submit" className="h-11 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white">创建并选择</button></form>}
+            <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+              {customers.map(customer => <button key={customer.id} type="button" onClick={() => chooseCustomer(customer)} className={`flex min-h-16 items-center justify-between rounded-2xl border p-3 text-left transition ${selectedCustomer?.id === customer.id ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-200 hover:bg-slate-50'}`}><span className="flex min-w-0 items-center gap-3"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black ${selectedCustomer?.id === customer.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{(customer.name || '顾').slice(0, 1).toUpperCase()}</span><span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-950">{customer.name || '未命名顾客'}</span><span className="mt-1 block text-xs font-semibold text-slate-500">{customer.displayPhone}</span></span></span>{selectedCustomer?.id === customer.id ? <Check size={17} className="text-blue-600" /> : <ChevronRight size={16} className="text-slate-400" />}</button>)}
+              {customers.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-200 py-14 text-center text-sm font-bold text-slate-400">没有找到顾客，可点击“新建顾客”快速创建</div>}
+            </div>
+          </div>}
+
+          {activeStep === 1 && <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+            {selectedCustomer && <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-full bg-blue-100 text-sm font-black text-blue-700">{(selectedCustomer.name || '顾').slice(0, 1).toUpperCase()}</span><div><p className="text-sm font-bold text-slate-950">{selectedCustomer.name || '未命名顾客'}</p><p className="mt-0.5 text-xs text-slate-500">{selectedCustomer.displayPhone}</p></div></div><button type="button" onClick={() => setActiveStep(0)} className="text-xs font-bold text-blue-600">更换顾客</button></div>}
+            <div className="grid gap-4 md:grid-cols-2"><SelectInput label="订单类型" value={orderForm.orderType} onChange={value => updateOrder('orderType', value)}><option value="dinein">堂食</option><option value="takeaway">外卖配送</option></SelectInput><SelectInput label="门店" value={orderForm.branchId} onChange={value => updateOrder('branchId', value)} required><option value="">请选择门店</option>{branches.filter(branch => branch.active).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</SelectInput></div>
+            {orderForm.orderType === 'dinein' ? <Input label="桌号" value={orderForm.tableNo} onChange={value => updateOrder('tableNo', value)} placeholder="例如 A1" required /> : <div className="grid gap-3"><Input label="配送地址" value={orderForm.address} onChange={value => updateOrder('address', value)} placeholder="输入完整配送地址" required /><div className="flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs font-bold text-blue-700 sm:flex-row sm:items-center sm:justify-between"><span>{deliveryPreview ? `${deliveryPreview.distanceKm.toFixed(2)} km · 约 ${deliveryPreview.durationMin} 分钟 · 配送费 RM ${deliveryPreview.deliveryFee.toFixed(2)}` : '地址填写完成后，请计算配送距离和费用'}</span><button type="button" onClick={onLoadDeliveryPreview} disabled={deliveryPreviewLoading || !orderForm.address.trim() || !orderForm.branchId} className="h-9 shrink-0 rounded-xl border border-blue-200 bg-white px-3 disabled:opacity-50">{deliveryPreviewLoading ? '计算中...' : '计算配送费'}</button></div></div>}
+            <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-4"><button type="button" onClick={() => setActiveStep(0)} className="h-10 rounded-xl border border-slate-200 px-5 text-sm font-bold text-slate-600">上一步</button><button type="button" disabled={!diningInfoReady} onClick={() => setActiveStep(2)} className="h-10 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">下一步：选择菜品</button></div>
+          </div>}
+
+          {activeStep === 2 && <div className="grid min-h-0 flex-1 grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} /><input value={menuQuery} onChange={event => setMenuQuery(event.target.value)} placeholder="搜索菜品名称或编码" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:bg-white" /></div><IconButton title="刷新菜单" onClick={onRefreshMenu}><RefreshCw size={17} /></IconButton></div>
+            <div className="flex gap-2 overflow-x-auto pb-1">{['all', ...categories].map(category => <button key={category} type="button" onClick={() => setMenuCategory(category)} className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold ${menuCategory === category ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{category === 'all' ? '全部' : category}</button>)}</div>
+            <div className="grid content-start gap-3 overflow-y-auto pr-1 md:grid-cols-2 2xl:grid-cols-3">{visibleMenuItems.map(item => <article key={item.id} className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 transition hover:border-blue-200 hover:shadow-sm">{item.image ? <img src={item.image} alt={item.name} className="h-16 w-16 shrink-0 rounded-xl object-cover" /> : <div className="grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-700"><Soup size={22} /></div>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-950">{item.code ? `${item.code} · ` : ''}{item.name}</p><p className="mt-1 text-sm font-black text-blue-600">RM {Number(item.price).toFixed(2)}</p><p className="mt-1 text-[11px] font-bold text-emerald-600">可售</p></div><button type="button" aria-label={`添加${item.name}`} onClick={() => onAddLine(String(item.id))} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-blue-600 text-white hover:bg-blue-500"><Plus size={18} /></button></article>)}{visibleMenuItems.length === 0 && <div className="col-span-full rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm font-bold text-slate-400">没有符合条件的菜品</div>}</div>
+            <div className="flex items-center justify-between border-t border-slate-100 pt-3"><button type="button" onClick={() => setActiveStep(1)} className="h-10 rounded-xl border border-slate-200 px-5 text-sm font-bold text-slate-600">上一步</button><button type="button" disabled={selectedLines.length === 0} onClick={() => setActiveStep(3)} className="h-10 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">下一步：确认订单</button></div>
+          </div>}
+
+          {activeStep === 3 && <form onSubmit={onSubmit} className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto p-4">
+            <div className="grid gap-3 md:grid-cols-2"><button type="button" onClick={() => setActiveStep(0)} className="rounded-2xl border border-slate-200 p-4 text-left hover:border-blue-200"><p className="text-xs font-bold text-slate-400">顾客</p><p className="mt-2 text-sm font-bold text-slate-950">{selectedCustomer?.name || '未选择'}</p><p className="mt-1 text-xs text-slate-500">{selectedCustomer?.displayPhone}</p></button><button type="button" onClick={() => setActiveStep(1)} className="rounded-2xl border border-slate-200 p-4 text-left hover:border-blue-200"><p className="text-xs font-bold text-slate-400">用餐信息</p><p className="mt-2 text-sm font-bold text-slate-950">{orderForm.orderType === 'dinein' ? `堂食 · 桌号 ${orderForm.tableNo}` : '外卖配送'}</p><p className="mt-1 truncate text-xs text-slate-500">{branches.find(branch => branch.id === orderForm.branchId)?.name}{orderForm.orderType === 'takeaway' ? ` · ${orderForm.address}` : ''}</p></button></div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200"><div className="flex items-center justify-between bg-slate-50 px-4 py-3"><p className="text-sm font-bold text-slate-950">订单菜品</p><button type="button" onClick={() => setActiveStep(2)} className="text-xs font-bold text-blue-600">修改菜品</button></div><div className="divide-y divide-slate-100">{selectedLines.map(({ line, menuItem }) => <div key={line.lineId} className="flex items-center justify-between gap-3 px-4 py-3"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-950">{menuItem?.name} × {line.quantity}</p>{line.note && <p className="mt-1 truncate text-xs text-slate-500">备注：{line.note}</p>}</div><p className="shrink-0 text-sm font-black">RM {(Number(menuItem?.price || 0) * line.quantity).toFixed(2)}</p></div>)}</div></div>
+            <TextArea label="订单备注" value={orderForm.note} onChange={value => updateOrder('note', value)} />
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4"><button type="button" onClick={() => setActiveStep(2)} className="h-11 rounded-xl border border-slate-200 px-5 text-sm font-bold text-slate-600">上一步</button><button type="submit" disabled={submitting} className="flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] disabled:opacity-50"><ShoppingCart size={17} />{submitting ? '正在创建...' : `确认创建 · RM ${totals.total.toFixed(2)}`}</button></div>
+          </form>}
+        </Panel>
+
+        {activeStep >= 2 && <Panel className="flex min-h-0 flex-col overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h3 className="text-lg font-bold text-slate-950">订单摘要</h3><p className="mt-1 text-xs text-slate-500">{selectedLines.reduce((sum, item) => sum + item.line.quantity, 0)} 件商品</p></div><ShoppingCart size={20} className="text-slate-400" /></div>
+          <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
+            {selectedLines.map(({ line, menuItem }) => <div key={line.lineId} className="grid gap-2 p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-950">{menuItem?.name}</p><p className="mt-1 text-xs font-bold text-slate-500">RM {Number(menuItem?.price || 0).toFixed(2)}</p></div><button type="button" onClick={() => onRemoveLine(line.lineId)} className="text-slate-400 hover:text-red-600"><Trash2 size={16} /></button></div><div className="flex items-center justify-between gap-3"><div className="inline-flex items-center rounded-xl border border-slate-200"><button type="button" onClick={() => line.quantity <= 1 ? onRemoveLine(line.lineId) : onUpdateLine(line.lineId, { quantity: line.quantity - 1 })} className="grid h-9 w-9 place-items-center text-slate-500"><Minus size={15} /></button><span className="w-8 text-center text-sm font-bold">{line.quantity}</span><button type="button" onClick={() => onUpdateLine(line.lineId, { quantity: line.quantity + 1 })} className="grid h-9 w-9 place-items-center text-slate-500"><Plus size={15} /></button></div><p className="text-sm font-black">RM {(Number(menuItem?.price || 0) * line.quantity).toFixed(2)}</p></div><input value={line.note} onChange={event => onUpdateLine(line.lineId, { note: event.target.value })} placeholder="添加菜品备注" className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs outline-none focus:border-blue-500 focus:bg-white" /></div>)}
+            {selectedLines.length === 0 && <div className="grid min-h-52 place-items-center px-6 text-center"><div><ShoppingCart size={28} className="mx-auto text-slate-300" /><p className="mt-3 text-sm font-bold text-slate-400">完成前两步后选择菜品</p></div></div>}
+          </div>
+          <div className="grid shrink-0 gap-3 border-t border-slate-200 bg-white p-4"><div className="grid gap-2 text-sm"><SummaryRow label="小计" value={`RM ${totals.subtotal.toFixed(2)}`} /><SummaryRow label="配送费" value={`RM ${totals.deliveryFee.toFixed(2)}`} /><SummaryRow label="应付" value={`RM ${totals.total.toFixed(2)}`} strong /></div></div>
+        </Panel>}
+      </div>
+    </div>
+  );
+}
+
+function CustomerOrderManagerLegacy({ customers, customerSearch, setCustomerSearch, selectedCustomer, setSelectedCustomer, customerForm, setCustomerForm, orderForm, setOrderForm, menuItems, branches, error, submitting, deliveryPreview, deliveryPreviewLoading, onSearch, onCreateCustomer, onRefreshMenu, onAddLine, onUpdateLine, onRemoveLine, onLoadDeliveryPreview, onSubmit }: {
+  customers: CustomerRow[];
+  customerSearch: string;
+  setCustomerSearch: (value: string) => void;
+  selectedCustomer: CustomerRow | null;
+  setSelectedCustomer: (customer: CustomerRow | null) => void;
+  customerForm: CustomerFormState;
+  setCustomerForm: React.Dispatch<React.SetStateAction<CustomerFormState>>;
+  orderForm: CustomerOrderFormState;
+  setOrderForm: React.Dispatch<React.SetStateAction<CustomerOrderFormState>>;
+  menuItems: OrderMenuItem[];
+  branches: StoreBranchRow[];
+  error: string;
+  submitting: boolean;
+  deliveryPreview: { deliveryFee: number; distanceKm: number; durationMin: number } | null;
+  deliveryPreviewLoading: boolean;
+  onSearch: () => void;
+  onCreateCustomer: (event: React.FormEvent) => void;
+  onRefreshMenu: () => void;
   onAddLine: () => void;
   onUpdateLine: (lineId: string, patch: Partial<CustomerOrderLine>) => void;
   onRemoveLine: (lineId: string) => void;
@@ -2774,331 +3431,383 @@ function SummaryRow({ label, value, strong = false }: { label: string; value: st
   );
 }
 
-function StoreBranchManager({ branches, form, setForm, error, onSubmit, onEdit, onToggleActive, onCancel, onRefresh }: {
+function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h4 className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+function DetailGrid({ children }: { children: React.ReactNode }) {
+  return <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-2">{children}</div>;
+}
+
+function DetailItem({ label, value, wide = false }: { label: string; value: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? 'sm:col-span-2' : ''}>
+      <p className="text-xs font-bold text-slate-400">{label}</p>
+      <p className="mt-1 break-words text-sm font-bold leading-6 text-slate-950">{value || '-'}</p>
+    </div>
+  );
+}
+
+function ReceiptRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="shrink-0 text-xs font-bold text-slate-500">{label}</span>
+      <span className="text-right text-sm font-black leading-5 text-slate-950">{value || '-'}</span>
+    </div>
+  );
+}
+
+function StoreBranchManager({ branches, form, setForm, error, editorOpen, onSubmit, onCreate, onEdit, onToggleActive, onCancel }: {
   branches: StoreBranchRow[];
   form: StoreBranchFormState;
   setForm: React.Dispatch<React.SetStateAction<StoreBranchFormState>>;
   error: string;
+  editorOpen: boolean;
   onSubmit: (event: React.FormEvent) => void;
+  onCreate: () => void;
   onEdit: (branch: StoreBranchRow) => void;
   onToggleActive: (branch: StoreBranchRow) => void;
   onCancel: () => void;
-  onRefresh: () => void;
 }) {
-  const editing = Boolean(form.id);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  const editing = branches.some(branch => branch.id === form.id);
   const update = (key: keyof StoreBranchFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+  const filteredBranches = branches.filter(branch => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch = !query || branch.name.toLowerCase().includes(query) || branch.address.toLowerCase().includes(query);
+    const matchesStatus = status === 'all' || (status === 'active' ? branch.active : !branch.active);
+    return matchesSearch && matchesStatus;
+  });
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[400px_1fr]">
-      <Panel className="p-4">
-        <div className="mb-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Branches</p>
-          <h3 className="mt-1 text-xl font-bold text-slate-950">{editing ? '编辑门店' : '选择门店'}</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">停用门店后，新配送报价不会再从该门店出发。</p>
+    <div className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <MetricCard label="门店总数" value={branches.length} />
+        <MetricCard label="营业中" value={branches.filter(branch => branch.active).length} tone="green" />
+        <MetricCard label="已停用" value={branches.filter(branch => !branch.active).length} tone="muted" />
+      </div>
+      <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="grid shrink-0 gap-3 border-b border-slate-200 bg-white p-4 md:grid-cols-[minmax(280px,1fr)_180px_auto] md:items-center">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索门店名称或地址" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:bg-white" />
+          </div>
+          <select value={status} onChange={event => setStatus(event.target.value as typeof status)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+            <option value="all">全部状态</option>
+            <option value="active">营业中</option>
+            <option value="inactive">已停用</option>
+          </select>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onCreate} className="flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] hover:bg-blue-500"><Plus size={17} />新增门店</button>
+          </div>
         </div>
-        {error && (
-          <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
-            <AlertCircle className="mt-0.5 shrink-0" size={16} />
-            {error}
-          </div>
-        )}
-        <form onSubmit={onSubmit} className="grid gap-3">
-          <Input label="门店 ID" value={form.id || '请从右侧列表选择'} onChange={() => undefined} disabled />
-          <Input label="门店名称" value={form.name} onChange={value => update('name', value)} placeholder="PUDU 区" required disabled={!editing} />
-          <TextArea label="门店地址" value={form.address} onChange={value => update('address', value)} required disabled={!editing} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input label="纬度" value={form.latitude} onChange={value => update('latitude', value)} type="number" placeholder="自动解析可留空" disabled={!editing} />
-            <Input label="经度" value={form.longitude} onChange={value => update('longitude', value)} type="number" placeholder="自动解析可留空" disabled={!editing} />
-          </div>
-          <Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" disabled={!editing} />
-          <Toggle label={form.active ? '启用门店' : '停用门店'} checked={form.active} onChange={value => update('active', value)} disabled={!editing} />
-          <div className="flex gap-2 pt-2">
-            <button type="submit" disabled={!editing} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">
-              <Save size={16} />
-              保存门店
-            </button>
-            {editing && <IconButton title="取消编辑" onClick={onCancel}><X size={17} /></IconButton>}
-          </div>
-        </form>
-      </Panel>
-
-      <Panel className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Branch List</p>
-            <h3 className="text-lg font-bold text-slate-950">门店列表</h3>
-          </div>
-          <IconButton title="刷新门店" onClick={onRefresh}><RefreshCw size={17} /></IconButton>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
             <colgroup>
-              <col className="w-[11%]" />
-              <col className="w-[16%]" />
-              <col className="w-[31%]" />
-              <col className="w-[16%]" />
-              <col className="w-[8%]" />
-              <col className="w-[8%]" />
+              <col className="w-[20%]" />
+              <col className="w-[38%]" />
+              <col className="w-[12%]" />
               <col className="w-[10%]" />
+              <col className="w-[20%]" />
             </colgroup>
-            <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 shadow-[inset_0_-1px_0_#E5E7EB]">
               <tr>
-                <th className="px-4 py-3 text-center font-bold">ID</th>
-                <th className="px-4 py-3 text-center font-bold">门店</th>
-                <th className="px-4 py-3 text-center font-bold">地址</th>
-                <th className="px-4 py-3 text-center font-bold">坐标</th>
-                <th className="px-4 py-3 text-center font-bold">排序</th>
+                <th className="px-5 py-3 text-left font-bold">门店名称</th>
+                <th className="px-4 py-3 text-left font-bold">地址</th>
                 <th className="px-4 py-3 text-center font-bold">状态</th>
+                <th className="px-4 py-3 text-center font-bold">排序</th>
                 <th className="px-4 py-3 text-center font-bold">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {branches.map(branch => (
-                <tr key={branch.id} className="transition hover:bg-slate-50/80">
-                  <td className="px-4 py-4 text-center align-middle font-bold text-slate-950">{branch.id}</td>
-                  <td className="px-4 py-4 text-center align-middle">
+              {filteredBranches.map(branch => (
+                <tr key={branch.id} className="h-[72px] cursor-pointer transition hover:bg-slate-50/80" onClick={() => onEdit(branch)}>
+                  <td className="px-5 py-3 align-middle">
                     <p className="font-bold text-slate-950">{branch.name}</p>
-                    <p className="mt-1 text-xs text-slate-400">{branch.updated_at ? formatDate(branch.updated_at) : '-'}</p>
+                    <p className="mt-1 text-xs text-slate-400">{branch.id} · {branch.updated_at ? formatDate(branch.updated_at) : '-'}</p>
                   </td>
-                  <td className="px-4 py-4 text-left align-middle text-slate-600">{branch.address}</td>
-                  <td className="px-4 py-4 text-center align-middle text-slate-500">{formatCoordinates(branch)}</td>
+                  <td className="px-4 py-3 text-left align-middle text-slate-600"><p className="line-clamp-2 leading-5">{branch.address}</p></td>
+                  <td className="px-4 py-4 text-center align-middle">
+                    <button type="button" onClick={event => { event.stopPropagation(); onToggleActive(branch); }} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${branch.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${branch.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />{branch.active ? '营业中' : '已停用'}</button>
+                  </td>
                   <td className="px-4 py-4 text-center align-middle text-slate-600">{branch.sort_order}</td>
                   <td className="px-4 py-4 text-center align-middle">
-                    <Badge tone={branch.active ? 'green' : 'muted'}>{branch.active ? '启用' : '停用'}</Badge>
-                  </td>
-                  <td className="px-4 py-4 text-center align-middle">
-                    <div className="flex justify-center gap-2">
-                      <IconButton title="编辑门店" onClick={() => onEdit(branch)}><Pencil size={16} /></IconButton>
-                      <button
-                        type="button"
-                        onClick={() => onToggleActive(branch)}
-                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${branch.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-                      >
-                        {branch.active ? '停用' : '启用'}
-                      </button>
-                    </div>
+                    <IconButton title="编辑门店" onClick={() => onEdit(branch)}><Pencil size={16} /></IconButton>
                   </td>
                 </tr>
               ))}
-              {branches.length === 0 && (
+              {filteredBranches.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm font-bold text-slate-400">暂无门店资料</td>
+                  <td colSpan={5} className="px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的门店</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
       </Panel>
+
+      {editorOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
+          <aside className="ml-auto flex h-full w-full max-w-[460px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div><h3 className="text-xl font-bold text-slate-950">{editing ? '编辑门店' : '新增门店'}</h3><p className="mt-1 text-xs text-slate-500">管理门店资料、营业状态与配送位置</p></div>
+              <IconButton title="关闭" onClick={onCancel}><X size={17} /></IconButton>
+            </div>
+            {error && <div className="mx-5 mt-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700"><AlertCircle size={16} />{error}</div>}
+            <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+              <div className="grid gap-4 overflow-y-auto p-5">
+                <Input label="门店 ID" value={form.id} onChange={value => update('id', value.toLowerCase())} placeholder="例如 bukit-bintang" required disabled={editing} />
+                <Input label="门店名称" value={form.name} onChange={value => update('name', value)} placeholder="PUDU 区" required />
+                <TextArea label="门店地址" value={form.address} onChange={value => update('address', value)} required />
+                <div className="grid gap-3 sm:grid-cols-2"><Input label="纬度" value={form.latitude} onChange={value => update('latitude', value)} type="number" placeholder="可留空自动解析" /><Input label="经度" value={form.longitude} onChange={value => update('longitude', value)} type="number" placeholder="可留空自动解析" /></div>
+                <Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" />
+                <Toggle label={form.active ? '门店营业中' : '门店已停用'} checked={form.active} onChange={value => update('active', value)} />
+              </div>
+              <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"><Save size={16} />{editing ? '保存更改' : '创建门店'}</button></div>
+            </form>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
 
-function AccountManager({ accounts, form, setForm, error, onSubmit, onEdit, onToggleActive, onDelete, onCancel, onRefresh }: {
+function AccountManager({ accounts, branches, form, setForm, error, editorOpen, onSubmit, onCreate, onEdit, onToggleActive, onDelete, onCancel }: {
   accounts: AdminAccountRow[];
+  branches: StoreBranchRow[];
   form: AccountFormState;
   setForm: React.Dispatch<React.SetStateAction<AccountFormState>>;
   error: string;
+  editorOpen: boolean;
   onSubmit: (event: React.FormEvent) => void;
+  onCreate: () => void;
   onEdit: (account: AdminAccountRow) => void;
   onToggleActive: (account: AdminAccountRow) => void;
   onDelete: (account: AdminAccountRow) => void;
   onCancel: () => void;
-  onRefresh: () => void;
 }) {
   const editing = Boolean(form.id);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | AdminRole>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const update = (key: keyof AccountFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredAccounts = accounts.filter(account => {
+    const matchesSearch = !normalizedSearch
+      || account.username.toLowerCase().includes(normalizedSearch)
+      || account.displayName.toLowerCase().includes(normalizedSearch);
+    const matchesRole = roleFilter === 'all' || account.role === roleFilter;
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? account.active : !account.active);
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+  const activeCount = accounts.filter(account => account.active).length;
+  const privilegedCount = accounts.filter(account => account.role === 'admin' || account.role === 'owner').length;
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[380px_1fr]">
-      <Panel className="p-4">
-        <div className="mb-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Accounts</p>
-          <h3 className="mt-1 text-xl font-bold text-slate-950">{editing ? '编辑后台账号' : '新增后台账号'}</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">账号密码写入 Supabase admin_users，密码只保存 scrypt 哈希。</p>
+    <div className="relative flex min-h-0 flex-1 overflow-hidden">
+      <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="grid shrink-0 gap-3 border-b border-slate-200 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_170px_150px_auto] md:items-center">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索账号或显示名称" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white" />
+          </div>
+          <select value={roleFilter} onChange={event => setRoleFilter(event.target.value as typeof roleFilter)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+            <option value="all">全部角色</option><option value="admin">管理员</option><option value="owner">老板</option><option value="manager">店长</option><option value="staff">门店员工</option><option value="customer_service">客服助理</option><option value="kitchen">厨房工人</option><option value="delivery">配送人员</option>
+          </select>
+          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+            <option value="all">全部状态</option><option value="active">启用</option><option value="inactive">停用</option>
+          </select>
+          <button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] hover:bg-blue-500"><Plus size={17} />新增账号</button>
         </div>
-        {error && (
-          <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
-            <AlertCircle className="mt-0.5 shrink-0" size={16} />
-            {error}
-          </div>
-        )}
-        <form onSubmit={onSubmit} className="grid gap-3">
-          <Input label="账号" value={form.username} onChange={value => update('username', value)} placeholder="service01" required />
-          <Input label="显示名称" value={form.displayName} onChange={value => update('displayName', value)} placeholder="厨房早班" />
-          <SelectInput label="角色" value={form.role} onChange={value => update('role', value as AccountFormState['role'])}>
-            <option value="admin">管理员</option>
-            <option value="customer_service">客服助理</option>
-            <option value="kitchen">厨房工人</option>
-            <option value="delivery">配送人员</option>
-          </SelectInput>
-          <Input
-            label={editing ? '新密码（留空则不修改）' : '密码'}
-            value={form.password}
-            onChange={value => update('password', value)}
-            type="password"
-            placeholder="至少 8 位"
-            required={!editing}
-          />
-          <Toggle label={form.active ? '启用账号' : '停用账号'} checked={form.active} onChange={value => update('active', value)} />
-          <div className="flex gap-2 pt-2">
-            <button type="submit" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500">
-              <Save size={16} />
-              {editing ? '保存账号' : '创建账号'}
-            </button>
-            {editing && <IconButton title="取消编辑" onClick={onCancel}><X size={17} /></IconButton>}
-          </div>
-        </form>
-      </Panel>
-
-      <Panel className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Account List</p>
-            <h3 className="text-lg font-bold text-slate-950">后台账号列表</h3>
-          </div>
-          <IconButton title="刷新账号" onClick={onRefresh}><RefreshCw size={17} /></IconButton>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] table-fixed border-collapse text-sm">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-full min-w-[920px] table-fixed border-collapse text-sm">
             <colgroup>
-              <col className="w-[18%]" />
-              <col className="w-[20%]" />
-              <col className="w-[14%]" />
-              <col className="w-[12%]" />
-              <col className="w-[18%]" />
-              <col className="w-[18%]" />
+              <col className="w-[25%]" /><col className="w-[15%]" /><col className="w-[18%]" /><col className="w-[12%]" /><col className="w-[16%]" /><col className="w-[14%]" />
             </colgroup>
-            <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+            <thead className="sticky top-0 z-[8] bg-slate-50 text-xs text-slate-500 shadow-[inset_0_-1px_0_#E5E7EB]">
               <tr>
-                <th className="px-4 py-3 text-center font-bold">账号</th>
-                <th className="px-4 py-3 text-center font-bold">显示名称</th>
+                <th className="px-5 py-3 text-left font-bold">账号信息</th>
                 <th className="px-4 py-3 text-center font-bold">角色</th>
+                <th className="px-4 py-3 text-center font-bold">所属门店</th>
                 <th className="px-4 py-3 text-center font-bold">状态</th>
                 <th className="px-4 py-3 text-center font-bold">最后登录</th>
                 <th className="px-4 py-3 text-center font-bold">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {accounts.map(account => (
-                <tr key={account.id} className="transition hover:bg-slate-50/80">
-                  <td className="px-4 py-4 text-center align-middle font-bold text-slate-950">{account.username}</td>
-                  <td className="px-4 py-4 text-center align-middle text-slate-600">{account.displayName}</td>
+              {filteredAccounts.map(account => (
+                <tr key={account.id} className="h-[68px] transition hover:bg-slate-50/80">
+                  <td className="px-5 py-3 align-middle"><p className="font-bold text-slate-950">{account.username}</p><p className="mt-1 truncate text-xs text-slate-500">{account.displayName || '未设置显示名称'}</p></td>
                   <td className="px-4 py-4 text-center align-middle">
                     <Badge tone={toneForAdminRole(account.role)}>{labelAdminRole(account.role)}</Badge>
                   </td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-600">{account.assignedBranchId ? branches.find(branch => branch.id === account.assignedBranchId)?.name || account.assignedBranchId : <span className="text-slate-400">全部门店</span>}</td>
                   <td className="px-4 py-4 text-center align-middle">
-                    <Badge tone={account.active ? 'green' : 'muted'}>{account.active ? '启用' : '停用'}</Badge>
+                    <button type="button" onClick={() => onToggleActive(account)} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold transition ${account.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${account.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />{account.active ? '启用' : '停用'}</button>
                   </td>
                   <td className="px-4 py-4 text-center align-middle text-slate-500">{account.lastLoginAt ? formatDate(account.lastLoginAt) : '-'}</td>
                   <td className="px-4 py-4 text-center align-middle">
                     <div className="flex justify-center gap-2">
                       <IconButton title="编辑账号" onClick={() => onEdit(account)}><Pencil size={16} /></IconButton>
-                      <button
-                        type="button"
-                        onClick={() => onToggleActive(account)}
-                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${account.active ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-                      >
-                        {account.active ? '停用' : '启用'}
-                      </button>
                       <IconButton title="删除账号" onClick={() => onDelete(account)} variant="danger"><Trash2 size={16} /></IconButton>
                     </div>
                   </td>
                 </tr>
               ))}
-              {accounts.length === 0 && (
+              {filteredAccounts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-slate-400">暂无后台账号</td>
+                  <td colSpan={6} className="px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的后台账号</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-xs font-bold text-slate-500"><span>当前显示 {filteredAccounts.length} / {accounts.length} 个账号</span><span className="flex gap-4"><span>启用 {activeCount}</span><span>高权限 {privilegedCount}</span></span></div>
       </Panel>
+
+      {editorOpen && <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
+        <aside className="ml-auto flex h-full w-full max-w-[440px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h3 className="text-xl font-bold text-slate-950">{editing ? '编辑后台账号' : '新增后台账号'}</h3><p className="mt-1 text-xs text-slate-500">配置登录身份、角色权限和所属门店</p></div><IconButton title="关闭" onClick={onCancel}><X size={17} /></IconButton></div>
+          <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+            <div className="grid gap-4 overflow-y-auto p-5">
+              {error && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700"><AlertCircle className="mt-0.5 shrink-0" size={16} />{error}</div>}
+              <Input label="登录账号" value={form.username} onChange={value => update('username', value)} placeholder="例如 service01" required />
+              <Input label="显示名称" value={form.displayName} onChange={value => update('displayName', value)} placeholder="例如 厨房早班" />
+              <SelectInput label="账号角色" value={form.role} onChange={value => update('role', value as AccountFormState['role'])}><option value="admin">管理员</option><option value="owner">老板</option><option value="manager">店长</option><option value="staff">门店员工</option><option value="customer_service">客服助理</option><option value="kitchen">厨房工人</option><option value="delivery">配送人员</option></SelectInput>
+              {form.role !== 'admin' && form.role !== 'owner' && <SelectInput label="所属门店" value={form.assignedBranchId} onChange={value => update('assignedBranchId', value)}><option value="">暂不分配</option>{branches.filter(branch => branch.active).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</SelectInput>}
+              <Input label={editing ? '新密码（留空则不修改）' : '初始密码'} value={form.password} onChange={value => update('password', value)} type="password" placeholder="至少 8 位" required={!editing} />
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700">密码只会以安全哈希形式保存，创建后无法查看原密码。</div>
+              <Toggle label={form.active ? '账号已启用' : '账号已停用'} checked={form.active} onChange={value => update('active', value)} />
+            </div>
+            <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"><Save size={16} />{editing ? '保存更改' : '创建账号'}</button></div>
+          </form>
+        </aside>
+      </div>}
     </div>
   );
 }
 
-function CategoryManager({ categories, form, setForm, editingCategory, onSubmit, onEdit, onDelete, onCancel, onRefresh }: {
+function CategoryManager({ categories, form, setForm, editingCategory, editorOpen, onSubmit, onCreate, onEdit, onToggleActive, onDelete, onCancel }: {
   categories: MenuCategoryRow[];
   form: CategoryFormState;
   setForm: React.Dispatch<React.SetStateAction<CategoryFormState>>;
   editingCategory: MenuCategoryRow | null;
+  editorOpen: boolean;
   onSubmit: (event: React.FormEvent) => void;
+  onCreate: () => void;
   onEdit: (category: MenuCategoryRow) => void;
+  onToggleActive: (category: MenuCategoryRow) => void;
   onDelete: (category: MenuCategoryRow) => void;
   onCancel: () => void;
-  onRefresh: () => void;
 }) {
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const update = (key: keyof CategoryFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+  const filteredCategories = categories.filter(category => {
+    const matchesSearch = category.label.toLowerCase().includes(search.trim().toLowerCase());
+    const matchesStatus = status === 'all' || (status === 'active' ? category.active : !category.active);
+    return matchesSearch && matchesStatus;
+  });
 
   return (
-    <div className="grid gap-3 xl:grid-cols-[360px_1fr]">
-      <Panel className="p-4">
-        <div className="mb-4">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Category</p>
-          <h3 className="mt-1 text-xl font-bold text-slate-950">{editingCategory ? '编辑分类' : '新增分类'}</h3>
-        </div>
-        <form onSubmit={onSubmit} className="grid gap-3">
-          <Input label="分类名称" value={form.label} onChange={value => update('label', value)} placeholder="例如 炖汤" required />
-          <Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" />
-          <Toggle label={form.active ? '启用' : '停用'} checked={form.active} onChange={value => update('active', value)} />
-          <div className="flex gap-2 pt-2">
-            <button type="submit" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-500">
-              <Save size={16} />
-              {editingCategory ? '保存分类' : '新增分类'}
-            </button>
-            {editingCategory && <IconButton title="取消编辑" onClick={onCancel}><X size={17} /></IconButton>}
-          </div>
-        </form>
-      </Panel>
-
+    <div className="relative">
       <Panel className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white p-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Category List</p>
-            <h3 className="text-lg font-bold text-slate-950">分类列表</h3>
+        <div className="grid gap-3 border-b border-slate-200 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_180px_auto] md:items-center">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索分类名称" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white" />
           </div>
-          <IconButton title="刷新分类" onClick={onRefresh}><RefreshCw size={17} /></IconButton>
+          <select value={status} onChange={event => setStatus(event.target.value as typeof status)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+            <option value="all">全部状态</option>
+            <option value="active">启用</option>
+            <option value="inactive">停用</option>
+          </select>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] hover:bg-blue-500">
+              <Plus size={17} />新增分类
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
+        <div className="max-h-[calc(100vh-230px)] overflow-auto">
+          <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
             <colgroup>
-              <col className="w-[34%]" />
-              <col className="w-[16%]" />
+              <col className="w-[30%]" />
               <col className="w-[18%]" />
               <col className="w-[16%]" />
-              <col className="w-[16%]" />
+              <col className="w-[18%]" />
+              <col className="w-[18%]" />
             </colgroup>
-            <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 shadow-[inset_0_-1px_0_#E5E7EB]">
               <tr>
-                <th className="px-4 py-3 text-center font-bold">分类</th>
-                <th className="px-4 py-3 text-center font-bold">排序</th>
+                <th className="px-5 py-3 text-left font-bold">分类名称</th>
                 <th className="px-4 py-3 text-center font-bold">关联菜品</th>
+                <th className="px-4 py-3 text-center font-bold">排序</th>
                 <th className="px-4 py-3 text-center font-bold">状态</th>
                 <th className="px-4 py-3 text-center font-bold">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {categories.map(category => (
-                <tr key={category.id} className="transition hover:bg-slate-50/80">
-                  <td className="px-4 py-4 text-center align-middle font-bold text-slate-950">{category.label}</td>
-                  <td className="px-4 py-4 text-center align-middle text-slate-600">{category.sort_order}</td>
+              {filteredCategories.map(category => (
+                <tr key={category.id} className="h-16 transition hover:bg-slate-50/80">
+                  <td className="px-5 py-3 align-middle font-bold text-slate-950">{category.label}</td>
                   <td className="px-4 py-4 text-center align-middle text-slate-600">{category.item_count}</td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-600">{category.sort_order}</td>
                   <td className="px-4 py-4 text-center align-middle">
-                    <Badge tone={category.active ? 'green' : 'muted'}>{category.active ? '启用' : '停用'}</Badge>
+                    <button type="button" onClick={() => onToggleActive(category)} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold transition ${category.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                      <span className={`h-2 w-2 rounded-full ${category.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                      {category.active ? '启用' : '停用'}
+                    </button>
                   </td>
                   <td className="px-4 py-4 text-center align-middle">
                     <div className="flex justify-center gap-2">
                       <IconButton title="编辑分类" onClick={() => onEdit(category)}><Pencil size={16} /></IconButton>
-                      <IconButton title="删除分类" onClick={() => onDelete(category)}><Trash2 size={16} /></IconButton>
+                      <IconButton title="删除分类" onClick={() => onDelete(category)} variant="danger"><Trash2 size={16} /></IconButton>
                     </div>
                   </td>
                 </tr>
               ))}
+              {filteredCategories.length === 0 && <tr><td colSpan={5} className="px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的分类</td></tr>}
             </tbody>
           </table>
         </div>
+        <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs font-bold text-slate-500">
+          <span>共 {filteredCategories.length} 个分类</span>
+          <span>分类顺序由排序数字决定</span>
+        </div>
       </Panel>
+
+      {editorOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
+          <aside className="ml-auto flex h-full w-full max-w-[420px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-950">{editingCategory ? '编辑分类' : '新增分类'}</h3>
+                <p className="mt-1 text-xs text-slate-500">设置分类名称、顺序和可用状态</p>
+              </div>
+              <IconButton title="关闭" onClick={onCancel}><X size={17} /></IconButton>
+            </div>
+            <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
+              <div className="grid gap-4 overflow-y-auto p-5">
+                <Input label="分类名称" value={form.label} onChange={value => update('label', value)} placeholder="例如 炖汤" required />
+                <Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" />
+                <Toggle label={form.active ? '启用分类' : '停用分类'} checked={form.active} onChange={value => update('active', value)} />
+              </div>
+              <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5">
+                <button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button>
+                <button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">
+                  <Save size={16} />{editingCategory ? '保存更改' : '创建分类'}
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
@@ -3195,6 +3904,16 @@ function blobToBase64(blob: Blob) {
 
 function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <section className={`rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)] ${className}`}>{children}</section>;
+}
+
+function MetricCard({ label, value, tone = 'blue' }: { label: string; value: number; tone?: 'blue' | 'green' | 'muted' }) {
+  const toneClass = tone === 'green' ? 'bg-emerald-50 text-emerald-700' : tone === 'muted' ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-blue-700';
+  return (
+    <Panel className="flex min-w-[132px] items-center gap-2.5 px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${toneClass}`}><Store size={15} /></div>
+      <div className="flex items-baseline gap-2"><p className="text-xs font-bold text-slate-500">{label}</p><p className="text-lg font-black text-slate-950">{value}</p></div>
+    </Panel>
+  );
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
@@ -3421,15 +4140,54 @@ function roundCurrency(value: number) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 }
 
+async function buildReceiptImage(file: File) {
+  if (!['image/jpeg', 'image/png'].includes(file.type)) throw new Error('付款截图必须是 JPG 或 PNG 图片');
+  if (file.size > 5 * 1024 * 1024) throw new Error('付款截图不能超过 5MB');
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('付款截图读取失败'));
+    reader.readAsDataURL(file);
+  });
+  const dataBase64 = dataUrl.split(',')[1] || '';
+  if (!dataBase64) throw new Error('付款截图读取失败');
+  return {
+    fileName: file.name,
+    mimeType: file.type,
+    dataBase64,
+  };
+}
+
+function canSubmitPaymentChange(order: OrderRow) {
+  return order.order_source === 'admin_created'
+    && order.status !== 'completed'
+    && order.status !== 'cancelled'
+    && order.payment_method === 'cash'
+    && order.payment_status === 'pay_at_counter';
+}
+
+function stringFromChangeData(data: Record<string, unknown>, key: string) {
+  const value = data?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function labelOrderChangeAction(action: OrderChangeRecord['action']) {
+  if (action === 'submitted') return '支付方式修改';
+  if (action === 'approved') return '付款审核通过';
+  return '付款审核拒绝';
+}
+
 function pathForSection(section: AdminSection) {
-  if (section === 'menu') return '/admin';
+  if (section === 'menuItems') return '/admin';
+  if (section === 'menuCategories') return '/admin/menu-categories';
   if (section === 'customerOrder') return '/admin/customer-order';
   if (section === 'storeBranches') return '/admin/store-branches';
   return `/admin/${section}`;
 }
 
 function sectionForPath(pathname: string): AdminSection | null {
-  if (pathname === '/admin' || pathname === '/') return 'menu';
+  if (pathname === '/admin' || pathname === '/') return 'menuItems';
+  if (pathname === '/admin/menu-categories') return 'menuCategories';
   if (pathname === '/admin/customer-order') return 'customerOrder';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   const section = pathname.slice('/admin/'.length) as AdminSection;
@@ -3439,6 +4197,9 @@ function sectionForPath(pathname: string): AdminSection | null {
 function labelAdminRole(role: AdminRole) {
   return {
     admin: '管理员',
+    owner: '老板',
+    manager: '店长',
+    staff: '门店员工',
     customer_service: '客服助理',
     kitchen: '厨房工人',
     delivery: '配送人员',
@@ -3446,7 +4207,9 @@ function labelAdminRole(role: AdminRole) {
 }
 
 function toneForAdminRole(role: AdminRole): 'green' | 'red' | 'blue' | 'orange' | 'muted' {
-  if (role === 'admin') return 'blue';
+  if (role === 'admin' || role === 'owner') return 'blue';
+  if (role === 'manager') return 'green';
+  if (role === 'staff') return 'muted';
   if (role === 'customer_service') return 'green';
   if (role === 'kitchen') return 'orange';
   return 'muted';
@@ -3469,8 +4232,52 @@ function labelPayment(method: string) {
   }[method] || method;
 }
 
+function labelOrderType(type: OrderRow['order_type']) {
+  return type === 'dinein' ? '堂食' : '外卖';
+}
+
+function labelOrderSource(source?: string | null) {
+  if (source === 'admin_created') return '后台代下单';
+  return '网站下单';
+}
+
+function labelPaymentStatus(status: string) {
+  return {
+    pay_at_counter: '到店/现金支付',
+    pending_review: '待审核',
+    awaiting_payment: '待付款',
+    paid: '已支付',
+  }[status] || status || '-';
+}
+
+function labelPaymentReviewStatus(status: string) {
+  return {
+    not_required: '无需审核',
+    pending: '待审核',
+    approved: '已通过',
+    rejected: '已拒绝',
+  }[status] || status || '-';
+}
+
+function formatOrderItemOptions(options: NonNullable<OrderItemRow['selected_options']>) {
+  return options
+    .map(option => `${option.groupName ? `${option.groupName}: ` : ''}${option.name || ''}${Number(option.priceDelta || 0) ? ` +RM ${Number(option.priceDelta).toFixed(2)}` : ''}`)
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',

@@ -211,12 +211,26 @@ export async function validateMenuItemsAvailable(order: Order) {
   const rows = await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    `/menu_items?id=in.(${itemIds.map(id => encodeURIComponent(String(id))).join(',')})&select=id,name,active,sold_out`,
+    `/menu_items?id=in.(${itemIds.map(id => encodeURIComponent(String(id))).join(',')})&select=id,item_code,name,price,active,sold_out,option_groups`,
     { method: 'GET' },
   );
   const itemsById = new Map(
     (Array.isArray(rows) ? rows : []).map(row => {
-      const item = row as { id?: number; name?: string; active?: boolean | null; sold_out?: boolean | null };
+      const item = row as {
+        id?: number;
+        item_code?: string | null;
+        name?: string;
+        price?: number;
+        active?: boolean | null;
+        sold_out?: boolean | null;
+        option_groups?: Array<{
+          id: string;
+          name: string;
+          required?: boolean;
+          type?: 'single' | 'multiple';
+          options?: Array<{ id: string; name: string; priceDelta: number }>;
+        }> | null;
+      };
       return [Number(item.id), item];
     }),
   );
@@ -224,8 +238,43 @@ export async function validateMenuItemsAvailable(order: Order) {
     .map(id => itemsById.get(id))
     .find(item => !item || item.active === false || item.sold_out === true);
 
-  if (!unavailable) return '';
-  return unavailable?.sold_out ? `「${unavailable.name || '菜品'}」已售罄，请从购物车移除后再下单` : `「${unavailable?.name || '菜品'}」已下架，请从购物车移除后再下单`;
+  if (unavailable) {
+    return unavailable.sold_out ? `「${unavailable.name || '菜品'}」已售罄，请从购物车移除后再下单` : `「${unavailable.name || '菜品'}」已下架，请从购物车移除后再下单`;
+  }
+
+  for (const orderItem of order.items) {
+    const menuItem = itemsById.get(Number(orderItem.id));
+    if (!menuItem) return '订单中包含不存在的菜品';
+    const optionGroups = Array.isArray(menuItem.option_groups) ? menuItem.option_groups : [];
+    const selectedOptions = Array.isArray(orderItem.options) ? orderItem.options : [];
+    const normalizedOptions: NonNullable<Order['items'][number]['options']> = [];
+    for (const selected of selectedOptions) {
+      const group = optionGroups.find(candidate => candidate.id === selected.groupId);
+      const option = group?.options?.find(candidate => candidate.id === selected.optionId);
+      if (!group || !option) return `「${menuItem.name || '菜品'}」包含无效选项，请重新选择`;
+      normalizedOptions.push({
+        groupId: group.id,
+        groupName: group.name,
+        optionId: option.id,
+        name: option.name,
+        priceDelta: roundMoney(Number(option.priceDelta || 0)),
+      });
+    }
+    for (const group of optionGroups) {
+      const groupSelections = normalizedOptions.filter(option => option.groupId === group.id);
+      if (group.required && groupSelections.length === 0) return `「${menuItem.name || '菜品'}」请选择${group.name}`;
+      if (group.type === 'single' && groupSelections.length > 1) return `「${menuItem.name || '菜品'}」的${group.name}只能选择一项`;
+    }
+    const basePrice = roundMoney(Number(menuItem.price || 0));
+    const optionsTotal = roundMoney(normalizedOptions.reduce((sum, option) => sum + option.priceDelta, 0));
+    orderItem.code = menuItem.item_code || undefined;
+    orderItem.name = menuItem.name || orderItem.name;
+    orderItem.basePrice = basePrice;
+    orderItem.optionsTotal = optionsTotal;
+    orderItem.options = normalizedOptions;
+    orderItem.price = roundMoney(basePrice + optionsTotal);
+  }
+  return '';
 }
 
 export function calculateTotals(order: Order) {
@@ -280,6 +329,12 @@ export async function createOrderWithItems(params: {
     service_charge: serviceCharge,
     total,
     coupon_id: params.order.couponId || null,
+    coupon_code: params.order.couponSnapshot?.code || null,
+    coupon_title: params.order.couponSnapshot?.title || null,
+    coupon_discount_type: params.order.couponSnapshot?.discountType || null,
+    coupon_discount_value: params.order.couponSnapshot?.discountValue ?? null,
+    coupon_rule_snapshot: params.order.couponSnapshot || null,
+    coupon_status: params.order.couponId ? 'reserved' : null,
     discount_amount: discountAmount,
     payable_total: payableTotal,
     status: params.status,
@@ -426,13 +481,20 @@ export async function getOrderItems(orderRecordId: string) {
   return Array.isArray(result) ? result as OrderItemRecord[] : [];
 }
 
-export async function getCouponDiscount(userId: string, couponId: string | undefined, orderTotal: number) {
-  if (!couponId) return 0;
+export async function getCouponDiscount(userId: string, couponId: string | undefined, order: Order) {
+  if (!couponId) return { discountAmount: 0, snapshot: undefined };
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const now = new Date().toISOString();
+  await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/user_coupons?id=eq.${encodeURIComponent(couponId)}&user_id=eq.${encodeURIComponent(userId)}&status=eq.reserved&reservation_expires_at=lt.${encodeURIComponent(now)}`,
+    { method: 'PATCH', body: JSON.stringify({ status: 'available', reserved_at: null, reservation_expires_at: null, reserved_order_id: null }) },
+  );
   const rows = await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    `/user_coupons?id=eq.${encodeURIComponent(couponId)}&user_id=eq.${encodeURIComponent(userId)}&status=eq.available&select=id,expires_at,coupons(discount_amount)`,
+    `/user_coupons?id=eq.${encodeURIComponent(couponId)}&user_id=eq.${encodeURIComponent(userId)}&status=eq.available&select=id,expires_at,coupons(code,title,status,discount_amount,discount_type,discount_value,min_order_amount,max_discount_amount,valid_from,valid_until,applicable_order_types,applicable_payment_methods,applicable_branch_ids,exclude_delivery_fee)`,
     { method: 'GET' },
   );
   const coupon = Array.isArray(rows) ? rows[0] as any : null;
@@ -440,21 +502,87 @@ export async function getCouponDiscount(userId: string, couponId: string | undef
   if (coupon.expires_at && new Date(coupon.expires_at).getTime() < Date.now()) {
     throw new Error('优惠券已过期');
   }
-  return roundMoney(Math.min(Number(coupon.coupons?.discount_amount || 0), orderTotal));
+  const campaign = coupon.coupons;
+  if (!campaign || campaign.status !== 'active') throw new Error('优惠券活动未开始或已暂停');
+  if (campaign.valid_from && new Date(campaign.valid_from).getTime() > Date.now()) throw new Error('优惠券活动尚未开始');
+  if (campaign.valid_until && new Date(campaign.valid_until).getTime() <= Date.now()) throw new Error('优惠券活动已结束');
+  if (Array.isArray(campaign.applicable_order_types) && !campaign.applicable_order_types.includes(order.orderType)) throw new Error('优惠券不适用于当前用餐方式');
+  if (Array.isArray(campaign.applicable_payment_methods) && !campaign.applicable_payment_methods.includes(order.paymentMethod)) throw new Error('优惠券不适用于当前支付方式');
+  const branchId = order.assignedBranch?.id || order.deliveryQuote?.branchId;
+  if (Array.isArray(campaign.applicable_branch_ids) && campaign.applicable_branch_ids.length > 0 && (!branchId || !campaign.applicable_branch_ids.includes(branchId))) {
+    throw new Error('优惠券不适用于当前门店');
+  }
+  const { subtotal, deliveryFee } = calculateTotals({ ...order, discountAmount: 0 });
+  const eligibleAmount = roundMoney(subtotal + (campaign.exclude_delivery_fee === false ? deliveryFee : 0));
+  const minOrderAmount = Number(campaign.min_order_amount || 0);
+  if (eligibleAmount < minOrderAmount) throw new Error(`订单优惠金额需满 RM ${minOrderAmount.toFixed(2)}`);
+  const discountType = campaign.discount_type === 'percentage' ? 'percentage' : 'fixed';
+  const discountValue = Number(campaign.discount_value ?? campaign.discount_amount ?? 0);
+  let discountAmount = discountType === 'percentage' ? eligibleAmount * discountValue / 100 : discountValue;
+  if (campaign.max_discount_amount != null) discountAmount = Math.min(discountAmount, Number(campaign.max_discount_amount));
+  discountAmount = roundMoney(Math.min(Math.max(discountAmount, 0), eligibleAmount));
+  return {
+    discountAmount,
+    snapshot: {
+      code: String(campaign.code || ''),
+      title: String(campaign.title || '优惠券'),
+      discountType,
+      discountValue,
+      minOrderAmount,
+      maxDiscountAmount: campaign.max_discount_amount == null ? null : Number(campaign.max_discount_amount),
+      excludeDeliveryFee: campaign.exclude_delivery_fee !== false,
+    } as NonNullable<Order['couponSnapshot']>,
+  };
 }
 
-export async function markCouponUsed(couponId?: string, userId?: string) {
+export async function reserveCoupon(couponId?: string, userId?: string) {
+  if (!couponId || !userId) return;
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const result = await supabaseRequest(supabaseUrl, serviceRoleKey, '/rpc/reserve_user_coupon', {
+    method: 'POST',
+    body: JSON.stringify({ user_coupon_id_input: couponId, user_id_input: userId, reservation_minutes_input: 30 }),
+  });
+  if (result !== true) throw new Error('优惠券已被其他订单使用，请重新选择');
+}
+
+export async function bindCouponReservation(couponId: string | undefined, userId: string | undefined, orderId: string) {
+  if (!couponId || !userId) return;
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  await supabaseRequest(supabaseUrl, serviceRoleKey, `/user_coupons?id=eq.${encodeURIComponent(couponId)}&user_id=eq.${encodeURIComponent(userId)}&status=eq.reserved`, {
+    method: 'PATCH',
+    body: JSON.stringify({ reserved_order_id: orderId }),
+  });
+}
+
+export async function releaseCoupon(couponId?: string, userId?: string) {
+  if (!couponId || !userId) return;
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  await supabaseRequest(supabaseUrl, serviceRoleKey, '/rpc/release_user_coupon', {
+    method: 'POST',
+    body: JSON.stringify({ user_coupon_id_input: couponId, user_id_input: userId }),
+  });
+}
+
+export async function markCouponUsed(couponId?: string, userId?: string, orderId?: string) {
   if (!couponId || !userId) return;
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    `/user_coupons?id=eq.${encodeURIComponent(couponId)}&user_id=eq.${encodeURIComponent(userId)}&status=eq.available`,
+    `/user_coupons?id=eq.${encodeURIComponent(couponId)}&user_id=eq.${encodeURIComponent(userId)}&status=in.(available,reserved)`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ status: 'used', used_at: new Date().toISOString() }),
+      body: JSON.stringify({
+        status: 'used',
+        used_at: new Date().toISOString(),
+        used_order_id: orderId || null,
+        reserved_at: null,
+        reservation_expires_at: null,
+        reserved_order_id: null,
+      }),
     },
   );
+  if (orderId) await updateOrderById(orderId, { coupon_status: 'applied' });
 }
 
 export async function processWalletPayment(userId: string, orderId: string, amount: number) {

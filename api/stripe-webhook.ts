@@ -67,7 +67,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
       const order = await findOrderByStripeSession(sessionId);
       if (order) {
-        await markCouponUsed(order.coupon_id || undefined, order.user_id || undefined);
+        await markCouponUsed(order.coupon_id || undefined, order.user_id || undefined, order.id);
         const items = await getOrderItems(order.id);
         const notification = await notifyStaffFromRecord({
           ...order,

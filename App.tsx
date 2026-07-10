@@ -51,6 +51,7 @@ const App: React.FC = () => {
     const table = (params.get('table') || params.get('t') || '').trim();
     const walletStatus = params.get('wallet');
     const paymentStatus = params.get('payment');
+    const paymentOrderNo = params.get('order');
     const walletTransactionId = params.get('tx');
     if (table) {
       setTableNumber(table);
@@ -88,6 +89,13 @@ const App: React.FC = () => {
     if (paymentStatus === 'stripe-cancel') {
       setView('menu');
       setAppNotice(t('user.notice.paymentStripeCancel'));
+      if (paymentOrderNo) {
+        fetch('/api/stripe-order-cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderNo: paymentOrderNo }),
+        }).finally(refreshSession);
+      }
     }
     if (walletStatus || paymentStatus || walletTransactionId || params.get('order')) {
       ['wallet', 'payment', 'tx', 'order'].forEach(key => params.delete(key));

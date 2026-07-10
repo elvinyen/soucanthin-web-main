@@ -18,6 +18,7 @@ type AccountInput = {
   displayName?: string;
   role?: AdminRole;
   active?: boolean;
+  assignedBranchId?: string | null;
 };
 
 type AccountRow = AdminUserRecord & {
@@ -25,8 +26,8 @@ type AccountRow = AdminUserRecord & {
   updated_at?: string | null;
 };
 
-const ACCOUNT_SELECT = 'id,username,display_name,role,active,last_login_at,created_at,updated_at';
-const MANAGED_ROLES: AdminRole[] = ['admin', 'customer_service', 'kitchen', 'delivery'];
+const ACCOUNT_SELECT = 'id,username,display_name,role,active,assigned_branch_id,last_login_at,created_at,updated_at';
+const MANAGED_ROLES: AdminRole[] = ['admin', 'owner', 'manager', 'staff', 'customer_service', 'kitchen', 'delivery'];
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
@@ -79,6 +80,7 @@ async function createAccount(req: ApiRequest, res: ApiResponse) {
       display_name: displayName,
       role,
       active: input.active !== false,
+      assigned_branch_id: normalizeAssignedBranch(input.assignedBranchId, role),
     }),
   });
   const account = Array.isArray(created) ? created[0] as AccountRow | undefined : created as AccountRow | undefined;
@@ -110,9 +112,13 @@ async function updateAccount(req: ApiRequest, res: ApiResponse, currentAdminId: 
   if (input.displayName !== undefined) payload.display_name = normalizeDisplayName(input.displayName, existing.username);
   if (input.role !== undefined) {
     const nextRole = normalizeManagedRole(String(input.role));
-    if (id === currentAdminId && nextRole !== 'admin') throw new AdminError('不能修改当前登录账号的管理员角色', 400);
+    if (id === currentAdminId && nextRole !== 'admin' && nextRole !== 'owner') throw new AdminError('不能移除当前登录账号的管理权限', 400);
     payload.role = nextRole;
     roleChanged = nextRole !== normalizeAdminRole(existing.role);
+  }
+  if (input.assignedBranchId !== undefined || input.role !== undefined) {
+    const nextRole = input.role ? normalizeManagedRole(String(input.role)) : normalizeAdminRole(existing.role);
+    payload.assigned_branch_id = normalizeAssignedBranch(input.assignedBranchId ?? existing.assigned_branch_id, nextRole);
   }
   if (input.active !== undefined) {
     if (id === currentAdminId && input.active === false) throw new AdminError('不能停用当前登录账号', 400);
@@ -151,15 +157,15 @@ async function deleteAccount(req: ApiRequest, res: ApiResponse, currentAdminId: 
 
   const account = await findAccountById(id);
   if (!account) throw new AdminError('账号不存在', 404);
-  if (normalizeAdminRole(account.role) === 'admin' && account.active) {
+  if (['admin', 'owner'].includes(normalizeAdminRole(account.role)) && account.active) {
     const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
     const adminRows = await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      '/admin_users?role=eq.admin&active=eq.true&select=id',
+      '/admin_users?role=in.(admin,owner)&active=eq.true&select=id',
       { method: 'GET' },
     );
-    if (Array.isArray(adminRows) && adminRows.length <= 1) throw new AdminError('至少需要保留一个启用的管理员账号');
+    if (Array.isArray(adminRows) && adminRows.length <= 1) throw new AdminError('至少需要保留一个启用的管理员或老板账号');
   }
 
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
@@ -189,6 +195,12 @@ function normalizeDisplayName(value: unknown, fallback: string) {
   return String(value || fallback).trim().slice(0, 60) || fallback;
 }
 
+function normalizeAssignedBranch(value: unknown, role: AdminRole) {
+  if (role === 'admin' || role === 'owner') return null;
+  const branchId = String(value || '').trim();
+  return branchId || null;
+}
+
 function validateUsername(value: string) {
   if (!/^[a-z0-9._-]{3,32}$/.test(value)) {
     throw new AdminError('账号需为 3-32 位，可包含小写字母、数字、点、下划线或横线');
@@ -202,6 +214,7 @@ function mapAccount(account: AccountRow) {
     username: account.username,
     displayName: account.display_name,
     role: normalizeAdminRole(account.role),
+    assignedBranchId: account.assigned_branch_id || null,
     active: account.active,
     lastLoginAt: account.last_login_at || null,
     createdAt: account.created_at || null,

@@ -1,11 +1,14 @@
 import {
   ApiRequest,
   ApiResponse,
+  bindCouponReservation,
   calculateTotals,
   createOrderWithItems,
   generateOrderId,
   getCouponDiscount,
   parseOrderBody,
+  releaseCoupon,
+  reserveCoupon,
   updateOrderById,
   validateMenuItemsAvailable,
   validateOrder,
@@ -49,6 +52,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const orderNo = generateOrderId();
+  let reservedCoupon: { id: string; userId: string } | null = null;
+  let createdOrderId: string | null = null;
 
   try {
     const user = await getAuthenticatedUser(req);
@@ -59,12 +64,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     await applyDeliveryQuoteToOrder(order);
 
-    const { total } = calculateTotals({ ...order, discountAmount: 0 });
-    const discountAmount = user ? await getCouponDiscount(user.id, order.couponId, total) : 0;
+    const couponResult = user ? await getCouponDiscount(user.id, order.couponId, order) : { discountAmount: 0, snapshot: undefined };
+    const discountAmount = couponResult.discountAmount;
+    order.couponSnapshot = couponResult.snapshot;
     order.discountAmount = discountAmount;
+    const { total } = calculateTotals({ ...order, discountAmount: 0 });
     order.payableTotal = Math.max(total - discountAmount, 0);
     if (order.payableTotal <= 0) {
       return res.status(400).json({ success: false, error: '实付金额为 0，请改用现金或钱包提交订单' });
+    }
+
+    if (order.couponId && user) {
+      await reserveCoupon(order.couponId, user.id);
+      reservedCoupon = { id: order.couponId, userId: user.id };
     }
 
     const { orderRecord } = await createOrderWithItems({
@@ -75,6 +87,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       paymentReviewStatus: 'not_required',
       discountAmount,
     });
+    createdOrderId = orderRecord.id;
+    await bindCouponReservation(order.couponId, user?.id, orderRecord.id);
 
     const { payableTotal } = calculateTotals(order);
     const checkoutSession = await createStripeCheckoutSession({
@@ -96,6 +110,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       checkoutUrl: checkoutSession.url,
     });
   } catch (error) {
+    if (reservedCoupon && !createdOrderId) {
+      await releaseCoupon(reservedCoupon.id, reservedCoupon.userId).catch(() => undefined);
+    }
     if (error instanceof DeliveryQuoteError) {
       return res.status(error.statusCode).json({
         success: false,

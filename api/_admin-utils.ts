@@ -16,20 +16,30 @@ export type AdminUserRecord = {
   active: boolean;
   password_hash?: string;
   last_login_at?: string | null;
+  assigned_branch_id?: string | null;
 };
 
-export type AdminRole = 'admin' | 'kitchen' | 'customer_service' | 'delivery';
-type LegacyAdminRole = 'owner' | 'manager' | 'staff';
+export type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'kitchen' | 'customer_service' | 'delivery';
+type LegacyAdminRole = never;
 
 export async function requireAdmin(req: ApiRequest) {
-  return requireAdminRole(req, ['admin']);
+  return requireAdminRole(req, ['admin', 'owner']);
 }
 
 export async function requireAdminRole(req: ApiRequest, allowedRoles: AdminRole[]) {
   const admin = await getAuthenticatedAdmin(req);
   if (!admin) throw new AdminError('请先登录后台', 401);
-  if (!allowedRoles.includes(admin.role)) throw new AdminError('没有权限访问此功能', 403);
+  if (!hasAdminPermission(admin.role, allowedRoles)) throw new AdminError('没有权限访问此功能', 403);
   return admin;
+}
+
+export function hasAdminPermission(role: AdminRole, allowedRoles: AdminRole[]) {
+  if (allowedRoles.includes(role)) return true;
+  if (role === 'owner') return allowedRoles.includes('admin');
+  if (role === 'manager') {
+    return allowedRoles.some(allowedRole => ['customer_service', 'kitchen', 'delivery'].includes(allowedRole));
+  }
+  return false;
 }
 
 export async function getAuthenticatedAdmin(req: ApiRequest) {
@@ -38,12 +48,24 @@ export async function getAuthenticatedAdmin(req: ApiRequest) {
 
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const tokenHash = hashSessionToken(token);
-  const sessions = await supabaseRequest(
-    supabaseUrl,
-    serviceRoleKey,
-    `/admin_sessions?token_hash=eq.${encodeURIComponent(tokenHash)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=*,admin_users(id,username,display_name,role,active)`,
-    { method: 'GET' },
-  );
+  const sessionFilter = `/admin_sessions?token_hash=eq.${encodeURIComponent(tokenHash)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}`;
+  let sessions: unknown;
+  try {
+    sessions = await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `${sessionFilter}&select=*,admin_users(id,username,display_name,role,active,assigned_branch_id)`,
+      { method: 'GET' },
+    );
+  } catch (error) {
+    if (!isMissingAssignedBranchColumn(error)) throw error;
+    sessions = await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `${sessionFilter}&select=*,admin_users(id,username,display_name,role,active)`,
+      { method: 'GET' },
+    );
+  }
   const session = Array.isArray(sessions) ? sessions[0] as { id: string; admin_users?: AdminUserRecord } | undefined : undefined;
   const admin = session?.admin_users;
   if (!session?.id || !admin?.id || !admin.active) return null;
@@ -117,13 +139,12 @@ export function sanitizeAdmin(admin: AdminUserRecord) {
     username: admin.username,
     displayName: admin.display_name,
     role: normalizeAdminRole(admin.role),
+    assignedBranchId: admin.assigned_branch_id || null,
   };
 }
 
 export function normalizeAdminRole(role: string): AdminRole {
-  if (role === 'kitchen') return 'kitchen';
-  if (role === 'customer_service') return 'customer_service';
-  if (role === 'delivery') return 'delivery';
+  if (['owner', 'manager', 'staff', 'kitchen', 'customer_service', 'delivery'].includes(role)) return role as AdminRole;
   return 'admin';
 }
 
@@ -161,6 +182,9 @@ export function jsonError(error: unknown) {
 
 function normalizeAdminErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : '后台操作失败';
+  if (isMissingAssignedBranchColumn(error)) {
+    return '数据库尚未更新财务模块字段 assigned_branch_id，请先执行最新版 supabase-schema.sql。';
+  }
   try {
     const payload = JSON.parse(message) as { code?: string; message?: string };
     if (payload.code === 'PGRST303') {
@@ -170,6 +194,15 @@ function normalizeAdminErrorMessage(error: unknown) {
   } catch {
     return message;
   }
+}
+
+function isMissingAssignedBranchColumn(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return message.includes('assigned_branch_id') && (
+    message.includes('does not exist')
+    || message.includes('PGRST204')
+    || message.includes('42703')
+  );
 }
 
 function readHeader(req: ApiRequest, name: string) {

@@ -350,22 +350,44 @@ export async function getUserAddresses(userId: string): Promise<UserAddress[]> {
 
 export async function getUserCoupons(userId: string): Promise<UserCoupon[]> {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const now = new Date().toISOString();
+  await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/user_coupons?user_id=eq.${encodeURIComponent(userId)}&status=eq.reserved&reservation_expires_at=lt.${encodeURIComponent(now)}`,
+    { method: 'PATCH', body: JSON.stringify({ status: 'available', reserved_at: null, reservation_expires_at: null, reserved_order_id: null }) },
+  );
   const rows = await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    `/user_coupons?user_id=eq.${encodeURIComponent(userId)}&select=id,status,expires_at,used_at,coupons(code,title,description,discount_amount)&order=created_at.desc`,
+    `/user_coupons?user_id=eq.${encodeURIComponent(userId)}&select=id,status,expires_at,used_at,reservation_expires_at,coupons(code,title,description,discount_amount,discount_type,discount_value,min_order_amount,max_discount_amount,applicable_order_types,applicable_payment_methods,applicable_branch_ids,exclude_delivery_fee,status,valid_from,valid_until)&order=created_at.desc`,
     { method: 'GET' },
   );
-  return (Array.isArray(rows) ? rows : []).map((row: any) => ({
-    id: row.id,
-    code: row.coupons?.code || '',
-    title: row.coupons?.title || '优惠券',
-    description: row.coupons?.description || null,
-    discountAmount: Number(row.coupons?.discount_amount || 0),
-    status: row.status,
-    expiresAt: row.expires_at,
-    usedAt: row.used_at || null,
-  }));
+  return (Array.isArray(rows) ? rows : []).map((row: any) => {
+    const campaignUnavailable = row.coupons?.status !== 'active'
+      || (row.coupons?.valid_from && new Date(row.coupons.valid_from).getTime() > Date.now())
+      || (row.coupons?.valid_until && new Date(row.coupons.valid_until).getTime() <= Date.now());
+    const expired = row.expires_at && new Date(row.expires_at).getTime() <= Date.now();
+    const reservationExpired = row.status === 'reserved' && row.reservation_expires_at && new Date(row.reservation_expires_at).getTime() <= Date.now();
+    return {
+      id: row.id,
+      code: row.coupons?.code || '',
+      title: row.coupons?.title || '优惠券',
+      description: row.coupons?.description || null,
+      discountAmount: Number(row.coupons?.discount_amount || row.coupons?.discount_value || 0),
+      discountType: row.coupons?.discount_type === 'percentage' ? 'percentage' : 'fixed',
+      discountValue: Number(row.coupons?.discount_value ?? row.coupons?.discount_amount ?? 0),
+      minOrderAmount: Number(row.coupons?.min_order_amount || 0),
+      maxDiscountAmount: row.coupons?.max_discount_amount == null ? null : Number(row.coupons.max_discount_amount),
+      applicableOrderTypes: Array.isArray(row.coupons?.applicable_order_types) ? row.coupons.applicable_order_types : ['dinein', 'takeaway'],
+      applicablePaymentMethods: Array.isArray(row.coupons?.applicable_payment_methods) ? row.coupons.applicable_payment_methods : ['cash', 'tng', 'stripe', 'wallet'],
+      applicableBranchIds: Array.isArray(row.coupons?.applicable_branch_ids) ? row.coupons.applicable_branch_ids : [],
+      excludeDeliveryFee: row.coupons?.exclude_delivery_fee !== false,
+      status: expired || campaignUnavailable ? 'expired' : reservationExpired ? 'available' : row.status,
+      expiresAt: row.expires_at,
+      usedAt: row.used_at || null,
+    } as UserCoupon;
+  });
 }
 
 export function mapUser(user: UserRecord): AuthUser {

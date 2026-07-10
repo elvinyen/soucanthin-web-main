@@ -229,6 +229,9 @@ on conflict (id) do update set
 create index if not exists store_branches_active_sort_idx on public.store_branches (active, sort_order, id);
 alter table public.store_branches enable row level security;
 
+alter table public.admin_users add column if not exists assigned_branch_id text references public.store_branches(id) on delete set null;
+create index if not exists admin_users_assigned_branch_idx on public.admin_users (assigned_branch_id);
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_no text not null unique,
@@ -466,6 +469,256 @@ alter table public.order_status_events
 create index if not exists order_status_events_order_id_idx on public.order_status_events (order_id, created_at desc);
 create index if not exists order_status_events_order_no_idx on public.order_status_events (order_no, created_at desc);
 create index if not exists order_status_events_operator_idx on public.order_status_events (operator_telegram_user_id, created_at desc);
+
+create table if not exists public.order_change_events (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete cascade,
+  order_no text not null,
+  change_type text not null,
+  action text not null,
+  before_data jsonb not null default '{}'::jsonb,
+  after_data jsonb not null default '{}'::jsonb,
+  reason text,
+  related_event_id uuid references public.order_change_events(id) on delete restrict,
+  created_by_admin_id uuid references public.admin_users(id) on delete set null,
+  operator_name text not null,
+  created_at timestamptz not null default now(),
+  constraint order_change_events_change_type_check check (change_type in ('payment_method')),
+  constraint order_change_events_action_check check (action in ('submitted', 'approved', 'rejected'))
+);
+
+create index if not exists order_change_events_order_created_idx
+  on public.order_change_events (order_id, created_at desc);
+create index if not exists order_change_events_admin_created_idx
+  on public.order_change_events (created_by_admin_id, created_at desc);
+create index if not exists order_change_events_related_event_idx
+  on public.order_change_events (related_event_id)
+  where related_event_id is not null;
+
+alter table public.order_change_events enable row level security;
+revoke all on table public.order_change_events from anon, authenticated;
+revoke update, delete, truncate, references, trigger on table public.order_change_events from service_role;
+grant select, insert on table public.order_change_events to service_role;
+
+create or replace function public.submit_order_payment_change(
+  order_id_input uuid,
+  receipt_url_input text,
+  reason_input text,
+  admin_id_input uuid,
+  admin_name_input text
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  current_order public.orders%rowtype;
+  event_id uuid;
+begin
+  select * into current_order
+  from public.orders
+  where id = order_id_input
+  for update;
+
+  if not found then
+    raise exception '订单不存在';
+  end if;
+  if current_order.order_source <> 'admin_created' then
+    raise exception '只有后台代下单可以更正支付方式';
+  end if;
+  if current_order.status in ('completed', 'cancelled') then
+    raise exception '已完成或已取消订单不能修改支付方式';
+  end if;
+  if current_order.payment_method <> 'cash' or current_order.payment_status <> 'pay_at_counter' then
+    raise exception '当前付款状态不允许更正为转账';
+  end if;
+  if coalesce(length(trim(reason_input)), 0) < 2 then
+    raise exception '请填写修改原因';
+  end if;
+  if coalesce(length(trim(receipt_url_input)), 0) = 0 then
+    raise exception '请上传付款截图';
+  end if;
+
+  update public.orders
+  set payment_method = 'tng',
+      payment_status = 'pending_review',
+      payment_review_status = 'pending',
+      receipt_url = receipt_url_input,
+      payment_review_token = null,
+      reviewed_at = null,
+      paid_at = null,
+      last_operator_name = admin_name_input
+  where id = current_order.id;
+
+  insert into public.order_change_events (
+    order_id,
+    order_no,
+    change_type,
+    action,
+    before_data,
+    after_data,
+    reason,
+    created_by_admin_id,
+    operator_name
+  ) values (
+    current_order.id,
+    current_order.order_no,
+    'payment_method',
+    'submitted',
+    jsonb_build_object(
+      'payment_method', current_order.payment_method,
+      'payment_status', current_order.payment_status,
+      'payment_review_status', current_order.payment_review_status,
+      'receipt_url', current_order.receipt_url
+    ),
+    jsonb_build_object(
+      'payment_method', 'tng',
+      'payment_status', 'pending_review',
+      'payment_review_status', 'pending',
+      'receipt_url', receipt_url_input
+    ),
+    trim(reason_input),
+    admin_id_input,
+    admin_name_input
+  ) returning id into event_id;
+
+  return event_id;
+end;
+$$;
+
+create or replace function public.review_order_payment_change(
+  order_id_input uuid,
+  submitted_event_id_input uuid,
+  decision_input text,
+  reason_input text,
+  admin_id_input uuid,
+  admin_name_input text
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  current_order public.orders%rowtype;
+  submitted_event public.order_change_events%rowtype;
+  event_id uuid;
+  next_action text;
+  next_data jsonb;
+begin
+  if decision_input not in ('approve', 'reject') then
+    raise exception '审核操作不正确';
+  end if;
+  if decision_input = 'reject' and coalesce(length(trim(reason_input)), 0) < 2 then
+    raise exception '请填写拒绝原因';
+  end if;
+
+  select * into submitted_event
+  from public.order_change_events
+  where id = submitted_event_id_input
+    and order_id = order_id_input
+    and change_type = 'payment_method'
+    and action = 'submitted'
+  for update;
+
+  if not found then
+    raise exception '付款修改记录不存在';
+  end if;
+  if exists (
+    select 1 from public.order_change_events
+    where related_event_id = submitted_event.id
+      and action in ('approved', 'rejected')
+  ) then
+    raise exception '该付款修改已经审核';
+  end if;
+
+  select * into current_order
+  from public.orders
+  where id = order_id_input
+  for update;
+
+  if not found then
+    raise exception '订单不存在';
+  end if;
+  if current_order.payment_method <> 'tng'
+    or current_order.payment_status <> 'pending_review'
+    or current_order.payment_review_status <> 'pending' then
+    raise exception '当前付款状态不允许审核';
+  end if;
+
+  if decision_input = 'approve' then
+    update public.orders
+    set payment_status = 'paid',
+        payment_review_status = 'approved',
+        paid_at = now(),
+        reviewed_at = now(),
+        last_operator_name = admin_name_input
+    where id = current_order.id;
+    next_action := 'approved';
+    next_data := jsonb_build_object(
+      'payment_method', 'tng',
+      'payment_status', 'paid',
+      'payment_review_status', 'approved',
+      'receipt_url', current_order.receipt_url
+    );
+  else
+    update public.orders
+    set payment_method = 'cash',
+        payment_status = 'pay_at_counter',
+        payment_review_status = 'not_required',
+        receipt_url = null,
+        payment_review_token = null,
+        reviewed_at = now(),
+        paid_at = null,
+        last_operator_name = admin_name_input
+    where id = current_order.id;
+    next_action := 'rejected';
+    next_data := jsonb_build_object(
+      'payment_method', 'cash',
+      'payment_status', 'pay_at_counter',
+      'payment_review_status', 'not_required',
+      'receipt_url', null
+    );
+  end if;
+
+  insert into public.order_change_events (
+    order_id,
+    order_no,
+    change_type,
+    action,
+    before_data,
+    after_data,
+    reason,
+    related_event_id,
+    created_by_admin_id,
+    operator_name
+  ) values (
+    current_order.id,
+    current_order.order_no,
+    'payment_method',
+    next_action,
+    jsonb_build_object(
+      'payment_method', current_order.payment_method,
+      'payment_status', current_order.payment_status,
+      'payment_review_status', current_order.payment_review_status,
+      'receipt_url', current_order.receipt_url
+    ),
+    next_data,
+    nullif(trim(reason_input), ''),
+    submitted_event.id,
+    admin_id_input,
+    admin_name_input
+  ) returning id into event_id;
+
+  return event_id;
+end;
+$$;
+
+revoke all on function public.submit_order_payment_change(uuid, text, text, uuid, text) from public, anon, authenticated;
+revoke all on function public.review_order_payment_change(uuid, uuid, text, text, uuid, text) from public, anon, authenticated;
+grant execute on function public.submit_order_payment_change(uuid, text, text, uuid, text) to service_role;
+grant execute on function public.review_order_payment_change(uuid, uuid, text, text, uuid, text) to service_role;
 
 create table if not exists public.telegram_users (
   telegram_user_id text primary key,
@@ -714,10 +967,6 @@ on conflict (id) do update set public = true;
 drop policy if exists "Public read payment receipts" on storage.objects;
 drop policy if exists "Public read menu item images" on storage.objects;
 
-create policy "Public read payment receipts"
-on storage.objects for select
-using (bucket_id = 'payment-receipts');
-
 create policy "Public read menu item images"
 on storage.objects for select
 using (bucket_id = 'menu-items');
@@ -762,6 +1011,86 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+create table if not exists public.finance_categories (
+  id text primary key,
+  name text not null,
+  type text not null check (type in ('income', 'expense')),
+  icon text not null default 'receipt',
+  color text not null default 'slate',
+  sort_order integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.finance_categories enable row level security;
+create index if not exists finance_categories_type_sort_idx on public.finance_categories (type, active, sort_order);
+
+insert into public.finance_categories (id, name, type, icon, color, sort_order) values
+  ('extra-sales', '额外营业收入', 'income', 'wallet', 'emerald', 10),
+  ('catering', '团餐收入', 'income', 'utensils', 'emerald', 20),
+  ('platform-settlement', '外卖平台结算', 'income', 'smartphone', 'blue', 30),
+  ('other-income', '其他收入', 'income', 'plus', 'slate', 90),
+  ('ingredients', '食材采购', 'expense', 'shopping-basket', 'orange', 10),
+  ('packaging', '包装用品', 'expense', 'package', 'amber', 20),
+  ('delivery-cost', '配送费用', 'expense', 'bike', 'blue', 30),
+  ('utilities', '水电煤气', 'expense', 'zap', 'violet', 40),
+  ('wages', '工资 / 临时工', 'expense', 'users', 'indigo', 50),
+  ('maintenance', '设备维修', 'expense', 'wrench', 'rose', 60),
+  ('cleaning', '清洁用品', 'expense', 'sparkles', 'cyan', 70),
+  ('rent', '房租', 'expense', 'store', 'slate', 80),
+  ('marketing', '营销推广', 'expense', 'megaphone', 'pink', 90),
+  ('refund', '退款赔偿', 'expense', 'rotate-ccw', 'red', 100),
+  ('other-expense', '其他开支', 'expense', 'more-horizontal', 'slate', 110)
+on conflict (id) do update set
+  name = excluded.name,
+  type = excluded.type,
+  icon = excluded.icon,
+  color = excluded.color,
+  sort_order = excluded.sort_order;
+
+create table if not exists public.finance_transactions (
+  id uuid primary key default gen_random_uuid(),
+  branch_id text not null references public.store_branches(id) on delete restrict,
+  transaction_type text not null check (transaction_type in ('income', 'expense')),
+  category_id text not null references public.finance_categories(id) on delete restrict,
+  amount numeric(12, 2) not null check (amount > 0 and amount <= 1000000),
+  payment_method text not null check (payment_method in ('cash', 'tng', 'bank', 'card', 'stripe', 'wallet')),
+  occurred_at timestamptz not null default now(),
+  vendor_name text,
+  note text,
+  receipt_path text,
+  status text not null default 'submitted' check (status in ('submitted', 'approved', 'voided')),
+  created_by uuid not null references public.admin_users(id) on delete restrict,
+  created_by_name text not null,
+  approved_by uuid references public.admin_users(id) on delete set null,
+  approved_at timestamptz,
+  voided_by uuid references public.admin_users(id) on delete set null,
+  voided_at timestamptz,
+  void_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.finance_transactions enable row level security;
+create index if not exists finance_transactions_branch_date_idx on public.finance_transactions (branch_id, occurred_at desc);
+create index if not exists finance_transactions_status_idx on public.finance_transactions (status, occurred_at desc);
+create index if not exists finance_transactions_category_idx on public.finance_transactions (category_id, occurred_at desc);
+create index if not exists finance_transactions_creator_idx on public.finance_transactions (created_by, occurred_at desc);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'finance-receipts',
+  'finance-receipts',
+  false,
+  5242880,
+  array['image/png', 'image/jpeg', 'image/webp']::text[]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -794,3 +1123,143 @@ begin
     );
   end loop;
 end $$;
+
+-- Coupon campaign rules and lifecycle management.
+alter table public.coupons add column if not exists discount_type text not null default 'fixed';
+alter table public.coupons add column if not exists discount_value numeric(10, 2);
+alter table public.coupons add column if not exists min_order_amount numeric(10, 2) not null default 0;
+alter table public.coupons add column if not exists max_discount_amount numeric(10, 2);
+alter table public.coupons add column if not exists valid_from timestamptz;
+alter table public.coupons add column if not exists valid_until timestamptz;
+alter table public.coupons add column if not exists validity_days integer;
+alter table public.coupons add column if not exists total_issue_limit integer;
+alter table public.coupons add column if not exists per_user_limit integer not null default 1;
+alter table public.coupons add column if not exists applicable_order_types text[] not null default array['dinein', 'takeaway']::text[];
+alter table public.coupons add column if not exists applicable_payment_methods text[] not null default array['cash', 'tng', 'stripe', 'wallet']::text[];
+alter table public.coupons add column if not exists applicable_branch_ids text[] not null default array[]::text[];
+alter table public.coupons add column if not exists exclude_delivery_fee boolean not null default true;
+alter table public.coupons add column if not exists status text not null default 'active';
+alter table public.coupons add column if not exists updated_at timestamptz not null default now();
+
+update public.coupons
+set discount_value = discount_amount
+where discount_value is null;
+
+alter table public.coupons alter column discount_value set not null;
+alter table public.coupons drop constraint if exists coupons_discount_type_check;
+alter table public.coupons add constraint coupons_discount_type_check check (discount_type in ('fixed', 'percentage'));
+alter table public.coupons drop constraint if exists coupons_status_check;
+alter table public.coupons add constraint coupons_status_check check (status in ('draft', 'active', 'paused', 'ended'));
+alter table public.coupons drop constraint if exists coupons_discount_value_check;
+alter table public.coupons add constraint coupons_discount_value_check check (
+  discount_value >= 0
+  and (discount_type <> 'percentage' or discount_value <= 100)
+);
+alter table public.coupons drop constraint if exists coupons_limits_check;
+alter table public.coupons add constraint coupons_limits_check check (
+  min_order_amount >= 0
+  and (max_discount_amount is null or max_discount_amount > 0)
+  and (validity_days is null or validity_days between 1 and 3650)
+  and (total_issue_limit is null or total_issue_limit > 0)
+  and per_user_limit between 1 and 100
+  and (valid_until is null or valid_from is null or valid_until > valid_from)
+);
+
+alter table public.user_coupons add column if not exists issued_at timestamptz not null default now();
+alter table public.user_coupons add column if not exists source text not null default 'admin';
+alter table public.user_coupons add column if not exists issued_by_admin_id uuid references public.admin_users(id) on delete set null;
+alter table public.user_coupons add column if not exists reserved_order_id uuid references public.orders(id) on delete set null;
+alter table public.user_coupons add column if not exists reserved_at timestamptz;
+alter table public.user_coupons add column if not exists reservation_expires_at timestamptz;
+alter table public.user_coupons add column if not exists used_order_id uuid references public.orders(id) on delete set null;
+alter table public.user_coupons add column if not exists revoked_at timestamptz;
+alter table public.user_coupons add column if not exists revoked_by_admin_id uuid references public.admin_users(id) on delete set null;
+alter table public.user_coupons add column if not exists revoke_reason text;
+alter table public.user_coupons drop constraint if exists user_coupons_status_check;
+alter table public.user_coupons add constraint user_coupons_status_check check (status in ('available', 'reserved', 'used', 'expired', 'revoked'));
+
+alter table public.orders add column if not exists coupon_code text;
+alter table public.orders add column if not exists coupon_title text;
+alter table public.orders add column if not exists coupon_discount_type text;
+alter table public.orders add column if not exists coupon_discount_value numeric(10, 2);
+alter table public.orders add column if not exists coupon_rule_snapshot jsonb;
+alter table public.orders add column if not exists coupon_status text;
+
+create index if not exists coupons_status_validity_idx on public.coupons (status, valid_from, valid_until);
+create index if not exists user_coupons_coupon_status_idx on public.user_coupons (coupon_id, status);
+create index if not exists user_coupons_user_status_expiry_idx on public.user_coupons (user_id, status, expires_at);
+create index if not exists user_coupons_reservation_expiry_idx on public.user_coupons (reservation_expires_at) where status = 'reserved';
+create index if not exists user_coupons_used_order_idx on public.user_coupons (used_order_id) where used_order_id is not null;
+
+drop trigger if exists coupons_set_updated_at on public.coupons;
+create trigger coupons_set_updated_at
+before update on public.coupons
+for each row execute function public.set_updated_at();
+
+alter table public.coupons enable row level security;
+alter table public.user_coupons enable row level security;
+
+revoke insert, update, delete on table public.coupons from anon, authenticated;
+revoke insert, update, delete on table public.user_coupons from anon, authenticated;
+
+create or replace function public.reserve_user_coupon(
+  user_coupon_id_input uuid,
+  user_id_input uuid,
+  reservation_minutes_input integer default 30
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  changed_count integer;
+begin
+  update public.user_coupons
+  set status = 'reserved',
+      reserved_at = now(),
+      reservation_expires_at = now() + make_interval(mins => greatest(1, least(reservation_minutes_input, 1440))),
+      reserved_order_id = null
+  where id = user_coupon_id_input
+    and user_id = user_id_input
+    and (
+      status = 'available'
+      or (status = 'reserved' and reservation_expires_at < now())
+    )
+    and (expires_at is null or expires_at > now());
+  get diagnostics changed_count = row_count;
+  return changed_count = 1;
+end;
+$$;
+
+create or replace function public.release_user_coupon(
+  user_coupon_id_input uuid,
+  user_id_input uuid
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  changed_count integer;
+begin
+  update public.user_coupons
+  set status = case when expires_at is not null and expires_at <= now() then 'expired' else 'available' end,
+      reserved_at = null,
+      reservation_expires_at = null,
+      reserved_order_id = null,
+      used_at = null,
+      used_order_id = null
+  where id = user_coupon_id_input
+    and user_id = user_id_input
+    and status in ('reserved', 'used');
+  get diagnostics changed_count = row_count;
+  return changed_count = 1;
+end;
+$$;
+
+revoke execute on function public.reserve_user_coupon(uuid, uuid, integer) from public, anon, authenticated;
+revoke execute on function public.release_user_coupon(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.reserve_user_coupon(uuid, uuid, integer) to service_role;
+grant execute on function public.release_user_coupon(uuid, uuid) to service_role;

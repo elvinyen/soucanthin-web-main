@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   ApiRequest,
   ApiResponse,
+  bindCouponReservation,
   createOrderWithItems,
   calculateTotals,
   generateOrderId,
@@ -12,6 +13,8 @@ import {
   notifyStaffFromOrder,
   parseOrderBody,
   processWalletPayment,
+  releaseCoupon,
+  reserveCoupon,
   updateOrderById,
   uploadReceipt,
   validateMenuItemsAvailable,
@@ -53,6 +56,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   const orderNo = generateOrderId();
+  let reservedCoupon: { id: string; userId: string } | null = null;
+  let createdOrderId: string | null = null;
 
   try {
     const user = await getAuthenticatedUser(req);
@@ -66,10 +71,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     await applyDeliveryQuoteToOrder(order);
 
-    const { total } = calculateTotals({ ...order, discountAmount: 0 });
-    const discountAmount = user ? await getCouponDiscount(user.id, order.couponId, total) : 0;
+    const couponResult = user ? await getCouponDiscount(user.id, order.couponId, order) : { discountAmount: 0, snapshot: undefined };
+    const discountAmount = couponResult.discountAmount;
+    order.couponSnapshot = couponResult.snapshot;
     order.discountAmount = discountAmount;
+    const { total } = calculateTotals({ ...order, discountAmount: 0 });
     order.payableTotal = Math.max(total - discountAmount, 0);
+
+    if (order.couponId && user) {
+      await reserveCoupon(order.couponId, user.id);
+      reservedCoupon = { id: order.couponId, userId: user.id };
+    }
 
     if (order.paymentMethod === 'wallet' && user && order.payableTotal > 0) {
       const wallet = await getWallet(user.id);
@@ -103,16 +115,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       discountAmount,
       paymentReviewToken,
     });
+    createdOrderId = orderRecord.id;
+    await bindCouponReservation(order.couponId, user?.id, orderRecord.id);
 
     if (order.paymentMethod === 'wallet' && user && order.payableTotal > 0) {
       await processWalletPayment(user.id, orderRecord.id, order.payableTotal);
       await updateOrderById(orderRecord.id, { paid_at: new Date().toISOString() });
-      await markCouponUsed(order.couponId, user.id);
+      await markCouponUsed(order.couponId, user.id, orderRecord.id);
     } else if (order.paymentMethod === 'wallet' && user) {
       await updateOrderById(orderRecord.id, { paid_at: new Date().toISOString() });
-      await markCouponUsed(order.couponId, user.id);
+      await markCouponUsed(order.couponId, user.id, orderRecord.id);
     } else if (order.paymentMethod === 'cash' && user) {
-      await markCouponUsed(order.couponId, user.id);
+      await markCouponUsed(order.couponId, user.id, orderRecord.id);
     }
 
     const notification = await notifyStaffFromOrder(order, orderNo, {
@@ -147,6 +161,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       payableTotal: order.payableTotal,
     });
   } catch (error) {
+    if (reservedCoupon && !createdOrderId) {
+      await releaseCoupon(reservedCoupon.id, reservedCoupon.userId).catch(() => undefined);
+    }
     if (error instanceof DeliveryQuoteError) {
       return res.status(error.statusCode).json({
         success: false,

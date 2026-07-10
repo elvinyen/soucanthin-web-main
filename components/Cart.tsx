@@ -4,7 +4,7 @@ import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Ha
 import { useTranslation } from 'react-i18next';
 import { CartLine } from '../data/menu';
 import { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
-import type { AuthMeResponse } from '../types/auth';
+import type { AuthMeResponse, UserCoupon } from '../types/auth';
 import { AddressSelectionDrawer } from './OrderPreferenceControls';
 
 interface CartProps {
@@ -53,6 +53,36 @@ const checkoutInput = 'h-12 w-full rounded-2xl border border-stone-200/70 bg-whi
 const checkoutHelp = 'text-xs leading-5 text-stone-500';
 const checkoutError = 'px-2 text-[11px] leading-4 text-red-500';
 const buttonSeparator = <span className="h-4 w-[2px] rounded-full bg-white/60" aria-hidden="true" />;
+
+function calculateCouponDiscount(coupon: UserCoupon, subtotal: number, deliveryFee: number) {
+  const eligibleAmount = subtotal + (coupon.excludeDeliveryFee ? 0 : deliveryFee);
+  let discount = coupon.discountType === 'percentage'
+    ? eligibleAmount * coupon.discountValue / 100
+    : coupon.discountValue;
+  if (coupon.maxDiscountAmount != null) discount = Math.min(discount, coupon.maxDiscountAmount);
+  return Math.max(0, Math.min(eligibleAmount, Math.round((discount + Number.EPSILON) * 100) / 100));
+}
+
+function couponEligibilityReason(
+  coupon: UserCoupon,
+  context: { subtotal: number; deliveryFee: number; orderType: OrderType; paymentMethod: PaymentMethod },
+) {
+  if (coupon.status === 'reserved') return '正在另一笔订单中使用';
+  if (coupon.status !== 'available') return coupon.status === 'used' ? '已使用' : coupon.status === 'expired' ? '已过期' : '暂不可用';
+  if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() <= Date.now()) return '已过期';
+  if (!coupon.applicableOrderTypes.includes(context.orderType)) return context.orderType === 'dinein' ? '仅限外卖订单' : '仅限堂食订单';
+  if (!coupon.applicablePaymentMethods.includes(context.paymentMethod)) return '不适用于当前支付方式';
+  const eligibleAmount = context.subtotal + (coupon.excludeDeliveryFee ? 0 : context.deliveryFee);
+  if (eligibleAmount < coupon.minOrderAmount) return `还差 RM ${(coupon.minOrderAmount - eligibleAmount).toFixed(2)} 可用`;
+  return '';
+}
+
+function formatCouponRule(coupon: UserCoupon) {
+  const benefit = coupon.discountType === 'percentage'
+    ? `${coupon.discountValue}% 折扣${coupon.maxDiscountAmount ? `，最高减 RM ${coupon.maxDiscountAmount.toFixed(2)}` : ''}`
+    : `减 RM ${coupon.discountValue.toFixed(2)}`;
+  return `${coupon.minOrderAmount > 0 ? `满 RM ${coupon.minOrderAmount.toFixed(2)} ` : ''}${benefit}`;
+}
 
 const Cart: React.FC<CartProps> = ({
   isOpen,
@@ -250,18 +280,30 @@ const Cart: React.FC<CartProps> = ({
   const deliveryFee = orderType === 'takeaway' ? deliveryQuote?.deliveryFee || 0 : 0;
   const serviceCharge = 0;
   const total = subtotal + deliveryFee + serviceCharge;
-  const availableCoupons = (session.coupons || []).filter(coupon => {
-    if (coupon.status !== 'available') return false;
-    if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() < Date.now()) return false;
-    return coupon.discountAmount > 0;
-  });
+  const couponOptions = (session.coupons || []).map(coupon => ({
+    coupon,
+    reason: couponEligibilityReason(coupon, { subtotal, deliveryFee, orderType, paymentMethod }),
+    discount: calculateCouponDiscount(coupon, subtotal, deliveryFee),
+  }));
+  const availableCoupons = couponOptions.filter(option => !option.reason && option.discount > 0).map(option => option.coupon);
   const selectedCoupon = availableCoupons.find(coupon => coupon.id === selectedCouponId);
-  const discountAmount = Math.min(selectedCoupon?.discountAmount || 0, total);
+  const discountAmount = selectedCoupon ? calculateCouponDiscount(selectedCoupon, subtotal, deliveryFee) : 0;
   const payableTotal = Math.max(total - discountAmount, 0);
   const totalItems = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const walletBalance = session.wallet?.balance || 0;
   const walletAfterPayment = walletBalance - payableTotal;
   const walletInsufficient = paymentMethod === 'wallet' && session.authenticated && walletBalance < payableTotal;
+
+  useEffect(() => {
+    if (selectedCouponId && !availableCoupons.some(coupon => coupon.id === selectedCouponId)) {
+      setSelectedCouponId('');
+      return;
+    }
+    if (!selectedCouponId && availableCoupons.length > 0) {
+      const best = [...availableCoupons].sort((a, b) => calculateCouponDiscount(b, subtotal, deliveryFee) - calculateCouponDiscount(a, subtotal, deliveryFee))[0];
+      if (best) setSelectedCouponId(best.id);
+    }
+  }, [selectedCouponId, subtotal, deliveryFee, orderType, paymentMethod, session.coupons]);
 
   const getValidationMessage = () => {
     if (cartItems.length === 0) return t('cart.validation.minItem');
@@ -906,21 +948,33 @@ const Cart: React.FC<CartProps> = ({
                         )}
                       </div>
 
-                      {availableCoupons.length > 0 && (
+                      {(session.coupons || []).length > 0 && (
                         <div className={checkoutCard}>
-                          <h3 className={checkoutTitle}>{t('cart.coupon')}</h3>
-                          <select
-                            value={selectedCouponId}
-                            onChange={(event) => setSelectedCouponId(event.target.value)}
-                            className="mt-4 h-12 w-full rounded-2xl border border-stone-200/70 bg-white px-4 text-sm text-[#2D2D2D] outline-none focus:border-stone-400/80"
-                          >
-                            <option value="">{t('cart.noCoupon')}</option>
-                            {availableCoupons.map(coupon => (
-                              <option key={coupon.id} value={coupon.id}>
-                                {coupon.title} - RM {coupon.discountAmount.toFixed(2)}
-                              </option>
+                          <div className="flex items-center justify-between gap-3">
+                            <h3 className={checkoutTitle}>{t('cart.coupon')}</h3>
+                            {availableCoupons.length > 0 && <span className="text-[11px] font-semibold text-emerald-600">已自动选择最优惠</span>}
+                          </div>
+                          <div className="mt-4 grid gap-2">
+                            <button type="button" onClick={() => setSelectedCouponId('')} className={`rounded-2xl border px-4 py-3 text-left text-xs transition ${!selectedCouponId ? 'border-[#C8A97E] bg-[#FBF7F0] text-[#2D2D2D]' : 'border-stone-100 bg-stone-50 text-stone-500'}`}>{t('cart.noCoupon')}</button>
+                            {couponOptions.map(({ coupon, reason, discount }) => (
+                              <button
+                                key={coupon.id}
+                                type="button"
+                                disabled={Boolean(reason)}
+                                onClick={() => setSelectedCouponId(coupon.id)}
+                                className={`rounded-2xl border px-4 py-3 text-left transition ${selectedCouponId === coupon.id ? 'border-[#C8A97E] bg-[#FBF7F0]' : 'border-stone-100 bg-stone-50'} disabled:cursor-not-allowed disabled:opacity-55`}
+                              >
+                                <span className="flex items-start justify-between gap-3">
+                                  <span>
+                                    <span className="block text-sm font-semibold text-[#2D2D2D]">{coupon.title}</span>
+                                    <span className="mt-1 block text-[11px] text-stone-500">{formatCouponRule(coupon)}</span>
+                                  </span>
+                                  <span className="shrink-0 text-sm font-semibold text-[#C8A97E]">-{discount > 0 ? `RM ${discount.toFixed(2)}` : coupon.discountType === 'percentage' ? `${coupon.discountValue}%` : `RM ${coupon.discountValue.toFixed(2)}`}</span>
+                                </span>
+                                <span className={`mt-2 block text-[11px] ${reason ? 'text-stone-400' : 'text-emerald-600'}`}>{reason || '当前订单可用'}</span>
+                              </button>
                             ))}
-                          </select>
+                          </div>
                           {discountAmount > 0 && (
                             <p className="mt-3 text-[11px] leading-5 text-emerald-600">
                               {t('cart.couponApplied', { discount: discountAmount.toFixed(2), total: payableTotal.toFixed(2) })}

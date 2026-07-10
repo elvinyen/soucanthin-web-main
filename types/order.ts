@@ -70,6 +70,15 @@ export interface Order {
   serviceCharge: number;
   total: number;
   couponId?: string;
+  couponSnapshot?: {
+    code: string;
+    title: string;
+    discountType: 'fixed' | 'percentage';
+    discountValue: number;
+    minOrderAmount: number;
+    maxDiscountAmount?: number | null;
+    excludeDeliveryFee: boolean;
+  };
   discountAmount?: number;
   payableTotal?: number;
   receiptImage?: ReceiptImage;
