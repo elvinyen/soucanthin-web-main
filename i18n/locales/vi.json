@@ -68,6 +68,12 @@
     "facebookAria": "Mở Facebook Soup Can Thin",
     "whatsappAria": "Mở WhatsApp Soup Can Thin"
   },
+  "businessHours": {
+    "closedTitle": "Hiện tại cửa hàng đã đóng cửa",
+    "closedDescription": "Chi nhánh Cheras hiện đang nghỉ và tạm ngưng đặt món trực tuyến. Vui lòng quay lại trong giờ mở cửa.",
+    "hours": "Hằng ngày, 17:00–04:00",
+    "acknowledge": "Đã hiểu"
+  },
   "menuPage": {
     "recommended": "Đề xuất",
     "soldOut": "Hôm nay hết món",
@@ -309,6 +315,7 @@
       "wallet": "Ví của tôi",
       "addresses": "Quản lý địa chỉ",
       "coupons": "Mã giảm giá",
+      "agent": "Hợp tác đại lý",
       "settings": "Cài đặt"
     },
     "memberCenter": "Trung tâm thành viên",
@@ -318,6 +325,7 @@
     "defaultAddressReady": "Đã đặt địa chỉ mặc định",
     "couponUnit": "{{count}} mã",
     "pendingUnit": "{{count}} chờ",
+    "agentSummary": "Đăng ký đại lý hoặc xem hoa hồng",
     "profileName": "Tên người dùng",
     "profilePlaceholder": "Thành viên Soup Can Thin",
     "phone": "Số điện thoại",

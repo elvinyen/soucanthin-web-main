@@ -24,6 +24,8 @@ interface MenuProps {
   setDeliveryAddressLabel: React.Dispatch<React.SetStateAction<string>>;
   setDeliveryAddressId: React.Dispatch<React.SetStateAction<string>>;
   session: AuthMeResponse;
+  orderingEnabled: boolean;
+  onClosedInteraction: () => void;
 }
 
 const Menu: React.FC<MenuProps> = ({
@@ -41,6 +43,8 @@ const Menu: React.FC<MenuProps> = ({
   setDeliveryAddressLabel,
   setDeliveryAddressId,
   session,
+  orderingEnabled,
+  onClosedInteraction,
 }) => {
   const { i18n, t } = useTranslation();
   const language = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0] as LanguageCode;
@@ -124,6 +128,10 @@ const Menu: React.FC<MenuProps> = ({
   }, [menuItems, selectedItem]);
 
   useEffect(() => {
+    if (!orderingEnabled) setSelectedItem(null);
+  }, [orderingEnabled]);
+
+  useEffect(() => {
     if (!categoryTabs.length) return;
 
     const updateActiveCategory = () => {
@@ -174,6 +182,14 @@ const Menu: React.FC<MenuProps> = ({
   const itemQuantity = (id: number) => cart
     .filter(line => line.itemId === id)
     .reduce((sum, line) => sum + line.quantity, 0);
+
+  const runDishAction = (action: () => void) => {
+    if (!orderingEnabled) {
+      onClosedInteraction();
+      return;
+    }
+    action();
+  };
 
   const removeLatestItemQuantity = (id: number) => {
     setCart(prev => {
@@ -286,7 +302,7 @@ const Menu: React.FC<MenuProps> = ({
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setSelectedItem(item)}
+                    onClick={() => runDishAction(() => setSelectedItem(item))}
                     className="flex flex-col animate-fade-in text-left"
                   >
                     <div className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-md bg-white">
@@ -327,7 +343,7 @@ const Menu: React.FC<MenuProps> = ({
                           tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
-                            removeLatestItemQuantity(item.id);
+                            runDishAction(() => removeLatestItemQuantity(item.id));
                           }}
                           className="w-7 h-7 flex items-center justify-center rounded-full bg-stone-50 text-stone-400 active:scale-90 transition-all"
                         >
@@ -341,7 +357,9 @@ const Menu: React.FC<MenuProps> = ({
                           tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
-                            if (!item.soldOut) setSelectedItem(item);
+                            runDishAction(() => {
+                              if (!item.soldOut) setSelectedItem(item);
+                            });
                           }}
                           className={`w-7 h-7 flex items-center justify-center rounded-full active:scale-90 transition-all shadow-md ${
                             item.soldOut

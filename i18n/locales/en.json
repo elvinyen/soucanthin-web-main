@@ -68,6 +68,12 @@
     "facebookAria": "Open Soup Can Thin Facebook",
     "whatsappAria": "Open Soup Can Thin WhatsApp"
   },
+  "businessHours": {
+    "closedTitle": "We are currently closed",
+    "closedDescription": "Our Cheras branch is resting and online ordering is unavailable. Please return during opening hours.",
+    "hours": "Daily, 5:00 PM–4:00 AM",
+    "acknowledge": "Got it"
+  },
   "menuPage": {
     "recommended": "Recommended",
     "soldOut": "Sold out today",
@@ -309,6 +315,7 @@
       "wallet": "My wallet",
       "addresses": "Address book",
       "coupons": "Coupons",
+      "agent": "Agent partnership",
       "settings": "Settings"
     },
     "memberCenter": "Member Center",
@@ -318,6 +325,7 @@
     "defaultAddressReady": "Default address set",
     "couponUnit": "{{count}} coupons",
     "pendingUnit": "{{count}} pending",
+    "agentSummary": "Apply as an agent or view commissions",
     "profileName": "User name",
     "profilePlaceholder": "Soup Can Thin member",
     "phone": "Phone number",

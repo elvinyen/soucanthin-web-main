@@ -44,6 +44,7 @@ MOCEAN_API_TOKEN="your-mocean-api-token"
 MOCEAN_BRAND="SoupCanThin"
 MOCEAN_SENDER_ID=""
 SESSION_SECRET="replace-with-a-long-random-secret"
+AGENT_CODE_SECRET="replace-with-a-separate-long-random-secret"
 ADMIN_REVIEW_TOKEN="replace-with-a-long-random-admin-token"
 ADMIN_SESSION_SECRET="replace-with-a-long-random-admin-session-secret"
 VITE_FACEBOOK_URL="https://www.facebook.com/your-page"
@@ -52,6 +53,7 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 
 `SUPABASE_SERVICE_ROLE_KEY` 只应在服务端 API 使用，不要暴露到前端。
 `VITE_` 开头的变量会打包到前端，只适合放公开链接，不要放密钥。
+`AGENT_CODE_SECRET` 用于哈希一次性代理码，生产环境应使用独立的高强度随机值。
 
 生产环境建议复制为 `.env.production`。在 VPS 上，以下变量只放在 Node/PM2 后端环境：
 
@@ -63,6 +65,7 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - `STRIPE_WEBHOOK_SECRET`
 - `MOCEAN_API_TOKEN`
 - `SESSION_SECRET`
+- `AGENT_CODE_SECRET`
 - `ADMIN_SESSION_SECRET`
 - `ADMIN_REVIEW_TOKEN`
 
@@ -117,6 +120,15 @@ http://localhost:3000/admin
 ```
 
 原图最大 8MB，转换后的 WebP 最大 1.5MB。
+
+## 代理系统
+
+- 登录会员可在“个人中心 → 代理合作”提交申请，并通过 WhatsApp 携带申请编号联系客服。
+- 后台 `/admin/agents` 支持申请审核、一次性代理码、手机号批量注册、代理启停、佣金规则、佣金调账和提现审核。
+- 一次性代理码绑定申请人与手机号，72 小时有效，连续错误 5 次后锁定，数据库只保存 HMAC 哈希。
+- 推广链接使用 `?ref=推广码`；推荐关系在被推荐用户登录后绑定，禁止自我推荐且不会覆盖已有归属。
+- 佣金按商品小计扣除优惠后的金额计算；订单完成后转为可提现，订单取消则自动作废。
+- 部署前必须执行最新版 `supabase-schema.sql`，并配置 `AGENT_CODE_SECRET`、`SITE_URL` 和 `VITE_WHATSAPP_URL`。
 
 ## 会员与钱包
 

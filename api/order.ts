@@ -22,6 +22,8 @@ import {
 } from './_order-utils';
 import { getAuthenticatedUser, getWallet } from './_auth-utils';
 import { applyDeliveryQuoteToOrder, DeliveryQuoteError } from './_delivery-utils';
+import { attributeOrderToAgent } from './_agent-utils';
+import { isStoreOpen, WEBSITE_STORE_BRANCH } from '../businessHours';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method && req.method !== 'POST') {
@@ -29,10 +31,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
+  if (!isStoreOpen()) {
+    return res.status(403).json({
+      success: false,
+      code: 'STORE_CLOSED',
+      error: '本店营业时间为每日 5:00 PM–4:00 AM，请在营业时间内点餐。',
+    });
+  }
+
   let order;
 
   try {
     order = parseOrderBody(req.body);
+    order.assignedBranch = { ...WEBSITE_STORE_BRANCH };
   } catch {
     return res.status(400).json({ success: false, error: 'Invalid JSON body' });
   }
@@ -117,6 +128,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
     createdOrderId = orderRecord.id;
     await bindCouponReservation(order.couponId, user?.id, orderRecord.id);
+    await attributeOrderToAgent({
+      orderId: orderRecord.id,
+      userId: user?.id,
+      subtotal: Number(orderRecord.subtotal || 0),
+      discountAmount,
+    });
 
     if (order.paymentMethod === 'wallet' && user && order.payableTotal > 0) {
       await processWalletPayment(user.id, orderRecord.id, order.payableTotal);

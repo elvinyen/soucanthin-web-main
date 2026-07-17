@@ -17,13 +17,15 @@ import {
   Trash2,
   CheckCircle2,
   ChevronRight,
+  Handshake,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { AuthMeResponse, UserAddress, WalletTransaction } from '../types/auth';
 import type { ReceiptImage } from '../types/order';
+import { AgentPortal } from './AgentPortal';
 
-export type UserCenterTab = 'profile' | 'wallet' | 'addresses' | 'coupons' | 'settings';
+export type UserCenterTab = 'profile' | 'wallet' | 'addresses' | 'coupons' | 'agent' | 'settings';
 
 interface UserCenterProps {
   isOpen: boolean;
@@ -43,6 +45,7 @@ const tabs: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React
   { id: 'wallet', labelKey: 'userCenter.tabs.wallet', subtitle: 'Wallet', icon: Wallet },
   { id: 'addresses', labelKey: 'userCenter.tabs.addresses', subtitle: 'Addresses', icon: MapPin },
   { id: 'coupons', labelKey: 'userCenter.tabs.coupons', subtitle: 'Coupons', icon: TicketPercent },
+  { id: 'agent', labelKey: 'userCenter.tabs.agent', subtitle: 'Agent', icon: Handshake },
   { id: 'settings', labelKey: 'userCenter.tabs.settings', subtitle: 'Settings', icon: Settings },
 ];
 
@@ -775,6 +778,10 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             </section>
           )}
 
+          {activeTab === 'agent' && session.user && (
+            <AgentPortal user={session.user} />
+          )}
+
           {activeTab === 'settings' && (
             <section className="space-y-4">
               <button
@@ -872,6 +879,7 @@ const AccountHome: React.FC<{
     wallet: `RM ${walletBalance.toFixed(2)}${pendingTransactions ? ` · ${t('userCenter.pendingReview', { count: pendingTransactions })}` : ''}`,
     addresses: defaultAddress ? t('userCenter.defaultAddressReady') : t('userCenter.addressesCount', { count: addressCount }),
     coupons: t('userCenter.couponsCount', { count: availableCoupons }),
+    agent: t('userCenter.agentSummary', { defaultValue: '申请成为代理或查看佣金' }),
     settings: t('userCenter.settingsSummary'),
   };
 

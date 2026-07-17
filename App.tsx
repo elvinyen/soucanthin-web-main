@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import Header from './components/Header';
 import Banner from './components/Banner';
@@ -21,6 +21,8 @@ import type { AuthMeResponse } from './types/auth';
 import type { CartLine } from './data/menu';
 import type { BottomTab } from './components/Footer';
 import type { OrderType } from './types/order';
+import { BusinessHoursModal } from './components/BusinessHoursModal';
+import { isStoreOpen } from './businessHours';
 
 type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
@@ -45,6 +47,9 @@ const App: React.FC = () => {
   const [deliveryAddressId, setDeliveryAddressId] = useState('');
   const [userCenterNotice, setUserCenterNotice] = useState('');
   const [appNotice, setAppNotice] = useState('');
+  const [storeOpen, setStoreOpen] = useState(() => isStoreOpen());
+  const [isBusinessHoursModalOpen, setIsBusinessHoursModalOpen] = useState(() => !isStoreOpen());
+  const closeBusinessHoursModal = useCallback(() => setIsBusinessHoursModalOpen(false), []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -53,6 +58,8 @@ const App: React.FC = () => {
     const paymentStatus = params.get('payment');
     const paymentOrderNo = params.get('order');
     const walletTransactionId = params.get('tx');
+    const referralCode = (params.get('ref') || '').trim().toUpperCase();
+    if (referralCode) window.localStorage.setItem('sct_referral_code', referralCode);
     if (table) {
       setTableNumber(table);
       setTableNo(table);
@@ -120,6 +127,38 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const updateStoreStatus = () => {
+      const nextStoreOpen = isStoreOpen();
+      setStoreOpen(currentStoreOpen => {
+        if (currentStoreOpen && !nextStoreOpen) setIsBusinessHoursModalOpen(true);
+        return nextStoreOpen;
+      });
+      if (!nextStoreOpen) {
+        setIsCartOpen(false);
+      }
+    };
+
+    const timer = window.setInterval(updateStoreStatus, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!session.authenticated || !session.user?.id) return;
+    const referralCode = window.localStorage.getItem('sct_referral_code');
+    if (!referralCode) return;
+    fetch('/api/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bind_referral', referralCode }),
+    }).then(async response => {
+      const payload = await response.json();
+      if (response.ok && payload.success && (payload.bound || payload.reason === 'already_bound' || payload.reason === 'self_referral')) {
+        window.localStorage.removeItem('sct_referral_code');
+      }
+    }).catch(() => undefined);
+  }, [session.authenticated, session.user?.id]);
+
+  useEffect(() => {
     const savedAddresses = session.addresses || [];
     if (deliveryAddressId) {
       const savedAddress = savedAddresses.find(item => item.id === deliveryAddressId);
@@ -162,12 +201,12 @@ const App: React.FC = () => {
 
   // Prevent body scroll when cart drawer is open
   useEffect(() => {
-    if (isCartOpen || isAuthOpen || isUserCenterOpen) {
+    if (isCartOpen || isAuthOpen || isUserCenterOpen || isBusinessHoursModalOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
     }
-  }, [isCartOpen, isAuthOpen, isUserCenterOpen]);
+  }, [isCartOpen, isAuthOpen, isUserCenterOpen, isBusinessHoursModalOpen]);
 
   const handleUserClick = () => {
     if (session.authenticated) {
@@ -198,6 +237,10 @@ const App: React.FC = () => {
   const showAppNotice = (message: string) => {
     setAppNotice(message);
     window.setTimeout(() => setAppNotice(''), 2200);
+  };
+
+  const openMenu = () => {
+    setView('menu');
   };
 
   const handleTabChange = (tab: BottomTab) => {
@@ -236,7 +279,7 @@ const App: React.FC = () => {
                     {t('homePage.startOrder')}
                     <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-[2px] bg-[#C8A97E]"></span>
                  </h2>
-                 <OrderSection onOrderClick={() => setView('menu')} />
+                 <OrderSection onOrderClick={openMenu} />
               </section>
 
               <section className="flex flex-col items-center">
@@ -255,7 +298,10 @@ const App: React.FC = () => {
           <Menu 
             cart={cart} 
             setCart={setCart} 
-            onViewCart={() => setIsCartOpen(true)} 
+            onViewCart={() => {
+              if (storeOpen) setIsCartOpen(true);
+              else setIsBusinessHoursModalOpen(true);
+            }}
             tableNumber={tableNumber}
             orderType={orderType}
             setOrderType={setOrderType}
@@ -267,6 +313,8 @@ const App: React.FC = () => {
             setDeliveryAddressLabel={setDeliveryAddressLabel}
             setDeliveryAddressId={setDeliveryAddressId}
             session={session}
+            orderingEnabled={storeOpen}
+            onClosedInteraction={() => setIsBusinessHoursModalOpen(true)}
           />
         )}
 
@@ -387,6 +435,11 @@ const App: React.FC = () => {
         onLogout={handleLogout}
         onRefresh={refreshSession}
         externalNotice={userCenterNotice}
+      />
+
+      <BusinessHoursModal
+        isOpen={isBusinessHoursModalOpen}
+        onClose={closeBusinessHoursModal}
       />
     </div>
   );

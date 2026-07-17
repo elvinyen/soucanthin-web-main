@@ -16,6 +16,7 @@ import {
   LogOut,
   MoreHorizontal,
   Megaphone,
+  Handshake,
   Minus,
   Plus,
   RefreshCw,
@@ -35,8 +36,9 @@ import KitchenBoard from './admin/KitchenBoard';
 import { DeliveryBoard } from './admin/DeliveryBoard';
 import { FinanceCenter } from './admin/FinanceCenter';
 import { CouponCenter } from './admin/CouponCenter';
+import { AgentCenter } from './admin/AgentCenter';
 
-type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'wallet' | 'accounts' | 'storeBranches';
+type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'agents' | 'wallet' | 'accounts' | 'storeBranches';
 type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'customer_service' | 'kitchen' | 'delivery';
 type OrderStatus = 'pending_confirm' | 'waiting_kitchen' | 'cooking' | 'kitchen_done' | 'stock_issue' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
 type MenuSalesStatus = 'active' | 'sold_out' | 'inactive';
@@ -384,6 +386,7 @@ const sections = [
   { id: 'delivery' as const, label: '配送工作台', icon: Bike },
   { id: 'finance' as const, label: '财务中心', icon: CircleDollarSign },
   { id: 'coupons' as const, label: '营销中心', icon: Megaphone },
+  { id: 'agents' as const, label: '代理中心', icon: Handshake },
   { id: 'storeBranches' as const, label: '门店管理', icon: Store },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
   { id: 'accounts' as const, label: '账号管理', icon: Users },
@@ -396,6 +399,7 @@ function initialAdminSection(): AdminSection {
   if (pathname === '/admin/delivery') return 'delivery';
   if (pathname === '/admin/finance') return 'finance';
   if (pathname === '/admin/coupons') return 'coupons';
+  if (pathname === '/admin/agents') return 'agents';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   if (pathname === '/admin/orders') return 'orders';
   if (pathname === '/admin/customer-order') return 'customerOrder';
@@ -500,9 +504,9 @@ const AdminDashboard: React.FC = () => {
   const availableSections = sections.filter(item => {
     const role = auth?.admin?.role;
     if (!role || role === 'admin' || role === 'owner') return true;
-    if (role === 'manager') return ['orders', 'customerOrder', 'kitchen', 'delivery', 'finance', 'coupons'].includes(item.id);
+    if (role === 'manager') return ['orders', 'customerOrder', 'kitchen', 'delivery', 'finance', 'coupons', 'agents'].includes(item.id);
     if (role === 'staff') return item.id === 'finance';
-    if (role === 'customer_service') return item.id === 'orders' || item.id === 'customerOrder' || item.id === 'delivery' || item.id === 'coupons';
+    if (role === 'customer_service') return item.id === 'orders' || item.id === 'customerOrder' || item.id === 'delivery' || item.id === 'coupons' || item.id === 'agents';
     if (role === 'delivery') return item.id === 'delivery';
     return item.id === 'kitchen';
   });
@@ -1998,6 +2002,10 @@ const AdminDashboard: React.FC = () => {
 
           {section === 'coupons' && auth.admin && (
             <CouponCenter api={api} admin={auth.admin} onNotice={showNotice} />
+          )}
+
+          {section === 'agents' && auth.admin && (
+            <AgentCenter adminRole={auth.admin.role} onNotice={showNotice} />
           )}
 
           {section === 'storeBranches' && (

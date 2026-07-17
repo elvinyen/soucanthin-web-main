@@ -68,6 +68,12 @@
     "facebookAria": "เปิด Facebook ของ Soup Can Thin",
     "whatsappAria": "เปิด WhatsApp ของ Soup Can Thin"
   },
+  "businessHours": {
+    "closedTitle": "ขณะนี้ร้านปิด",
+    "closedDescription": "สาขา Cheras ปิดให้บริการชั่วคราวและยังไม่สามารถสั่งอาหารออนไลน์ได้ กรุณากลับมาในเวลาทำการ",
+    "hours": "ทุกวัน 17:00–04:00 น.",
+    "acknowledge": "รับทราบ"
+  },
   "menuPage": {
     "recommended": "แนะนำ",
     "soldOut": "หมดวันนี้",
@@ -309,6 +315,7 @@
       "wallet": "Wallet ของฉัน",
       "addresses": "จัดการที่อยู่",
       "coupons": "คูปอง",
+      "agent": "ร่วมงานตัวแทน",
       "settings": "ตั้งค่า"
     },
     "memberCenter": "ศูนย์สมาชิก",
@@ -318,6 +325,7 @@
     "defaultAddressReady": "ตั้งที่อยู่เริ่มต้นแล้ว",
     "couponUnit": "{{count}} ใบ",
     "pendingUnit": "{{count}} รายการ",
+    "agentSummary": "สมัครตัวแทนหรือดูค่าคอมมิชชัน",
     "profileName": "ชื่อผู้ใช้",
     "profilePlaceholder": "สมาชิก Soup Can Thin",
     "phone": "เบอร์โทร",

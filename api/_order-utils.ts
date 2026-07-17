@@ -401,6 +401,10 @@ export async function updateOrderById(orderRecordId: string, payload: Record<str
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+  if (payload.status === 'completed' || payload.status === 'cancelled') {
+    const { syncOrderCommissionStatus } = await import('./_agent-utils');
+    await syncOrderCommissionStatus(orderRecordId, String(payload.status));
+  }
 }
 
 export async function updateOrderByNo(orderNo: string, payload: Record<string, unknown>) {

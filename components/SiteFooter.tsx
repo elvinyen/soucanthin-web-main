@@ -38,11 +38,11 @@ const SiteFooter: React.FC = () => {
           <div className="space-y-4">
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-widest text-[#C8A97E]">{t('footer.hours')}</h4>
-              <p className="text-sm text-stone-400">00:00-09:40 & 16:00-23:59</p>
+              <p className="text-sm text-stone-400">5:00 PM–4:00 AM</p>
             </div>
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-widest text-[#C8A97E]">{t('footer.location')}</h4>
-              <p className="text-sm text-stone-400">Kuala Lumpur, Malaysia</p>
+              <p className="text-sm leading-6 text-stone-400">Cheras Business Centre, Cheras, Kuala Lumpur</p>
             </div>
           </div>
 

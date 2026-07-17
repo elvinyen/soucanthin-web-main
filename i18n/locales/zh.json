@@ -68,6 +68,12 @@
     "facebookAria": "打开深夜食汤 Facebook",
     "whatsappAria": "打开深夜食汤 WhatsApp"
   },
+  "businessHours": {
+    "closedTitle": "目前是非营业时间",
+    "closedDescription": "Cheras 门店目前休息中，点餐功能暂时关闭。欢迎在营业时间内回来下单。",
+    "hours": "每日 5:00 PM–4:00 AM",
+    "acknowledge": "我知道了"
+  },
   "menuPage": {
     "recommended": "推荐",
     "soldOut": "今日售罄",
@@ -309,6 +315,7 @@
       "wallet": "我的钱包",
       "addresses": "地址管理",
       "coupons": "优惠券",
+      "agent": "代理合作",
       "settings": "设置"
     },
     "memberCenter": "会员中心",
@@ -318,6 +325,7 @@
     "defaultAddressReady": "默认地址已设置",
     "couponUnit": "{{count}} 张",
     "pendingUnit": "{{count}} 笔",
+    "agentSummary": "申请成为代理或查看佣金",
     "profileName": "用户名称",
     "profilePlaceholder": "深夜食汤会员",
     "phone": "手机号码",

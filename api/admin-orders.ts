@@ -20,6 +20,7 @@ import {
   validateOrder,
   validateReceiptImage,
 } from './_order-utils';
+import { attributeOrderToAgent, syncOrderCommissionStatus } from './_agent-utils';
 import { applyDeliveryQuoteToOrder } from './_delivery-utils';
 import type { Order, OrderStatus, ReceiptImage } from '../types/order';
 
@@ -121,6 +122,12 @@ async function createAdminOrder(req: ApiRequest, res: ApiResponse, admin: AdminC
     status,
     paymentStatus,
     paymentReviewStatus,
+    discountAmount: 0,
+  });
+  await attributeOrderToAgent({
+    orderId: orderRecord.id,
+    userId: customer.id,
+    subtotal: Number(orderRecord.subtotal || 0),
     discountAmount: 0,
   });
   const items = await getOrderItems(orderRecord.id);
@@ -235,6 +242,7 @@ async function updateOrderStatus(req: ApiRequest, res: ApiResponse, admin: Admin
       last_status_changed_at: new Date().toISOString(),
     }),
   });
+  await syncOrderCommissionStatus(id, nextStatus);
   if (nextStatus === 'cancelled') {
     await releaseCoupon(order.coupon_id || undefined, order.user_id || undefined);
     await updateOrderById(order.id, { coupon_status: order.coupon_id ? 'released' : null });

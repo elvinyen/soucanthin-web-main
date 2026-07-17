@@ -217,8 +217,8 @@ create table if not exists public.store_branches (
 
 insert into public.store_branches (id, name, address, latitude, longitude, active, sort_order)
 values
-  ('pudu', 'PUDU 区', '10-12a, Jalan Metro Pudu 2, Fraser Business Park, 55200 Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur', null, null, true, 10),
-  ('cheras', 'Cheras 区', 'No 34G, Block E, Jalan 1/101c, Cheras Business Centre, 56100 Cheras, Wilayah Persekutuan Kuala Lumpur', null, null, false, 20)
+  ('pudu', 'PUDU 区', '10-12a, Jalan Metro Pudu 2, Fraser Business Park, 55200 Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur', null, null, false, 10),
+  ('cheras', 'Cheras 区', 'No 34G, Block E, Jalan 1/101c, Cheras Business Centre, 56100 Cheras, Wilayah Persekutuan Kuala Lumpur', null, null, true, 20)
 on conflict (id) do update set
   name = excluded.name,
   address = excluded.address,
@@ -1263,3 +1263,279 @@ revoke execute on function public.reserve_user_coupon(uuid, uuid, integer) from 
 revoke execute on function public.release_user_coupon(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.reserve_user_coupon(uuid, uuid, integer) to service_role;
 grant execute on function public.release_user_coupon(uuid, uuid) to service_role;
+-- Agent / affiliate program -------------------------------------------------
+-- All access is mediated by the Node API. These tables are intentionally not
+-- exposed to anon/authenticated Data API roles.
+create table if not exists public.agent_applications (
+  id uuid primary key default gen_random_uuid(),
+  application_no text not null unique,
+  user_id uuid not null references public.users(id) on delete cascade,
+  full_name text not null,
+  region text not null,
+  promotion_channel text not null,
+  whatsapp_phone text not null,
+  message text,
+  status text not null default 'pending' check (status in ('pending', 'changes_requested', 'approved', 'rejected', 'activated')),
+  consent_at timestamptz not null,
+  reviewed_by uuid references public.admin_users(id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists agent_applications_open_user_idx
+  on public.agent_applications (user_id)
+  where status in ('pending', 'changes_requested', 'approved');
+create index if not exists agent_applications_status_created_idx
+  on public.agent_applications (status, created_at desc);
+create index if not exists agent_applications_reviewed_by_idx
+  on public.agent_applications (reviewed_by);
+
+create table if not exists public.agents (
+  id uuid primary key default gen_random_uuid(),
+  agent_no text not null unique,
+  user_id uuid not null unique references public.users(id) on delete restrict,
+  referral_code text not null unique,
+  status text not null default 'active' check (status in ('active', 'suspended', 'terminated')),
+  commission_rate numeric(5, 2) check (commission_rate is null or (commission_rate >= 0 and commission_rate <= 100)),
+  source text not null default 'application' check (source in ('application', 'admin_manual', 'admin_import')),
+  application_id uuid unique references public.agent_applications(id) on delete set null,
+  created_by_admin_id uuid references public.admin_users(id) on delete set null,
+  activated_at timestamptz not null default now(),
+  suspended_at timestamptz,
+  suspension_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists agents_status_created_idx on public.agents (status, created_at desc);
+create index if not exists agents_created_by_admin_idx on public.agents (created_by_admin_id);
+
+create table if not exists public.agent_activation_codes (
+  id uuid primary key default gen_random_uuid(),
+  application_id uuid not null references public.agent_applications(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  code_hash text not null unique,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  revoked_at timestamptz,
+  failed_attempts integer not null default 0 check (failed_attempts >= 0),
+  created_by uuid not null references public.admin_users(id) on delete restrict,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists agent_activation_codes_user_active_idx
+  on public.agent_activation_codes (user_id, created_at desc)
+  where used_at is null and revoked_at is null;
+create index if not exists agent_activation_codes_application_idx
+  on public.agent_activation_codes (application_id);
+create index if not exists agent_activation_codes_created_by_idx
+  on public.agent_activation_codes (created_by);
+
+create table if not exists public.agent_commission_rules (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid references public.agents(id) on delete cascade,
+  name text not null,
+  commission_rate numeric(5, 2) not null check (commission_rate >= 0 and commission_rate <= 100),
+  min_order_amount numeric(10, 2) not null default 0 check (min_order_amount >= 0),
+  effective_from timestamptz not null default now(),
+  effective_until timestamptz,
+  active boolean not null default true,
+  created_by uuid not null references public.admin_users(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (effective_until is null or effective_until > effective_from)
+);
+
+create index if not exists agent_commission_rules_lookup_idx
+  on public.agent_commission_rules (agent_id, active, effective_from desc);
+create index if not exists agent_commission_rules_created_by_idx
+  on public.agent_commission_rules (created_by);
+
+create table if not exists public.agent_referrals (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null references public.agents(id) on delete restrict,
+  referred_user_id uuid not null unique references public.users(id) on delete restrict,
+  referral_code text not null,
+  attributed_at timestamptz not null default now(),
+  attribution_expires_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists agent_referrals_agent_created_idx
+  on public.agent_referrals (agent_id, created_at desc);
+
+alter table public.orders add column if not exists agent_id uuid references public.agents(id) on delete set null;
+alter table public.orders add column if not exists agent_referral_code text;
+create index if not exists orders_agent_id_created_idx on public.orders (agent_id, created_at desc);
+
+create table if not exists public.agent_order_attributions (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null unique references public.orders(id) on delete restrict,
+  agent_id uuid not null references public.agents(id) on delete restrict,
+  referred_user_id uuid references public.users(id) on delete set null,
+  referral_code text not null,
+  eligible_amount numeric(10, 2) not null check (eligible_amount >= 0),
+  commission_rate numeric(5, 2) not null check (commission_rate >= 0 and commission_rate <= 100),
+  commission_amount numeric(10, 2) not null check (commission_amount >= 0),
+  rule_snapshot jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending', 'available', 'voided', 'paid')),
+  available_at timestamptz,
+  voided_at timestamptz,
+  void_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists agent_order_attributions_agent_status_idx
+  on public.agent_order_attributions (agent_id, status, created_at desc);
+create index if not exists agent_order_attributions_referred_user_idx
+  on public.agent_order_attributions (referred_user_id);
+
+create table if not exists public.agent_commission_ledger (
+  id uuid primary key default gen_random_uuid(),
+  agent_id uuid not null references public.agents(id) on delete restrict,
+  order_id uuid references public.orders(id) on delete restrict,
+  attribution_id uuid references public.agent_order_attributions(id) on delete restrict,
+  entry_type text not null check (entry_type in ('commission', 'adjustment', 'reversal', 'payout')),
+  amount numeric(10, 2) not null check (amount <> 0),
+  status text not null default 'pending' check (status in ('pending', 'available', 'paid', 'voided')),
+  note text,
+  created_by uuid references public.admin_users(id) on delete set null,
+  available_at timestamptz,
+  paid_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists agent_commission_ledger_order_commission_idx
+  on public.agent_commission_ledger (order_id)
+  where entry_type = 'commission';
+create index if not exists agent_commission_ledger_agent_status_idx
+  on public.agent_commission_ledger (agent_id, status, created_at desc);
+create index if not exists agent_commission_ledger_attribution_idx
+  on public.agent_commission_ledger (attribution_id);
+create index if not exists agent_commission_ledger_created_by_idx
+  on public.agent_commission_ledger (created_by);
+
+create table if not exists public.agent_payouts (
+  id uuid primary key default gen_random_uuid(),
+  payout_no text not null unique,
+  agent_id uuid not null references public.agents(id) on delete restrict,
+  amount numeric(10, 2) not null check (amount > 0),
+  payment_method text not null default 'bank',
+  payment_details jsonb not null default '{}'::jsonb,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'paid', 'rejected')),
+  requested_at timestamptz not null default now(),
+  reviewed_by uuid references public.admin_users(id) on delete set null,
+  reviewed_at timestamptz,
+  paid_at timestamptz,
+  review_note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists agent_payouts_agent_status_idx
+  on public.agent_payouts (agent_id, status, created_at desc);
+create index if not exists agent_payouts_reviewed_by_idx on public.agent_payouts (reviewed_by);
+create unique index if not exists agent_payouts_one_open_per_agent_idx
+  on public.agent_payouts (agent_id)
+  where status in ('pending', 'approved');
+
+alter table public.agent_commission_ledger add column if not exists payout_id uuid references public.agent_payouts(id) on delete restrict;
+drop index if exists public.agent_commission_ledger_payout_unique_idx;
+create unique index agent_commission_ledger_payout_unique_idx
+  on public.agent_commission_ledger (payout_id);
+
+create table if not exists public.agent_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  admin_user_id uuid references public.admin_users(id) on delete set null,
+  action text not null,
+  entity_type text not null,
+  entity_id uuid,
+  before_data jsonb,
+  after_data jsonb,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists agent_audit_logs_entity_idx
+  on public.agent_audit_logs (entity_type, entity_id, created_at desc);
+create index if not exists agent_audit_logs_admin_idx
+  on public.agent_audit_logs (admin_user_id, created_at desc);
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'agent_applications', 'agents', 'agent_activation_codes',
+    'agent_commission_rules', 'agent_referrals', 'agent_order_attributions',
+    'agent_commission_ledger', 'agent_payouts', 'agent_audit_logs'
+  ] loop
+    execute format('alter table public.%I enable row level security', table_name);
+    execute format('revoke all on table public.%I from anon, authenticated', table_name);
+    execute format('grant select, insert, update, delete on table public.%I to service_role', table_name);
+  end loop;
+end $$;
+
+drop trigger if exists set_agent_applications_updated_at on public.agent_applications;
+create trigger set_agent_applications_updated_at before update on public.agent_applications
+for each row execute function public.set_updated_at();
+drop trigger if exists set_agents_updated_at on public.agents;
+create trigger set_agents_updated_at before update on public.agents
+for each row execute function public.set_updated_at();
+drop trigger if exists set_agent_commission_rules_updated_at on public.agent_commission_rules;
+create trigger set_agent_commission_rules_updated_at before update on public.agent_commission_rules
+for each row execute function public.set_updated_at();
+drop trigger if exists set_agent_order_attributions_updated_at on public.agent_order_attributions;
+create trigger set_agent_order_attributions_updated_at before update on public.agent_order_attributions
+for each row execute function public.set_updated_at();
+
+drop function if exists public.activate_agent_with_code(uuid, text, text, text);
+create function public.activate_agent_with_code(
+  user_id_input uuid,
+  code_hash_input text,
+  agent_no_input text,
+  referral_code_input text
+)
+returns text
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  activation public.agent_activation_codes%rowtype;
+  new_agent_id uuid;
+begin
+  select * into activation
+  from public.agent_activation_codes
+  where user_id = user_id_input
+    and used_at is null
+    and revoked_at is null
+    and expires_at > now()
+  order by created_at desc
+  limit 1
+  for update;
+
+  if activation.id is null then return 'UNAVAILABLE'; end if;
+  if activation.failed_attempts >= 5 then return 'LOCKED'; end if;
+  if activation.code_hash <> code_hash_input then
+    update public.agent_activation_codes set failed_attempts = failed_attempts + 1 where id = activation.id;
+    return 'INVALID';
+  end if;
+
+  insert into public.agents (
+    agent_no, user_id, referral_code, source, application_id, created_by_admin_id
+  ) values (
+    agent_no_input, user_id_input, referral_code_input, 'application', activation.application_id, activation.created_by
+  ) returning id into new_agent_id;
+
+  update public.agent_activation_codes set used_at = now() where id = activation.id;
+  update public.agent_applications set status = 'activated', updated_at = now()
+    where id = activation.application_id and user_id = user_id_input;
+  return new_agent_id::text;
+end;
+$$;
+
+revoke all on function public.activate_agent_with_code(uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.activate_agent_with_code(uuid, text, text, text) to service_role;
