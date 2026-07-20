@@ -76,6 +76,13 @@ export function AgentPortal({ user }: AgentPortalProps) {
     void load();
   }, [user.id]);
 
+  useEffect(() => {
+    const status = data?.application?.status;
+    if (!status || !['pending', 'changes_requested'].includes(status)) return;
+    const intervalId = window.setInterval(() => { void load(); }, 10_000);
+    return () => window.clearInterval(intervalId);
+  }, [data?.application?.status]);
+
   const submit = async (body: Record<string, unknown>, successMessage: string) => {
     setSubmitting(true);
     setError('');
@@ -96,8 +103,7 @@ export function AgentPortal({ user }: AgentPortalProps) {
   };
 
   const apply = async () => {
-    const payload = await submit({ action: 'apply', ...form }, '申请已提交，请通过 WhatsApp 联系客服');
-    if (payload?.whatsappUrl) window.open(payload.whatsappUrl, '_blank', 'noopener,noreferrer');
+    await submit({ action: 'apply', ...form }, '申请已提交。请点击下方“WhatsApp 联系客服”与客服沟通，本页面会自动更新审核状态。');
   };
 
   const copyText = async (value: string, label: string) => {
@@ -200,6 +206,8 @@ export function AgentPortal({ user }: AgentPortalProps) {
         <div className={card}>
           <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 text-[#A78345]" size={22} /><div><h3 className="font-bold">代理申请：{labelApplicationStatus(application.status)}</h3><p className="mt-1 font-mono text-xs text-stone-400">{application.applicationNo}</p></div></div>
           {application.reviewNote && <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">审核说明：{application.reviewNote}</div>}
+          {['pending', 'changes_requested'].includes(application.status) && <div className="mt-4 rounded-2xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600"><p className="font-bold text-stone-800">下一步：联系客户服务</p><p className="mt-1">请点击下方 WhatsApp 按钮，向客服提供申请编号并说明您的推广渠道。审核通过后，本页面会自动显示代理码输入框，无需手动刷新。</p></div>}
+          {application.status === 'approved' && <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800"><p className="font-bold">审核已通过</p><p className="mt-1">请联系客服获取 8 位一次性代理码，并在下方输入完成激活。</p></div>}
           {data.whatsappUrl && <a href={data.whatsappUrl} target="_blank" rel="noreferrer" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#25D366] py-3 text-sm font-bold text-white"><Send size={16} />WhatsApp 联系客服</a>}
         </div>
         {application.status === 'approved' && <div className={card}><div className="flex items-center gap-2"><KeyRound size={20} className="text-[#A78345]" /><h3 className="font-bold">激活代理身份</h3></div><p className="mt-2 text-xs leading-5 text-stone-500">输入客服发送的8位一次性代理码。代理码与当前登录手机号绑定。</p><input value={activationCode} onChange={event => setActivationCode(event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" placeholder="8位一次性代理码" className={`mt-4 ${inputClass} text-center font-mono tracking-[0.3em]`} /><button type="button" disabled={submitting || activationCode.length !== 8} onClick={() => submit({ action: 'activate', activationCode }, '代理身份已激活')} className="mt-3 w-full rounded-full bg-[#C7A46A] py-4 text-sm font-bold text-white disabled:opacity-50">立即激活</button></div>}

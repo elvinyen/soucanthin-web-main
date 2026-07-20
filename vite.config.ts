@@ -30,6 +30,7 @@ const apiRoutes: Record<string, string> = {
   '/api/admin/accounts': '/api/admin-accounts.ts',
   '/api/admin/agents': '/api/admin-agents.ts',
   '/api/admin/customers': '/api/admin-customers.ts',
+  '/api/admin/users': '/api/admin-users.ts',
   '/api/admin/coupons': '/api/admin-coupons.ts',
   '/api/admin/delivery': '/api/admin-delivery.ts',
   '/api/admin/finance': '/api/admin-finance.ts',

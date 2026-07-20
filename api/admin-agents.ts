@@ -13,7 +13,7 @@ import {
 } from './_agent-utils';
 
 type AdminAgentInput = {
-  action?: 'approve' | 'reject' | 'request_changes' | 'resend_code' | 'bulk_create' | 'set_status' | 'save_rule' | 'adjust_commission' | 'review_payout';
+  action?: 'approve' | 'reject' | 'request_changes' | 'resend_code' | 'bulk_create' | 'set_status' | 'delete_agent' | 'save_rule' | 'adjust_commission' | 'review_payout';
   applicationId?: string;
   agentId?: string;
   status?: string;
@@ -27,7 +27,7 @@ type AdminAgentInput = {
   payoutStatus?: string;
 };
 
-const ADMIN_ONLY_ACTIONS = new Set(['bulk_create', 'save_rule', 'adjust_commission', 'review_payout']);
+const ADMIN_ONLY_ACTIONS = new Set(['bulk_create', 'delete_agent', 'save_rule', 'adjust_commission', 'review_payout']);
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
@@ -44,6 +44,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (input.action === 'reject' || input.action === 'request_changes') return await reviewApplication(input, admin.id, res);
     if (input.action === 'bulk_create') return await bulkCreateAgents(input, admin.id, res);
     if (input.action === 'set_status') return await setAgentStatus(input, admin.id, res);
+    if (input.action === 'delete_agent') return await deleteAgent(input, admin.id, res);
     if (input.action === 'save_rule') return await saveRule(input, admin.id, res);
     if (input.action === 'adjust_commission') return await adjustCommission(input, admin.id, res);
     if (input.action === 'review_payout') return await reviewPayout(input, admin.id, res);
@@ -153,6 +154,17 @@ async function setAgentStatus(input: AdminAgentInput, adminId: string, res: ApiR
   await supabaseRequest(supabaseUrl, serviceRoleKey, `/agents?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status: input.status, suspended_at: input.status === 'active' ? null : new Date().toISOString(), suspension_reason: input.status === 'active' ? null : note }) });
   await audit(adminId, 'set_agent_status', 'agent', id, null, { status: input.status, note });
   return res.status(200).json({ success: true });
+}
+
+async function deleteAgent(input: AdminAgentInput, adminId: string, res: ApiResponse) {
+  const id = cleanAgentText(input.agentId, 80);
+  if (!id) throw new AdminError('缺少代理记录');
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const result = await supabaseRequest(supabaseUrl, serviceRoleKey, '/rpc/delete_agent_if_safe', {
+    method: 'POST',
+    body: JSON.stringify({ agent_id_input: id, admin_id_input: adminId }),
+  });
+  return res.status(200).json({ success: true, result });
 }
 
 async function saveRule(input: AdminAgentInput, adminId: string, res: ApiResponse) {

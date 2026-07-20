@@ -796,6 +796,13 @@ create table if not exists public.wallet_transactions (
   completed_at timestamptz
 );
 
+alter table public.wallet_transactions add column if not exists created_by_admin_id uuid references public.admin_users(id) on delete set null;
+alter table public.wallet_transactions add column if not exists balance_before numeric(10, 2);
+alter table public.wallet_transactions add column if not exists balance_after numeric(10, 2);
+alter table public.wallet_transactions add column if not exists recharge_channel text;
+alter table public.wallet_transactions add column if not exists reference_no text;
+alter table public.wallet_transactions add column if not exists idempotency_key text;
+
 alter table public.wallet_transactions drop constraint if exists wallet_transactions_type_check;
 alter table public.wallet_transactions drop constraint if exists wallet_transactions_method_check;
 alter table public.wallet_transactions drop constraint if exists wallet_transactions_status_check;
@@ -862,6 +869,10 @@ create index if not exists users_created_by_admin_id_idx on public.users (create
 create index if not exists wallets_user_id_idx on public.wallets (user_id);
 create index if not exists wallet_transactions_user_id_idx on public.wallet_transactions (user_id, created_at desc);
 create index if not exists wallet_transactions_status_idx on public.wallet_transactions (status);
+create index if not exists wallet_transactions_admin_idx on public.wallet_transactions (created_by_admin_id, created_at desc);
+create unique index if not exists wallet_transactions_idempotency_unique_idx
+  on public.wallet_transactions (idempotency_key)
+  where idempotency_key is not null;
 create index if not exists user_addresses_user_id_idx on public.user_addresses (user_id);
 create index if not exists user_coupons_user_id_idx on public.user_coupons (user_id);
 create index if not exists orders_assigned_branch_id_idx on public.orders (assigned_branch_id);
@@ -955,6 +966,127 @@ begin
   where id = tx.id;
 end;
 $$;
+
+create or replace function public.admin_manual_wallet_recharge(
+  user_id_input uuid,
+  amount_input numeric,
+  admin_id_input uuid,
+  channel_input text,
+  reason_input text,
+  reference_no_input text default null,
+  idempotency_key_input text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  wallet_before numeric(10, 2);
+  wallet_after numeric(10, 2);
+  transaction_id uuid;
+  existing_tx public.wallet_transactions%rowtype;
+begin
+  if amount_input is null or amount_input < 0.01 or amount_input > 100000 then
+    raise exception 'Recharge amount must be between RM 0.01 and RM 100000';
+  end if;
+  if channel_input not in ('cash', 'tng', 'bank', 'promotion', 'compensation', 'other') then
+    raise exception 'Invalid recharge channel';
+  end if;
+  if length(trim(coalesce(reason_input, ''))) < 2 then
+    raise exception 'Recharge reason is required';
+  end if;
+  if idempotency_key_input is null or length(trim(idempotency_key_input)) < 8 then
+    raise exception 'Idempotency key is required';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(idempotency_key_input, 0));
+  select * into existing_tx
+  from public.wallet_transactions
+  where idempotency_key = idempotency_key_input;
+
+  if found then
+    if existing_tx.user_id is distinct from user_id_input
+      or existing_tx.amount is distinct from round(amount_input::numeric, 2)
+      or existing_tx.created_by_admin_id is distinct from admin_id_input then
+      raise exception 'Idempotency key has already been used';
+    end if;
+    return jsonb_build_object(
+      'transactionId', existing_tx.id,
+      'balanceBefore', existing_tx.balance_before,
+      'balanceAfter', existing_tx.balance_after,
+      'idempotent', true
+    );
+  end if;
+
+  if not exists (select 1 from public.users where id = user_id_input) then
+    raise exception 'User not found';
+  end if;
+  if not exists (select 1 from public.admin_users where id = admin_id_input and active = true) then
+    raise exception 'Administrator not found or inactive';
+  end if;
+
+  insert into public.wallets (user_id, balance, currency)
+  values (user_id_input, 0, 'MYR')
+  on conflict (user_id) do nothing;
+
+  select balance into wallet_before
+  from public.wallets
+  where user_id = user_id_input
+  for update;
+
+  wallet_after := round((wallet_before + amount_input)::numeric, 2);
+  update public.wallets
+  set balance = wallet_after,
+      updated_at = now()
+  where user_id = user_id_input;
+
+  insert into public.wallet_transactions (
+    user_id, type, method, amount, status, note, completed_at,
+    created_by_admin_id, balance_before, balance_after, recharge_channel,
+    reference_no, idempotency_key
+  ) values (
+    user_id_input, 'recharge', 'manual', round(amount_input::numeric, 2), 'succeeded', trim(reason_input), now(),
+    admin_id_input, wallet_before, wallet_after, channel_input,
+    nullif(trim(coalesce(reference_no_input, '')), ''), idempotency_key_input
+  ) returning id into transaction_id;
+
+  return jsonb_build_object(
+    'transactionId', transaction_id,
+    'balanceBefore', wallet_before,
+    'balanceAfter', wallet_after,
+    'idempotent', false
+  );
+end;
+$$;
+
+revoke all on function public.admin_manual_wallet_recharge(uuid, numeric, uuid, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.admin_manual_wallet_recharge(uuid, numeric, uuid, text, text, text, text) to service_role;
+
+create or replace function public.admin_user_financial_summaries(user_ids_input uuid[])
+returns table (
+  user_id uuid,
+  wallet_balance numeric,
+  order_count bigint,
+  total_spent numeric
+)
+language sql
+security invoker
+set search_path = ''
+as $$
+  select
+    requested.user_id,
+    coalesce(wallet.balance, 0)::numeric as wallet_balance,
+    count(customer_order.id) filter (where customer_order.status <> 'cancelled') as order_count,
+    coalesce(sum(coalesce(customer_order.payable_total, customer_order.total, 0)) filter (where customer_order.status <> 'cancelled'), 0)::numeric as total_spent
+  from unnest(user_ids_input) as requested(user_id)
+  left join public.wallets as wallet on wallet.user_id = requested.user_id
+  left join public.orders as customer_order on customer_order.user_id = requested.user_id
+  group by requested.user_id, wallet.balance;
+$$;
+
+revoke all on function public.admin_user_financial_summaries(uuid[]) from public, anon, authenticated;
+grant execute on function public.admin_user_financial_summaries(uuid[]) to service_role;
 
 insert into storage.buckets (id, name, public)
 values ('payment-receipts', 'payment-receipts', true)
@@ -1539,3 +1671,77 @@ $$;
 
 revoke all on function public.activate_agent_with_code(uuid, text, text, text) from public, anon, authenticated;
 grant execute on function public.activate_agent_with_code(uuid, text, text, text) to service_role;
+
+-- Deletes only an agent that has no financial or order-attribution history.
+-- The function runs as one transaction and intentionally keeps the ordinary user
+-- account plus audit history. It is callable only by the server service role.
+create or replace function public.delete_agent_if_safe(
+  agent_id_input uuid,
+  admin_id_input uuid
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  target_agent public.agents%rowtype;
+  target_application_id uuid;
+  removed_referrals integer := 0;
+begin
+  select * into target_agent
+  from public.agents
+  where id = agent_id_input
+  for update;
+
+  if not found then
+    raise exception '未找到代理记录';
+  end if;
+
+  if exists (select 1 from public.agent_order_attributions where agent_id = target_agent.id) then
+    raise exception '该代理已有订单归因记录，不能删除，请改为暂停或终止';
+  end if;
+  if exists (select 1 from public.agent_commission_ledger where agent_id = target_agent.id) then
+    raise exception '该代理已有佣金流水，不能删除，请改为暂停或终止';
+  end if;
+  if exists (select 1 from public.agent_payouts where agent_id = target_agent.id) then
+    raise exception '该代理已有提现记录，不能删除，请改为暂停或终止';
+  end if;
+
+  delete from public.agent_referrals where agent_id = target_agent.id;
+  get diagnostics removed_referrals = row_count;
+
+  target_application_id := target_agent.application_id;
+  if target_application_id is not null then
+    delete from public.agent_activation_codes where application_id = target_application_id;
+    delete from public.agent_applications where id = target_application_id;
+  end if;
+
+  delete from public.agents where id = target_agent.id;
+
+  insert into public.agent_audit_logs (
+    admin_user_id, action, entity_type, entity_id, before_data, after_data, note
+  ) values (
+    admin_id_input,
+    'delete_agent',
+    'agent',
+    target_agent.id,
+    jsonb_build_object(
+      'agentNo', target_agent.agent_no,
+      'userId', target_agent.user_id,
+      'referralCode', target_agent.referral_code,
+      'source', target_agent.source
+    ),
+    jsonb_build_object('removedReferrals', removed_referrals),
+    '仅无订单归因、佣金流水和提现记录的代理允许删除'
+  );
+
+  return jsonb_build_object(
+    'agentNo', target_agent.agent_no,
+    'removedReferrals', removed_referrals
+  );
+end;
+$$;
+
+revoke all on function public.delete_agent_if_safe(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.delete_agent_if_safe(uuid, uuid) to service_role;

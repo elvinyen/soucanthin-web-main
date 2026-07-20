@@ -37,8 +37,9 @@ import { DeliveryBoard } from './admin/DeliveryBoard';
 import { FinanceCenter } from './admin/FinanceCenter';
 import { CouponCenter } from './admin/CouponCenter';
 import { AgentCenter } from './admin/AgentCenter';
+import { UserManagement } from './admin/UserManagement';
 
-type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'agents' | 'wallet' | 'accounts' | 'storeBranches';
+type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'users' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'agents' | 'wallet' | 'accounts' | 'storeBranches';
 type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'customer_service' | 'kitchen' | 'delivery';
 type OrderStatus = 'pending_confirm' | 'waiting_kitchen' | 'cooking' | 'kitchen_done' | 'stock_issue' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
 type MenuSalesStatus = 'active' | 'sold_out' | 'inactive';
@@ -381,6 +382,7 @@ const sections = [
   { id: 'menuItems' as const, label: '菜品管理', icon: Soup },
   { id: 'menuCategories' as const, label: '分类管理', icon: Soup },
   { id: 'orders' as const, label: '订单管理', icon: ClipboardList },
+  { id: 'users' as const, label: '用户管理', icon: Users },
   { id: 'customerOrder' as const, label: '用户下单', icon: ShoppingCart },
   { id: 'kitchen' as const, label: '厨房出餐', icon: CookingPot },
   { id: 'delivery' as const, label: '配送工作台', icon: Bike },
@@ -389,7 +391,7 @@ const sections = [
   { id: 'agents' as const, label: '代理中心', icon: Handshake },
   { id: 'storeBranches' as const, label: '门店管理', icon: Store },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
-  { id: 'accounts' as const, label: '账号管理', icon: Users },
+  { id: 'accounts' as const, label: '账号管理', icon: ShieldCheck },
 ];
 
 function initialAdminSection(): AdminSection {
@@ -402,6 +404,7 @@ function initialAdminSection(): AdminSection {
   if (pathname === '/admin/agents') return 'agents';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   if (pathname === '/admin/orders') return 'orders';
+  if (pathname === '/admin/users') return 'users';
   if (pathname === '/admin/customer-order') return 'customerOrder';
   if (pathname === '/admin/accounts') return 'accounts';
   return 'menuItems';
@@ -504,9 +507,9 @@ const AdminDashboard: React.FC = () => {
   const availableSections = sections.filter(item => {
     const role = auth?.admin?.role;
     if (!role || role === 'admin' || role === 'owner') return true;
-    if (role === 'manager') return ['orders', 'customerOrder', 'kitchen', 'delivery', 'finance', 'coupons', 'agents'].includes(item.id);
+    if (role === 'manager') return ['orders', 'users', 'customerOrder', 'kitchen', 'delivery', 'finance', 'coupons', 'agents'].includes(item.id);
     if (role === 'staff') return item.id === 'finance';
-    if (role === 'customer_service') return item.id === 'orders' || item.id === 'customerOrder' || item.id === 'delivery' || item.id === 'coupons' || item.id === 'agents';
+    if (role === 'customer_service') return item.id === 'orders' || item.id === 'users' || item.id === 'customerOrder' || item.id === 'delivery' || item.id === 'coupons' || item.id === 'agents';
     if (role === 'delivery') return item.id === 'delivery';
     return item.id === 'kitchen';
   });
@@ -695,6 +698,8 @@ const AdminDashboard: React.FC = () => {
     if (auth.admin.role === 'customer_service') {
       const nextSection: AdminSection = pathname === '/admin/orders'
         ? 'orders'
+        : pathname === '/admin/users'
+        ? 'users'
         : pathname === '/admin/customer-order'
         ? 'customerOrder'
         : pathname === '/admin/coupons'
@@ -1738,7 +1743,7 @@ const AdminDashboard: React.FC = () => {
         </div>
       </aside>
 
-      <main className={`${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
+      <main className={`${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
         <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -1767,7 +1772,7 @@ const AdminDashboard: React.FC = () => {
           </div>
         </header>
 
-        <div className={section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons'
+        <div className={section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons'
           ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 lg:p-6'
           : 'grid min-h-[calc(100vh-57px)] gap-3 p-3 sm:p-5 lg:p-6'}>
           {notice && <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{notice}</div>}
@@ -1984,6 +1989,10 @@ const AdminDashboard: React.FC = () => {
               onLoadDeliveryPreview={loadDeliveryPreview}
               onSubmit={submitCustomerOrder}
             />
+          )}
+
+          {section === 'users' && auth.admin && (
+            <UserManagement api={api} adminRole={auth.admin.role} onNotice={showNotice} />
           )}
 
           {section === 'kitchen' && (
@@ -4189,6 +4198,7 @@ function pathForSection(section: AdminSection) {
   if (section === 'menuItems') return '/admin';
   if (section === 'menuCategories') return '/admin/menu-categories';
   if (section === 'customerOrder') return '/admin/customer-order';
+  if (section === 'users') return '/admin/users';
   if (section === 'storeBranches') return '/admin/store-branches';
   return `/admin/${section}`;
 }
@@ -4197,6 +4207,7 @@ function sectionForPath(pathname: string): AdminSection | null {
   if (pathname === '/admin' || pathname === '/') return 'menuItems';
   if (pathname === '/admin/menu-categories') return 'menuCategories';
   if (pathname === '/admin/customer-order') return 'customerOrder';
+  if (pathname === '/admin/users') return 'users';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   const section = pathname.slice('/admin/'.length) as AdminSection;
   return sections.some(item => item.id === section) ? section : null;
