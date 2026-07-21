@@ -26,13 +26,14 @@ type AgentInput = {
   amount?: number | string;
   paymentMethod?: string;
   paymentDetails?: Record<string, string>;
+  language?: string;
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user) return res.status(401).json({ success: false, error: '请先登录后使用代理合作功能' });
-    if ((req.method || 'GET') === 'GET') return res.status(200).json({ success: true, ...(await getAgentPortal(user.id)) });
+    if ((req.method || 'GET') === 'GET') return res.status(200).json({ success: true, ...(await getAgentPortal(user.id, requestLanguage(req))) });
     if (req.method !== 'POST') {
       res.setHeader?.('Allow', 'GET, POST');
       return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -66,7 +67,7 @@ async function applyForAgent(user: { id: string; display_phone: string; name?: s
       body: JSON.stringify({ full_name: fullName, region, promotion_channel: promotionChannel, whatsapp_phone: whatsappPhone, message: message || null, status: 'pending', consent_at: new Date().toISOString(), review_note: null, reviewed_at: null, reviewed_by: null }),
     });
     await sendTelegramNotification(`📝 代理申请已补充资料\n申请编号：${openApplication.application_no}\n姓名：${fullName}\n手机号：${whatsappPhone}`).catch(() => undefined);
-    return res.status(200).json({ success: true, applicationNo: openApplication.application_no, whatsappUrl: buildAgentWhatsappUrl(openApplication.application_no) });
+    return res.status(200).json({ success: true, applicationNo: openApplication.application_no, whatsappUrl: buildAgentWhatsappUrl(openApplication.application_no, input.language) });
   }
   if (openApplication) return res.status(409).json({ success: false, error: '你已有进行中的代理申请，请勿重复提交' });
   const existingAgent = await supabaseRequest(supabaseUrl, serviceRoleKey, `/agents?user_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`, { method: 'GET' });
@@ -78,7 +79,7 @@ async function applyForAgent(user: { id: string; display_phone: string; name?: s
   });
   const application = Array.isArray(created) ? created[0] : created;
   await sendTelegramNotification(`🤝 新代理申请\n申请编号：${applicationNo}\n姓名：${fullName}\n手机号：${whatsappPhone}\n地区：${region}\n渠道：${promotionChannel}`).catch(() => undefined);
-  return res.status(201).json({ success: true, application, whatsappUrl: buildAgentWhatsappUrl(applicationNo) });
+  return res.status(201).json({ success: true, application, whatsappUrl: buildAgentWhatsappUrl(applicationNo, input.language) });
 }
 
 async function activateAgent(userId: string, input: AgentInput, res: ApiResponse) {
@@ -129,6 +130,14 @@ function parseBody<T>(body: unknown) {
   if (Buffer.isBuffer(body)) return JSON.parse(body.toString('utf8')) as T;
   if (typeof body === 'string') return JSON.parse(body) as T;
   return (body || {}) as T;
+}
+
+function requestLanguage(req: ApiRequest) {
+  try {
+    return new URL(req.url || '/', 'http://localhost').searchParams.get('lang');
+  } catch {
+    return null;
+  }
 }
 
 function normalizeAgentError(error: unknown) {

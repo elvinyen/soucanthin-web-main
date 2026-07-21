@@ -78,19 +78,32 @@ export function normalizeActivationCode(code: string) {
   return String(code || '').replace(/\D/g, '').slice(0, 8);
 }
 
-export function buildAgentWhatsappUrl(applicationNo: string) {
+type AgentPortalLanguage = 'zh' | 'en' | 'th' | 'vi';
+
+function normalizeAgentPortalLanguage(value?: string | null): AgentPortalLanguage {
+  const language = String(value || '').toLowerCase().split('-')[0];
+  return ['zh', 'en', 'th', 'vi'].includes(language) ? language as AgentPortalLanguage : 'en';
+}
+
+export function buildAgentWhatsappUrl(applicationNo: string, language?: string | null) {
   const configured = process.env.WHATSAPP_URL || process.env.VITE_WHATSAPP_URL || '';
   if (!configured) return '';
+  const messages: Record<AgentPortalLanguage, string> = {
+    zh: `你好，我已经提交成为代理的申请。\n申请编号：${applicationNo}\n请协助审核，谢谢。`,
+    en: `Hello, I have submitted an agent application.\nApplication number: ${applicationNo}\nPlease assist with the review. Thank you.`,
+    th: `สวัสดี ฉันได้ส่งใบสมัครเป็นตัวแทนแล้ว\nหมายเลขใบสมัคร: ${applicationNo}\nกรุณาช่วยตรวจสอบให้ด้วย ขอบคุณค่ะ/ครับ`,
+    vi: `Xin chào, tôi đã gửi đơn đăng ký làm đại lý.\nMã đơn đăng ký: ${applicationNo}\nVui lòng hỗ trợ xét duyệt. Xin cảm ơn.`,
+  };
   try {
     const url = new URL(configured);
-    url.searchParams.set('text', `你好，我已经提交成为代理的申请。\n申请编号：${applicationNo}\n请协助审核，谢谢。`);
+    url.searchParams.set('text', messages[normalizeAgentPortalLanguage(language)]);
     return url.toString();
   } catch {
     return configured;
   }
 }
 
-export async function getAgentPortal(userId: string) {
+export async function getAgentPortal(userId: string, language?: string | null) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const [applicationRaw, agentRaw] = await Promise.all([
     supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_applications?user_id=eq.${encodeURIComponent(userId)}&select=*&order=created_at.desc&limit=1`, { method: 'GET' }),
@@ -104,7 +117,7 @@ export async function getAgentPortal(userId: string) {
       agent: null,
       summary: { pending: 0, available: 0, paid: 0, referrals: 0, orders: 0 },
       commissions: [],
-      whatsappUrl: application ? buildAgentWhatsappUrl(application.application_no) : '',
+      whatsappUrl: application ? buildAgentWhatsappUrl(application.application_no, language) : '',
     };
   }
 

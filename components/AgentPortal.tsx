@@ -60,7 +60,7 @@ export function AgentPortal({ user }: AgentPortalProps) {
   const load = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/agent');
+      const response = await fetch(`/api/agent?lang=${encodeURIComponent(i18n.language)}`);
       const payload = await readApiJson(response);
       if (!response.ok || !payload.success) throw new Error(payload.error || t('agentPortal.loadFailed'));
       setData(payload);
@@ -76,7 +76,7 @@ export function AgentPortal({ user }: AgentPortalProps) {
 
   useEffect(() => {
     void load();
-  }, [user.id]);
+  }, [user.id, i18n.language]);
 
   useEffect(() => {
     const status = data?.application?.status;
@@ -90,7 +90,7 @@ export function AgentPortal({ user }: AgentPortalProps) {
     setError('');
     setNotice('');
     try {
-      const response = await fetch('/api/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const response = await fetch('/api/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, language: i18n.language }) });
       const payload = await readApiJson(response);
       if (!response.ok || !payload.success) throw new Error(payload.error || t('agentPortal.actionFailed'));
       setNotice(successMessage);
