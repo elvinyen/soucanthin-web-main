@@ -414,6 +414,13 @@
       "expired": "已过期"
     }
   },
+  "agentPortal": {
+    "loading": "正在读取代理资料…", "loadFailed": "无法读取代理资料", "actionFailed": "操作失败", "applicationSubmitted": "申请已提交。请点击下方“WhatsApp 联系客服”与客服沟通，本页面会自动更新审核状态。", "copied": "{{label}}已复制", "qrFilename": "推广二维码", "qrDownloaded": "推广二维码已下载", "qrFailed": "二维码生成失败，请稍后重试。",
+    "center": "代理中心", "status": "状态", "defaultCommission": "默认佣金", "pending": "待确认", "available": "可提现", "paid": "已结算", "promotionTools": "专属推广工具", "referralCode": "推广码", "referralLink": "推广链接", "qrAria": "专属推广链接二维码", "copyReferralCode": "复制推广码", "copyReferralLink": "复制推广链接", "downloadQr": "下载二维码", "referredCustomers": "推广客户", "referralOrders": "推广订单",
+    "requestPayout": "申请提现", "payoutHint": "最低 RM 10，提交后由后台审核付款。", "payoutAmount": "提现金额", "bankName": "银行名称", "accountName": "收款人姓名", "accountNumber": "银行账号", "submitPayout": "提交提现申请", "payoutSubmitted": "提现申请已提交", "commissionDetails": "佣金明细", "emptyCommissions": "暂无佣金记录",
+    "application": "代理申请", "reviewNote": "审核说明", "nextStep": "下一步：联系客户服务", "pendingGuide": "请点击下方 WhatsApp 按钮，向客服提供申请编号并说明您的推广渠道。审核通过后，本页面会自动显示代理码输入框，无需手动刷新。", "approvedTitle": "审核已通过", "approvedGuide": "请联系客服获取 8 位一次性代理码，并在下方输入完成激活。", "contactWhatsapp": "WhatsApp 联系客服", "activateTitle": "激活代理身份", "activateHint": "输入客服发送的 8 位一次性代理码。代理码与当前登录手机号绑定。", "activationPlaceholder": "8位一次性代理码", "activateNow": "立即激活", "activated": "代理身份已激活", "reapply": "重新申请", "supplementApplication": "补充申请资料", "resubmitApplication": "重新提交申请", "fullName": "姓名", "region": "所在地区", "promotionChannel": "推广渠道", "whatsappPhone": "WhatsApp 手机号", "applicationMessage": "申请说明", "applicationMessageOptional": "申请说明（选填）", "resubmitConsent": "我确认补充资料真实，并同意代理规则及隐私说明。", "submitReview": "提交审核", "applyTitle": "申请成为代理", "applyDescription": "审核通过后可获得专属推广码并赚取订单佣金。", "promotionPlaceholder": "例如：社群、门店、Facebook", "applyConsent": "我确认资料真实，并同意代理规则、佣金结算及隐私说明。", "submitApplication": "提交代理申请",
+    "applicationStatus": { "pending": "审核中", "changes_requested": "需要补充资料", "approved": "审核已通过", "rejected": "申请未通过", "activated": "已激活" }, "agentStatus": { "active": "正常", "suspended": "已暂停", "terminated": "已终止" }, "ledgerStatus": { "pending": "待确认", "available": "可提现", "paid": "已结算", "voided": "已作废" }, "entryType": { "commission": "订单佣金", "adjustment": "佣金调整", "reversal": "佣金冲正", "payout": "代理提现" }
+  },
   "whatsapp": {
     "aria": "通过 WhatsApp 联系深夜食汤"
   }
