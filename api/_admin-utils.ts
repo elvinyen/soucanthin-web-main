@@ -17,13 +17,15 @@ export type AdminUserRecord = {
   password_hash?: string;
   last_login_at?: string | null;
   assigned_branch_id?: string | null;
+  branch_scope?: AdminBranchScope | null;
 };
 
-export type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'kitchen' | 'customer_service' | 'delivery';
-type LegacyAdminRole = never;
+export type AdminRole = 'admin' | 'kitchen' | 'customer_service';
+export type AdminBranchScope = 'all' | 'assigned';
+type LegacyAdminRole = 'owner' | 'manager' | 'staff' | 'delivery';
 
 export async function requireAdmin(req: ApiRequest) {
-  return requireAdminRole(req, ['admin', 'owner']);
+  return requireAdminRole(req, ['admin']);
 }
 
 export async function requireAdminRole(req: ApiRequest, allowedRoles: AdminRole[]) {
@@ -34,12 +36,19 @@ export async function requireAdminRole(req: ApiRequest, allowedRoles: AdminRole[
 }
 
 export function hasAdminPermission(role: AdminRole, allowedRoles: AdminRole[]) {
-  if (allowedRoles.includes(role)) return true;
-  if (role === 'owner') return allowedRoles.includes('admin');
-  if (role === 'manager') {
-    return allowedRoles.some(allowedRole => ['customer_service', 'kitchen', 'delivery'].includes(allowedRole));
-  }
-  return false;
+  return role === 'admin' || allowedRoles.includes(role);
+}
+
+export function hasAllBranchAccess(admin: { role: AdminRole; branchScope?: AdminBranchScope | null }) {
+  return admin.role === 'admin' || (admin.role === 'customer_service' && admin.branchScope === 'all');
+}
+
+export function enforceAdminBranch(admin: { role: AdminRole; branchScope?: AdminBranchScope | null; assignedBranchId?: string | null }, requestedBranchId?: string | null) {
+  const requested = String(requestedBranchId || '').trim();
+  if (hasAllBranchAccess(admin)) return requested || null;
+  if (!admin.assignedBranchId) throw new AdminError('当前账号尚未分配门店，请联系管理员', 403);
+  if (requested && requested !== admin.assignedBranchId) throw new AdminError('没有权限访问其他门店', 403);
+  return admin.assignedBranchId;
 }
 
 export async function getAuthenticatedAdmin(req: ApiRequest) {
@@ -54,11 +63,11 @@ export async function getAuthenticatedAdmin(req: ApiRequest) {
     sessions = await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      `${sessionFilter}&select=*,admin_users(id,username,display_name,role,active,assigned_branch_id)`,
+      `${sessionFilter}&select=*,admin_users(id,username,display_name,role,active,assigned_branch_id,branch_scope)`,
       { method: 'GET' },
     );
   } catch (error) {
-    if (!isMissingAssignedBranchColumn(error)) throw error;
+    if (!isMissingAdminAccessColumn(error)) throw error;
     sessions = await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
@@ -139,12 +148,14 @@ export function sanitizeAdmin(admin: AdminUserRecord) {
     username: admin.username,
     displayName: admin.display_name,
     role: normalizeAdminRole(admin.role),
+    branchScope: normalizeAdminRole(admin.role) === 'admin' ? 'all' as const : admin.branch_scope === 'all' ? 'all' as const : 'assigned' as const,
     assignedBranchId: admin.assigned_branch_id || null,
   };
 }
 
 export function normalizeAdminRole(role: string): AdminRole {
-  if (['owner', 'manager', 'staff', 'kitchen', 'customer_service', 'delivery'].includes(role)) return role as AdminRole;
+  if (role === 'kitchen' || role === 'customer_service') return role;
+  if (role === 'staff' || role === 'delivery') return 'customer_service';
   return 'admin';
 }
 
@@ -182,8 +193,8 @@ export function jsonError(error: unknown) {
 
 function normalizeAdminErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : '后台操作失败';
-  if (isMissingAssignedBranchColumn(error)) {
-    return '数据库尚未更新财务模块字段 assigned_branch_id，请先执行最新版 supabase-schema.sql。';
+  if (isMissingAdminAccessColumn(error)) {
+    return '数据库尚未更新后台门店权限字段，请先执行最新版 supabase-schema.sql。';
   }
   try {
     const payload = JSON.parse(message) as { code?: string; message?: string };
@@ -196,9 +207,9 @@ function normalizeAdminErrorMessage(error: unknown) {
   }
 }
 
-function isMissingAssignedBranchColumn(error: unknown) {
+function isMissingAdminAccessColumn(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '');
-  return message.includes('assigned_branch_id') && (
+  return (message.includes('assigned_branch_id') || message.includes('branch_scope')) && (
     message.includes('does not exist')
     || message.includes('PGRST204')
     || message.includes('42703')

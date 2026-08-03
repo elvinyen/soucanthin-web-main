@@ -1,4 +1,4 @@
-import { AdminError, jsonError, parseAdminBody, requireAdmin, requireAdminRole } from './_admin-utils';
+import { AdminError, enforceAdminBranch, hasAllBranchAccess, jsonError, parseAdminBody, requireAdmin, requireAdminRole } from './_admin-utils';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, supabaseRequest } from './_order-utils';
 
@@ -31,16 +31,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const method = req.method || 'GET';
 
     if (method === 'GET') {
-      await requireAdminRole(req, ['admin', 'customer_service']);
-      return await listBranches(res);
+      const admin = await requireAdminRole(req, ['admin', 'customer_service']);
+      return await listBranches(res, admin);
     }
     if (method === 'POST') {
       await requireAdmin(req);
       return await createBranch(req, res);
     }
     if (method === 'PATCH' || method === 'PUT') {
-      await requireAdmin(req);
-      return await updateBranch(req, res);
+      const admin = await requireAdminRole(req, ['admin', 'customer_service']);
+      return await updateBranch(req, res, admin);
     }
 
     res.setHeader?.('Allow', 'GET, POST, PATCH, PUT');
@@ -84,12 +84,13 @@ async function createBranch(req: ApiRequest, res: ApiResponse) {
   return res.status(201).json({ success: true, branch: mapBranch(branch) });
 }
 
-async function listBranches(res: ApiResponse) {
+async function listBranches(res: ApiResponse, admin: Awaited<ReturnType<typeof requireAdminRole>>) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const branchFilter = hasAllBranchAccess(admin) ? '' : `id=eq.${encodeURIComponent(enforceAdminBranch(admin) || '')}&`;
   const rows = await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    `/store_branches?select=${BRANCH_SELECT}&order=sort_order.asc,id.asc`,
+    `/store_branches?${branchFilter}select=${BRANCH_SELECT}&order=sort_order.asc,id.asc`,
     { method: 'GET' },
   );
 
@@ -99,10 +100,14 @@ async function listBranches(res: ApiResponse) {
   });
 }
 
-async function updateBranch(req: ApiRequest, res: ApiResponse) {
+async function updateBranch(req: ApiRequest, res: ApiResponse, admin: Awaited<ReturnType<typeof requireAdminRole>>) {
   const input = parseAdminBody<StoreBranchInput>(req.body);
+  if (admin.role !== 'admin' && (input.active !== undefined || input.sort_order !== undefined)) {
+    throw new AdminError('运营助理只能修改门店名称、地址和坐标', 403);
+  }
   const id = String(input.id || '').trim();
   if (!id) throw new AdminError('缺少门店 ID');
+  enforceAdminBranch(admin, id);
 
   const existing = await findBranchById(id);
   if (!existing) throw new AdminError('门店不存在', 404);

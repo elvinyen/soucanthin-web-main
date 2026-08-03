@@ -1,20 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BarChart3,
   Check,
   ChevronRight,
   CirclePause,
   CirclePlay,
   Plus,
-  RefreshCw,
   Search,
   Send,
-  TicketPercent,
-  Users,
   X,
 } from 'lucide-react';
+import { AdminTabs } from './AdminTabs';
 
-type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'kitchen' | 'customer_service' | 'delivery';
+type AdminRole = 'admin' | 'customer_service' | 'kitchen';
 type CouponTab = 'campaigns' | 'issue' | 'records' | 'analytics';
 type CouponStatus = 'draft' | 'active' | 'paused' | 'ended';
 
@@ -137,7 +134,6 @@ export function CouponCenter({ api, admin, onNotice }: Props) {
   const [tab, setTab] = useState<CouponTab>('campaigns');
   const [payload, setPayload] = useState<CouponPayload>(emptyPayload);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -149,12 +145,11 @@ export function CouponCenter({ api, admin, onNotice }: Props) {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [issueCampaignId, setIssueCampaignId] = useState('');
   const [issueReason, setIssueReason] = useState('营销活动发放');
-  const canManageCampaigns = admin.role === 'admin' || admin.role === 'owner';
+  const canManageCampaigns = admin.role === 'admin' || admin.role === 'customer_service';
 
   useEffect(() => { apiRef.current = api; }, [api]);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
     setError('');
     try {
       const [next, branchPayload] = await Promise.all([
@@ -166,8 +161,6 @@ export function CouponCenter({ api, admin, onNotice }: Props) {
       if (!issueCampaignId) setIssueCampaignId(next.campaigns.find(campaign => campaign.status === 'active')?.id || '');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '优惠券数据加载失败');
-    } finally {
-      setLoading(false);
     }
   }, [issueCampaignId]);
 
@@ -241,37 +234,17 @@ export function CouponCenter({ api, admin, onNotice }: Props) {
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Metric label="进行中" value={payload.summary.activeCampaigns} />
-        <Metric label="已发放" value={payload.summary.issued} />
-        <Metric label="已核销" value={payload.summary.used} tone="green" />
-        <Metric label="核销率" value={`${payload.summary.redemptionRate.toFixed(1)}%`} tone="gold" />
-      </div>
-
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden">
+      <AdminTabs label="优惠券中心页面" value={tab} onChange={setTab} items={[{ id: 'campaigns', label: '优惠券活动', count: payload.summary.activeCampaigns }, { id: 'issue', label: '发放优惠券' }, { id: 'records', label: '领取与核销', count: payload.summary.issued }, { id: 'analytics', label: '效果分析' }]} />
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-        <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
-            {([
-              ['campaigns', '优惠券活动', TicketPercent],
-              ['issue', '发放优惠券', Send],
-              ['records', '领取与核销', Users],
-              ['analytics', '效果分析', BarChart3],
-            ] as const).map(([id, label, Icon]) => (
-              <button key={id} type="button" onClick={() => setTab(id)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold ${tab === id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}><Icon size={15} />{label}</button>
-            ))}
-          </div>
-          <button type="button" onClick={() => void loadData()} className="flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-xs font-bold text-slate-600"><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />刷新</button>
-        </div>
-
         {error && <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
 
         {tab === 'campaigns' && (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="grid shrink-0 gap-3 border-b border-slate-200 p-4 md:grid-cols-[minmax(240px,1fr)_180px_auto]">
+            <div className="flex shrink-0 flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">优惠券活动</h2><p className="mt-1 text-xs text-slate-500">管理优惠规则、活动状态与发放情况</p></div>{canManageCampaigns && <button type="button" onClick={() => setEditorOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={17} />新建优惠券</button>}</div>
+            <div className="grid shrink-0 gap-3 border-b border-slate-100 p-4 md:grid-cols-[minmax(240px,1fr)_180px]">
               <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索活动名称或券码" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-[#C7A46A] focus:bg-white" /></div>
               <select value={campaignStatus} onChange={event => setCampaignStatus(event.target.value as typeof campaignStatus)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none"><option value="all">全部状态</option><option value="active">进行中</option><option value="draft">草稿</option><option value="paused">已暂停</option><option value="ended">已结束</option></select>
-              {canManageCampaigns && <button type="button" onClick={() => setEditorOpen(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={17} />新建优惠券</button>}
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
               <table className="w-full min-w-[920px] border-collapse text-sm">
@@ -355,7 +328,6 @@ const inputClass = 'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 p
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="grid gap-1.5 text-xs font-bold text-slate-500">{label}{children}</label>; }
 function FormSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="grid gap-3 rounded-2xl border border-slate-200 p-4"><h4 className="text-sm font-bold text-slate-950">{title}</h4>{children}</section>; }
 function CheckGroup({ label, options, selected, onToggle }: { label: string; options: string[][]; selected: string[]; onToggle: (value: string) => void }) { return <div><p className="mb-2 text-xs font-bold text-slate-500">{label}</p><div className="flex flex-wrap gap-2">{options.map(([value, text]) => <button key={value} type="button" onClick={() => onToggle(value)} className={`rounded-full border px-3 py-2 text-xs font-bold ${selected.includes(value) ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>{text}</button>)}</div></div>; }
-function Metric({ label, value, tone = 'blue' }: { label: string; value: React.ReactNode; tone?: 'blue' | 'green' | 'gold' }) { const tones = { blue: 'border-blue-100 bg-blue-50 text-blue-700', green: 'border-emerald-100 bg-emerald-50 text-emerald-700', gold: 'border-amber-100 bg-amber-50 text-amber-700' }; return <div className={`min-w-[126px] rounded-2xl border px-4 py-3 ${tones[tone]}`}><p className="text-[11px] font-bold opacity-70">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>; }
 function AnalysisCard({ label, value, description }: { label: string; value: string; description: string }) { return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-3 text-2xl font-black text-slate-950">{value}</p><p className="mt-2 text-xs leading-5 text-slate-500">{description}</p></div>; }
 function StatusBadge({ status }: { status: CouponStatus }) { const labels = { draft: '草稿', active: '进行中', paused: '已暂停', ended: '已结束' }; const tones = status === 'active' ? 'bg-emerald-50 text-emerald-700' : status === 'draft' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'; return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${tones}`}>{labels[status]}</span>; }
 function RecordBadge({ status }: { status: CouponRecord['status'] }) { const labels = { available: '可使用', reserved: '锁定中', used: '已核销', expired: '已过期', revoked: '已撤销' }; const tones = status === 'used' ? 'bg-emerald-50 text-emerald-700' : status === 'reserved' ? 'bg-amber-50 text-amber-700' : status === 'available' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'; return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${tones}`}>{labels[status]}</span>; }

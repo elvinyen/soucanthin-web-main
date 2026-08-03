@@ -7,7 +7,7 @@ import {
   requireAdmin,
   validateAdminCredentials,
 } from './_admin-utils';
-import type { AdminRole, AdminUserRecord } from './_admin-utils';
+import type { AdminBranchScope, AdminRole, AdminUserRecord } from './_admin-utils';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, supabaseRequest } from './_order-utils';
 
@@ -19,6 +19,7 @@ type AccountInput = {
   role?: AdminRole;
   active?: boolean;
   assignedBranchId?: string | null;
+  branchScope?: AdminBranchScope;
 };
 
 type AccountRow = AdminUserRecord & {
@@ -26,8 +27,8 @@ type AccountRow = AdminUserRecord & {
   updated_at?: string | null;
 };
 
-const ACCOUNT_SELECT = 'id,username,display_name,role,active,assigned_branch_id,last_login_at,created_at,updated_at';
-const MANAGED_ROLES: AdminRole[] = ['admin', 'owner', 'manager', 'staff', 'customer_service', 'kitchen', 'delivery'];
+const ACCOUNT_SELECT = 'id,username,display_name,role,active,assigned_branch_id,branch_scope,last_login_at,created_at,updated_at';
+const MANAGED_ROLES: AdminRole[] = ['admin', 'customer_service', 'kitchen'];
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
@@ -69,6 +70,7 @@ async function createAccount(req: ApiRequest, res: ApiResponse) {
   const role = normalizeManagedRole(String(input.role || 'kitchen'));
   const displayName = normalizeDisplayName(input.displayName, username);
   const passwordHash = await hashPassword(password);
+  const access = normalizeBranchAccess(role, input.branchScope, input.assignedBranchId);
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
 
   const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/admin_users', {
@@ -80,7 +82,8 @@ async function createAccount(req: ApiRequest, res: ApiResponse) {
       display_name: displayName,
       role,
       active: input.active !== false,
-      assigned_branch_id: normalizeAssignedBranch(input.assignedBranchId, role),
+      assigned_branch_id: access.assignedBranchId,
+      branch_scope: access.branchScope,
     }),
   });
   const account = Array.isArray(created) ? created[0] as AccountRow | undefined : created as AccountRow | undefined;
@@ -101,6 +104,7 @@ async function updateAccount(req: ApiRequest, res: ApiResponse, currentAdminId: 
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   let usernameChanged = false;
   let roleChanged = false;
+  let accessChanged = false;
   let passwordChanged = false;
   if (input.username !== undefined) {
     const nextUsername = String(input.username || '').trim().toLowerCase();
@@ -112,13 +116,16 @@ async function updateAccount(req: ApiRequest, res: ApiResponse, currentAdminId: 
   if (input.displayName !== undefined) payload.display_name = normalizeDisplayName(input.displayName, existing.username);
   if (input.role !== undefined) {
     const nextRole = normalizeManagedRole(String(input.role));
-    if (id === currentAdminId && nextRole !== 'admin' && nextRole !== 'owner') throw new AdminError('不能移除当前登录账号的管理权限', 400);
+    if (id === currentAdminId && nextRole !== 'admin') throw new AdminError('不能移除当前登录账号的管理权限', 400);
     payload.role = nextRole;
     roleChanged = nextRole !== normalizeAdminRole(existing.role);
   }
-  if (input.assignedBranchId !== undefined || input.role !== undefined) {
+  if (input.assignedBranchId !== undefined || input.branchScope !== undefined || input.role !== undefined) {
     const nextRole = input.role ? normalizeManagedRole(String(input.role)) : normalizeAdminRole(existing.role);
-    payload.assigned_branch_id = normalizeAssignedBranch(input.assignedBranchId ?? existing.assigned_branch_id, nextRole);
+    const access = normalizeBranchAccess(nextRole, input.branchScope ?? existing.branch_scope ?? 'assigned', input.assignedBranchId ?? existing.assigned_branch_id);
+    payload.assigned_branch_id = access.assignedBranchId;
+    payload.branch_scope = access.branchScope;
+    accessChanged = access.assignedBranchId !== (existing.assigned_branch_id || null) || access.branchScope !== (existing.branch_scope || 'assigned');
   }
   if (input.active !== undefined) {
     if (id === currentAdminId && input.active === false) throw new AdminError('不能停用当前登录账号', 400);
@@ -140,7 +147,7 @@ async function updateAccount(req: ApiRequest, res: ApiResponse, currentAdminId: 
   const account = Array.isArray(updated) ? updated[0] as AccountRow | undefined : updated as AccountRow | undefined;
   if (!account?.id) throw new AdminError('账号更新失败', 500);
 
-  if (usernameChanged || roleChanged || passwordChanged || input.active === false) {
+  if (usernameChanged || roleChanged || accessChanged || passwordChanged || input.active === false) {
     await supabaseRequest(supabaseUrl, serviceRoleKey, `/admin_sessions?admin_user_id=eq.${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
@@ -157,12 +164,12 @@ async function deleteAccount(req: ApiRequest, res: ApiResponse, currentAdminId: 
 
   const account = await findAccountById(id);
   if (!account) throw new AdminError('账号不存在', 404);
-  if (['admin', 'owner'].includes(normalizeAdminRole(account.role)) && account.active) {
+  if (normalizeAdminRole(account.role) === 'admin' && account.active) {
     const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
     const adminRows = await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      '/admin_users?role=in.(admin,owner)&active=eq.true&select=id',
+      '/admin_users?role=eq.admin&active=eq.true&select=id',
       { method: 'GET' },
     );
     if (Array.isArray(adminRows) && adminRows.length <= 1) throw new AdminError('至少需要保留一个启用的管理员或老板账号');
@@ -195,10 +202,14 @@ function normalizeDisplayName(value: unknown, fallback: string) {
   return String(value || fallback).trim().slice(0, 60) || fallback;
 }
 
-function normalizeAssignedBranch(value: unknown, role: AdminRole) {
-  if (role === 'admin' || role === 'owner') return null;
-  const branchId = String(value || '').trim();
-  return branchId || null;
+export function normalizeBranchAccess(role: AdminRole, scopeValue: unknown, branchValue: unknown) {
+  if (role === 'admin') return { branchScope: 'all' as const, assignedBranchId: null };
+  const branchScope: AdminBranchScope = scopeValue === 'all' ? 'all' : 'assigned';
+  if (role === 'customer_service' && branchScope === 'all') return { branchScope, assignedBranchId: null };
+  if (role === 'kitchen' && branchScope === 'all') throw new AdminError('厨房工人只能使用指定门店权限');
+  const branchId = String(branchValue || '').trim();
+  if (!branchId) throw new AdminError('运营助理和厨房工人必须分配所属门店');
+  return { branchScope: 'assigned' as const, assignedBranchId: branchId };
 }
 
 function validateUsername(value: string) {
@@ -214,6 +225,7 @@ function mapAccount(account: AccountRow) {
     username: account.username,
     displayName: account.display_name,
     role: normalizeAdminRole(account.role),
+    branchScope: normalizeAdminRole(account.role) === 'admin' ? 'all' : account.branch_scope === 'all' ? 'all' : 'assigned',
     assignedBranchId: account.assigned_branch_id || null,
     active: account.active,
     lastLoginAt: account.last_login_at || null,

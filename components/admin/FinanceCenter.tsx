@@ -3,13 +3,10 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
-  BarChart3,
-  CalendarDays,
   Camera,
   Check,
   ChevronRight,
   CircleDollarSign,
-  FileText,
   Landmark,
   Plus,
   ReceiptText,
@@ -20,8 +17,9 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import { AdminTabs } from './AdminTabs';
 
-type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'kitchen' | 'customer_service' | 'delivery';
+type AdminRole = 'admin' | 'customer_service' | 'kitchen';
 type FinanceType = 'income' | 'expense';
 type FinanceTab = 'today' | 'ledger' | 'analysis';
 
@@ -101,8 +99,8 @@ export function FinanceCenter({ api, admin, onNotice }: FinanceCenterProps) {
   const [entryOpen, setEntryOpen] = useState(false);
   const [entryType, setEntryType] = useState<FinanceType>('expense');
   const [form, setForm] = useState<EntryForm>(() => createEntryForm('expense', admin.assignedBranchId || ''));
-  const canChooseBranch = admin.role === 'admin' || admin.role === 'owner';
-  const canManage = admin.role === 'admin' || admin.role === 'owner' || admin.role === 'manager';
+  const canChooseBranch = admin.role === 'admin';
+  const canManage = admin.role === 'admin';
 
   useEffect(() => { apiRef.current = api; }, [api]);
 
@@ -185,33 +183,8 @@ export function FinanceCenter({ api, admin, onNotice }: FinanceCenterProps) {
 
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-4 pb-24 sm:space-y-5 sm:pb-8">
-      <div className="flex flex-col gap-3 rounded-[20px] border border-[#E5E7EB] bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:flex-row sm:items-center sm:justify-between sm:p-4">
-        <div className="flex overflow-x-auto rounded-[14px] bg-[#F1F5F9] p-1">
-          {([
-            ['today', '今日收支', CalendarDays],
-            ['ledger', '收支明细', FileText],
-            ['analysis', '经营分析', BarChart3],
-          ] as const).map(([id, label, Icon]) => (
-            <button key={id} type="button" onClick={() => setTab(id)} className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 text-sm font-bold transition ${tab === id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>
-              <Icon size={16} />{label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          {canChooseBranch && (
-            <label className="relative min-w-0 flex-1 sm:w-48 sm:flex-none">
-              <Store className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <select value={branchId} onChange={event => setBranchId(event.target.value)} aria-label="选择门店" className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-sm font-bold text-slate-700 outline-none focus:border-blue-500">
-                <option value="">全部门店</option>
-                {payload.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </select>
-            </label>
-          )}
-          <button type="button" onClick={() => void loadFinance()} disabled={loading} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-950 disabled:opacity-50" aria-label="刷新财务数据">
-            <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-      </div>
+      <AdminTabs label="财务中心页面" value={tab} onChange={setTab} items={[{ id: 'today', label: '今日收支', count: payload.summary.pendingCount }, { id: 'ledger', label: '收支明细' }, { id: 'analysis', label: '经营分析' }]} />
+      {canChooseBranch && <div className="flex justify-end"><label className="relative w-full sm:w-56"><Store className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><select value={branchId} onChange={event => setBranchId(event.target.value)} aria-label="选择门店" className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A]"><option value="">全部门店</option>{payload.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label></div>}
 
       {error && !entryOpen && <ErrorNotice message={error} />}
 

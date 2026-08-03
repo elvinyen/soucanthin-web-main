@@ -10,8 +10,11 @@ export type ApiResponse = {
 export type ApiRequest = {
   method?: string;
   url?: string;
+  originalUrl?: string;
   body?: unknown;
   headers?: Record<string, string | string[] | undefined>;
+  ip?: string;
+  socket?: { remoteAddress?: string | null };
   on?: (event: string, callback: (chunk?: Buffer) => void) => void;
 };
 
@@ -323,6 +326,8 @@ export async function createOrderWithItems(params: {
     delivery_distance_km: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.distanceKm ?? null : null,
     delivery_duration_min: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.durationMin ?? null : null,
     delivery_quote_provider: params.order.orderType === 'takeaway' ? params.order.deliveryQuote?.provider || null : null,
+    delivery_quote_id: params.order.orderType === 'takeaway' ? params.order.deliveryQuoteId || null : null,
+    delivery_approval_request_id: params.order.orderType === 'takeaway' ? params.order.deliveryApprovalRequestId || null : null,
     note: params.order.note?.trim() || null,
     subtotal,
     delivery_fee: deliveryFee,
@@ -347,6 +352,7 @@ export async function createOrderWithItems(params: {
     created_at: createdAt,
     source_payload: {
       ...params.order,
+      deliveryQuoteToken: undefined,
       deliveryFee,
       deliveryQuote: params.order.deliveryQuote,
       discountAmount,

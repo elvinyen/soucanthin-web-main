@@ -1,4 +1,4 @@
-import { AdminError, jsonError, parseAdminBody, requireAdmin } from './_admin-utils';
+import { AdminError, jsonError, parseAdminBody, requireAdminRole } from './_admin-utils';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, supabaseAuthHeaders } from './_order-utils';
 
@@ -17,7 +17,7 @@ const ALLOWED_IMAGE_TYPES = new Map([
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    await requireAdmin(req);
+    await requireAdminRole(req, ['admin', 'customer_service']);
 
     if (req.method && req.method !== 'POST') {
       res.setHeader?.('Allow', 'POST');

@@ -13,7 +13,7 @@ import {
 } from './_agent-utils';
 
 type AdminAgentInput = {
-  action?: 'approve' | 'reject' | 'request_changes' | 'resend_code' | 'bulk_create' | 'set_status' | 'delete_agent' | 'save_rule' | 'adjust_commission' | 'review_payout';
+  action?: 'approve' | 'reject' | 'request_changes' | 'resend_code' | 'bulk_create' | 'set_status' | 'delete_agent' | 'save_rule' | 'delete_rule' | 'adjust_commission' | 'review_payout';
   applicationId?: string;
   agentId?: string;
   status?: string;
@@ -22,12 +22,13 @@ type AdminAgentInput = {
   name?: string;
   commissionRate?: number | string;
   minOrderAmount?: number | string;
+  ruleId?: string;
   amount?: number | string;
   payoutId?: string;
   payoutStatus?: string;
 };
 
-const ADMIN_ONLY_ACTIONS = new Set(['bulk_create', 'delete_agent', 'save_rule', 'adjust_commission', 'review_payout']);
+const ADMIN_ONLY_ACTIONS = new Set(['bulk_create', 'delete_agent', 'save_rule', 'delete_rule', 'adjust_commission', 'review_payout']);
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
@@ -39,13 +40,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
     const input = parseAdminBody<AdminAgentInput>(req.body);
     if (!input.action) throw new AdminError('缺少操作');
-    if (ADMIN_ONLY_ACTIONS.has(input.action) && !['admin', 'owner'].includes(admin.role)) throw new AdminError('只有老板或管理员可以执行该操作', 403);
+    if (ADMIN_ONLY_ACTIONS.has(input.action) && admin.role !== 'admin') throw new AdminError('只有管理员可以执行该操作', 403);
     if (input.action === 'approve' || input.action === 'resend_code') return await approveApplication(input, admin.id, res);
     if (input.action === 'reject' || input.action === 'request_changes') return await reviewApplication(input, admin.id, res);
     if (input.action === 'bulk_create') return await bulkCreateAgents(input, admin.id, res);
     if (input.action === 'set_status') return await setAgentStatus(input, admin.id, res);
     if (input.action === 'delete_agent') return await deleteAgent(input, admin.id, res);
     if (input.action === 'save_rule') return await saveRule(input, admin.id, res);
+    if (input.action === 'delete_rule') return await deleteRule(input, admin.id, res);
     if (input.action === 'adjust_commission') return await adjustCommission(input, admin.id, res);
     if (input.action === 'review_payout') return await reviewPayout(input, admin.id, res);
     throw new AdminError('不支持的操作');
@@ -179,6 +181,18 @@ async function saveRule(input: AdminAgentInput, adminId: string, res: ApiRespons
   const rule = Array.isArray(created) ? created[0] as { id?: string } : null;
   await audit(adminId, 'save_commission_rule', 'commission_rule', rule?.id || null, null, { agentId, rate, minOrder });
   return res.status(201).json({ success: true, rule });
+}
+
+async function deleteRule(input: AdminAgentInput, adminId: string, res: ApiResponse) {
+  const id = cleanAgentText(input.ruleId, 80);
+  if (!id) throw new AdminError('缺少佣金规则');
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const rows = await supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_commission_rules?id=eq.${encodeURIComponent(id)}&select=*&limit=1`, { method: 'GET' });
+  const rule = Array.isArray(rows) ? rows[0] as Record<string, unknown> | undefined : undefined;
+  if (!rule) throw new AdminError('佣金规则不存在', 404);
+  await supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_commission_rules?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
+  await audit(adminId, 'delete_commission_rule', 'commission_rule', id, rule, null);
+  return res.status(200).json({ success: true });
 }
 
 async function adjustCommission(input: AdminAgentInput, adminId: string, res: ApiResponse) {

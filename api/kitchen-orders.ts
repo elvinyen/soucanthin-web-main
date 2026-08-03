@@ -2,6 +2,8 @@ import {
   AdminError,
   jsonError,
   parseAdminBody,
+  enforceAdminBranch,
+  hasAllBranchAccess,
   requireAdminRole,
 } from './_admin-utils';
 import type { ApiRequest, ApiResponse, OrderItemRecord, OrderRecord } from './_order-utils';
@@ -41,6 +43,8 @@ const KITCHEN_ORDER_SELECT = [
   'id',
   'order_no',
   'order_type',
+  'assigned_branch_id',
+  'assigned_branch_name',
   'table_no',
   'note',
   'status',
@@ -64,7 +68,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const path = (req.url || '').split('?')[0];
 
     if (method === 'GET') {
-      const payload = await getKitchenOrders();
+      const payload = await getKitchenOrders(admin);
       return res.status(200).json(payload);
     }
 
@@ -82,19 +86,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 }
 
-async function getKitchenOrders() {
+async function getKitchenOrders(admin: Awaited<ReturnType<typeof requireAdminRole>>) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const branch = hasAllBranchAccess(admin) ? '' : `assigned_branch_id=eq.${encodeURIComponent(enforceAdminBranch(admin) || '')}&`;
   const [activeRows, doneRows] = await Promise.all([
     supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      `/orders?status=in.(waiting_kitchen,cooking)&select=${KITCHEN_ORDER_SELECT}&order=created_at.asc&limit=100`,
+      `/orders?${branch}status=in.(waiting_kitchen,cooking)&select=${KITCHEN_ORDER_SELECT}&order=created_at.asc&limit=100`,
       { method: 'GET' },
     ),
     supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      `/orders?status=eq.kitchen_done&select=${KITCHEN_ORDER_SELECT}&order=kitchen_completed_at.desc.nullslast,created_at.desc&limit=10`,
+      `/orders?${branch}status=eq.kitchen_done&select=${KITCHEN_ORDER_SELECT}&order=kitchen_completed_at.desc.nullslast,created_at.desc&limit=10`,
       { method: 'GET' },
     ),
   ]);
@@ -138,7 +143,7 @@ async function getKitchenItems(orderIds: string[]) {
 async function updateKitchenOrder(
   req: ApiRequest,
   res: ApiResponse,
-  admin: { id: string; displayName: string; username: string },
+  admin: Awaited<ReturnType<typeof requireAdminRole>>,
   action: KitchenAction,
 ) {
   const input = parseAdminBody<{ id?: string }>(req.body);
@@ -154,6 +159,7 @@ async function updateKitchenOrder(
   );
   const order = Array.isArray(rows) ? rows[0] as OrderRecord | undefined : undefined;
   if (!order?.id) throw new AdminError('订单不存在', 404);
+  enforceAdminBranch(admin, order.assigned_branch_id);
 
   const transition = transitionFor(action, order.status);
   const now = new Date().toISOString();

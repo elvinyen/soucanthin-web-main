@@ -1,8 +1,11 @@
 import { config as loadEnv } from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import adminAuth from '../api/admin-auth';
+import adminAuditLogs from '../api/admin-audit-logs';
 import adminAccounts from '../api/admin-accounts';
+import adminProfile from '../api/admin-profile';
 import adminAgents from '../api/admin-agents';
 import adminCustomers from '../api/admin-customers';
 import adminUsers from '../api/admin-users';
@@ -23,6 +26,9 @@ import authMe from '../api/auth-me';
 import authRequestOtp from '../api/auth-request-otp';
 import authVerifyOtp from '../api/auth-verify-otp';
 import deliveryQuote from '../api/delivery-quote';
+import deliveryApproval from '../api/delivery-approval';
+import adminDeliveryApprovals from '../api/admin-delivery-approvals';
+import adminDeliverySettings from '../api/admin-delivery-settings';
 import menu from '../api/menu';
 import order from '../api/order';
 import paymentConfig from '../api/payment-config';
@@ -39,6 +45,8 @@ import walletRechargeStripeCancel from '../api/wallet-recharge-stripe-cancel';
 import walletRechargeTng from '../api/wallet-recharge-tng';
 import walletTransactions from '../api/wallet-transactions';
 import type { ApiRequest, ApiResponse } from '../api/_order-utils';
+import { getAuthenticatedAdmin } from '../api/_admin-utils';
+import { describeAdminRequest, recordAdminAudit, shouldAuditAdminRequest } from '../api/_admin-audit';
 
 const envFile = process.env.ENV_FILE || (process.env.NODE_ENV === 'production' ? '.env.production' : '.env.local');
 loadEnv({ path: envFile, override: true });
@@ -61,11 +69,13 @@ app.all('/api/stripe-webhook', express.raw({ type: '*/*', limit: '2mb' }), runAp
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(['/api/admin', '/api/kitchen'], auditAdminRequests);
 
 mount('/api/menu', menu);
 mount('/api/address-autocomplete', addressAutocomplete);
 mount('/api/address-place-details', addressPlaceDetails);
 mount('/api/delivery-quote', deliveryQuote);
+mount('/api/delivery-approval', deliveryApproval);
 mount('/api/order', order);
 mount('/api/payment-config', paymentConfig);
 mount('/api/telegram/webhook', telegramWebhook);
@@ -85,12 +95,16 @@ mount('/api/wallet/transactions', walletTransactions);
 mount('/api/admin/order-payment-review', adminOrderPaymentReview);
 mount('/api/admin/wallet-recharge-review', adminWalletRechargeReview);
 mount('/api/admin/auth', adminAuth);
+mount('/api/admin/audit-logs', adminAuditLogs);
 mount('/api/admin/accounts', adminAccounts);
+mount('/api/admin/profile', adminProfile);
 mount('/api/admin/agents', adminAgents);
 mount('/api/admin/customers', adminCustomers);
 mount('/api/admin/users', adminUsers);
 mount('/api/admin/coupons', adminCoupons);
 mount('/api/admin/delivery', adminDelivery);
+mount('/api/admin/delivery-approvals', adminDeliveryApprovals);
+mount('/api/admin/delivery-settings', adminDeliverySettings);
 mount('/api/admin/finance', adminFinance);
 mount('/api/admin/menu-categories', adminMenuCategories);
 mount('/api/admin/menu-image', adminMenuImage);
@@ -167,6 +181,33 @@ function runApi(handler: ApiHandler) {
       next(error);
     }
   };
+}
+
+function auditAdminRequests(req: Request, res: Response, next: NextFunction) {
+  const apiReq = req as ApiRequest;
+  if (!shouldAuditAdminRequest(apiReq)) return next();
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  const adminPromise = getAuthenticatedAdmin(apiReq).catch(() => null);
+  res.setHeader('X-Request-Id', requestId);
+  res.once('finish', () => {
+    void adminPromise.then(admin => {
+      const description = describeAdminRequest(apiReq);
+      return recordAdminAudit({
+        req: apiReq,
+        admin,
+        module: description.module,
+        action: description.action,
+        targetId: description.targetId,
+        success: res.statusCode < 400,
+        statusCode: res.statusCode,
+        errorMessage: res.statusCode >= 400 ? `HTTP ${res.statusCode}` : null,
+        metadata: { input: apiReq.body, durationMs: Date.now() - startedAt },
+        requestId,
+      });
+    }).catch(error => console.error('[audit] failed to record admin request', error));
+  });
+  next();
 }
 
 function isBodyParserError(error: unknown) {

@@ -14,7 +14,8 @@ import {
   validateOrder,
 } from './_order-utils';
 import { getAuthenticatedUser } from './_auth-utils';
-import { applyDeliveryQuoteToOrder, DeliveryQuoteError } from './_delivery-utils';
+import { applyValidatedDeliveryToOrder, consumeDeliveryApproval } from './_delivery-policy';
+import { DeliveryQuoteError } from './_delivery-utils';
 import { isStoreOpen, WEBSITE_STORE_BRANCH } from '../businessHours';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -72,7 +73,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return res.status(401).json({ success: false, error: '请先登录后使用优惠券' });
     }
 
-    await applyDeliveryQuoteToOrder(order);
+    await applyValidatedDeliveryToOrder(order, user);
 
     const couponResult = user ? await getCouponDiscount(user.id, order.couponId, order) : { discountAmount: 0, snapshot: undefined };
     const discountAmount = couponResult.discountAmount;
@@ -98,6 +99,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       discountAmount,
     });
     createdOrderId = orderRecord.id;
+    await consumeDeliveryApproval(order, orderRecord.id);
     await bindCouponReservation(order.couponId, user?.id, orderRecord.id);
 
     const { payableTotal } = calculateTotals(order);

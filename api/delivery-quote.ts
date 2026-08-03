@@ -1,5 +1,7 @@
 import type { ApiRequest, ApiResponse } from './_order-utils';
-import { DeliveryQuoteError, getDeliveryQuoteForAddress } from './_delivery-utils';
+import { getAuthenticatedUser } from './_auth-utils';
+import { createDeliveryQuote } from './_delivery-policy';
+import { DeliveryQuoteError } from './_delivery-utils';
 
 type DeliveryQuoteBody = {
   address?: string;
@@ -16,15 +18,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const input = parseBody(req.body);
     const address = String(input.address || '').trim();
     const branchId = String(input.branchId || '').trim();
-    const quote = await getDeliveryQuoteForAddress(address, branchId || undefined);
+    const user = await getAuthenticatedUser(req);
+    const result = await createDeliveryQuote({ req, address, preferredBranchId: branchId || undefined, user });
+    if (result.deliverability === 'manual_confirmation_required') {
+      return res.status(200).json({
+        success: true,
+        deliverability: result.deliverability,
+        deliverable: false,
+        maxDistanceKm: result.maxDistanceKm,
+        branchId: result.route.branchId,
+        branchName: result.route.branchName,
+        distanceKm: result.route.distanceKm,
+        durationMin: result.route.durationMin,
+      });
+    }
     return res.status(200).json({
       success: true,
+      deliverability: result.deliverability,
       deliverable: true,
-      branchId: quote.branchId,
-      branchName: quote.branchName,
-      deliveryFee: quote.deliveryFee,
-      distanceKm: quote.distanceKm,
-      durationMin: quote.durationMin,
+      quoteToken: result.token,
+      quoteExpiresAt: result.expiresAt,
+      quoteSource: result.source,
+      branchId: result.route.branchId,
+      branchName: result.route.branchName,
+      deliveryFee: result.route.deliveryFee,
+      distanceKm: result.route.distanceKm,
+      durationMin: result.route.durationMin,
     });
   } catch (error) {
     if (error instanceof SyntaxError) {

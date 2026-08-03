@@ -14,6 +14,7 @@ import {
   Truck,
   X,
 } from 'lucide-react';
+import { DeliveryApprovalPanel } from './DeliveryApprovalPanel';
 
 type DeliveryProvider = 'in_house' | 'grab' | 'lalamove' | 'other';
 type DeliveryTaskStatus = 'assigned' | 'picked_up' | 'delivered' | 'cancelled';
@@ -102,6 +103,7 @@ const emptyAssignment: AssignmentForm = {
 };
 
 export function DeliveryBoard({ api }: DeliveryBoardProps) {
+  const [boardMode, setBoardMode] = useState<'orders' | 'approvals'>('orders');
   const [orders, setOrders] = useState<DeliveryOrder[]>([]);
   const [activeTab, setActiveTab] = useState<DeliveryTab>('unassigned');
   const [assignmentOrder, setAssignmentOrder] = useState<DeliveryOrder | null>(null);
@@ -203,6 +205,11 @@ export function DeliveryBoard({ api }: DeliveryBoardProps) {
 
   return (
     <section className="min-w-0">
+      <div className="mb-3 inline-flex rounded-xl border border-slate-200 bg-white p-1">
+        <button type="button" onClick={() => setBoardMode('orders')} className={`rounded-lg px-4 py-2 text-xs font-black ${boardMode === 'orders' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}>配送订单</button>
+        <button type="button" onClick={() => setBoardMode('approvals')} className={`rounded-lg px-4 py-2 text-xs font-black ${boardMode === 'approvals' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}>超范围申请</button>
+      </div>
+      {boardMode === 'approvals' ? <DeliveryApprovalPanel api={api} /> : <>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {tabs.map(tab => {
           const Icon = tab.icon;
@@ -274,6 +281,7 @@ export function DeliveryBoard({ api }: DeliveryBoardProps) {
           onClose={() => setAssignmentOrder(null)}
         />
       )}
+      </>}
     </section>
   );
 }

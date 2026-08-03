@@ -9,7 +9,6 @@ import CharitySection from './components/CharitySection';
 import Footer from './components/Footer';
 import SiteFooter from './components/SiteFooter';
 import FloatingWhatsApp from './components/FloatingWhatsApp';
-import LanguageSelector from './components/LanguageSelector';
 import Menu from './components/Menu';
 import Cart from './components/Cart';
 import AuthModal from './components/AuthModal';
@@ -26,13 +25,23 @@ import { isStoreOpen } from './businessHours';
 
 type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
+function readSavedCart() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('sct.checkoutDraft:v1') || 'null') as { expiresAt?: number; cart?: CartLine[]; address?: string; addressLabel?: string } | null;
+    return saved && Number(saved.expiresAt) > Date.now() ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
 const App: React.FC = () => {
   const { t } = useTranslation();
   const normalizedPathname = window.location.pathname.replace(/\/+$/, '') || '/';
   const isAdminRoute = normalizedPathname === '/admin' || normalizedPathname.startsWith('/admin/');
   const [scrolled, setScrolled] = useState(false);
   const [view, setView] = useState<MainView>('home');
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [initialCheckoutDraft] = useState(readSavedCart);
+  const [cart, setCart] = useState<CartLine[]>(initialCheckoutDraft?.cart || []);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -42,14 +51,27 @@ const App: React.FC = () => {
   const [tableNumber, setTableNumber] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<OrderType>('takeaway');
   const [tableNo, setTableNo] = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [deliveryAddressLabel, setDeliveryAddressLabel] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState(initialCheckoutDraft?.address || '');
+  const [deliveryAddressLabel, setDeliveryAddressLabel] = useState(initialCheckoutDraft?.addressLabel || '');
   const [deliveryAddressId, setDeliveryAddressId] = useState('');
   const [userCenterNotice, setUserCenterNotice] = useState('');
   const [appNotice, setAppNotice] = useState('');
   const [storeOpen, setStoreOpen] = useState(() => isStoreOpen());
   const [isBusinessHoursModalOpen, setIsBusinessHoursModalOpen] = useState(() => !isStoreOpen());
   const closeBusinessHoursModal = useCallback(() => setIsBusinessHoursModalOpen(false), []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('sct.checkoutDraft:v1', JSON.stringify({
+        expiresAt: Date.now() + 24 * 60 * 60_000,
+        cart,
+        address: deliveryAddress,
+        addressLabel: deliveryAddressLabel,
+      }));
+    } catch {
+      // Checkout remains usable when storage is unavailable or full.
+    }
+  }, [cart, deliveryAddress, deliveryAddressLabel]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -322,6 +344,7 @@ const App: React.FC = () => {
           <OrdersPage
             session={session}
             onLogin={() => setIsAuthOpen(true)}
+            onStartOrder={() => setView('menu')}
             onOpenHistory={() => {
               setView('orders');
               refreshSession();
@@ -391,16 +414,10 @@ const App: React.FC = () => {
           setView('mine');
           setUserCenterTab('wallet');
         }}
+        onLogin={() => setIsAuthOpen(true)}
       />
 
       <Footer activeTab={view} onTabChange={handleTabChange} />
-      {view !== 'home' && view !== 'menu' && (
-        <div className="pointer-events-none fixed left-1/2 top-7 z-[60] w-full max-w-md -translate-x-1/2 px-5">
-          <div className="flex justify-end">
-            <LanguageSelector className="pointer-events-auto" />
-          </div>
-        </div>
-      )}
       <FloatingWhatsApp />
 
       {appNotice && (

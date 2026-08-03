@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bell, CheckCircle2, Clock3, CookingPot, LogOut, MoreHorizontal, PackageCheck, RefreshCw, Settings, Utensils, WifiOff } from 'lucide-react';
+import { AlertTriangle, Bell, CheckCircle2, Clock3, CookingPot, KeyRound, LogOut, MoreHorizontal, PackageCheck, RefreshCw, Settings, Utensils, WifiOff } from 'lucide-react';
 
 type OrderStatus =
   | 'pending_confirm'
@@ -39,11 +39,12 @@ type KitchenOrderRow = {
 type KitchenBoardProps = {
   api: <T,>(path: string, init?: RequestInit) => Promise<T>;
   onLogout: () => void;
+  onChangePassword?: () => void;
   userName: string;
   standalone?: boolean;
 };
 
-export default function KitchenBoard({ api, onLogout, standalone = false }: KitchenBoardProps) {
+export default function KitchenBoard({ api, onLogout, onChangePassword, userName, standalone = false }: KitchenBoardProps) {
   const [orders, setOrders] = useState<KitchenOrderRow[]>([]);
   const [activeTab, setActiveTab] = useState<KitchenTab>('waiting');
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
@@ -226,6 +227,7 @@ export default function KitchenBoard({ api, onLogout, standalone = false }: Kitc
               <div className="absolute right-0 top-14 z-30 w-[min(18rem,calc(100vw-2rem))] rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
                 <div className="mb-2 px-1">
                   <p className="text-xs font-black uppercase text-slate-400">Settings</p>
+                  <p className="mt-1 truncate text-sm font-black text-slate-800">{userName}</p>
                   <p className="mt-1 text-sm font-bold text-slate-500">Updated {lastSyncAt ? lastSyncAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }) : '--:--'}</p>
                 </div>
                 <button
@@ -241,6 +243,19 @@ export default function KitchenBoard({ api, onLogout, standalone = false }: Kitc
                     <span className={`block h-6 w-6 rounded-full bg-white shadow-sm transition ${soundEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                   </span>
                 </button>
+                {onChangePassword && <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    onChangePassword();
+                  }}
+                  className="flex h-14 w-full items-center justify-between rounded-2xl px-3 text-left transition hover:bg-slate-50"
+                >
+                  <span className="flex items-center gap-2 text-sm font-black text-slate-800">
+                    <KeyRound size={18} className="text-slate-400" />
+                    <span>Change password</span>
+                  </span>
+                </button>}
                 <button
                   type="button"
                   onClick={() => void loadKitchenOrders()}

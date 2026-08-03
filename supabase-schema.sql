@@ -174,7 +174,8 @@ create table if not exists public.admin_users (
   username text not null,
   password_hash text not null,
   display_name text not null,
-  role text not null default 'admin' check (role in ('admin', 'kitchen', 'customer_service', 'delivery', 'owner', 'manager', 'staff')),
+  role text not null default 'admin' check (role in ('admin', 'kitchen', 'customer_service')),
+  branch_scope text not null default 'assigned' check (branch_scope in ('all', 'assigned')),
   active boolean not null default true,
   last_login_at timestamptz,
   created_at timestamptz not null default now(),
@@ -182,8 +183,10 @@ create table if not exists public.admin_users (
 );
 
 alter table public.admin_users drop constraint if exists admin_users_role_check;
+update public.admin_users set role = 'admin' where role in ('owner', 'manager');
+update public.admin_users set role = 'customer_service' where role in ('staff', 'delivery');
 alter table public.admin_users
-  add constraint admin_users_role_check check (role in ('admin', 'kitchen', 'customer_service', 'delivery', 'owner', 'manager', 'staff'));
+  add constraint admin_users_role_check check (role in ('admin', 'kitchen', 'customer_service'));
 
 create unique index if not exists admin_users_username_lower_unique_idx on public.admin_users (lower(username));
 create index if not exists admin_users_active_idx on public.admin_users (active);
@@ -202,6 +205,37 @@ create table if not exists public.admin_sessions (
 create index if not exists admin_sessions_user_idx on public.admin_sessions (admin_user_id);
 create index if not exists admin_sessions_expires_idx on public.admin_sessions (expires_at);
 alter table public.admin_sessions enable row level security;
+
+create table if not exists public.admin_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null,
+  admin_user_id uuid references public.admin_users(id) on delete set null,
+  username_snapshot text not null,
+  display_name_snapshot text,
+  role_snapshot text check (role_snapshot is null or role_snapshot in ('admin', 'customer_service', 'kitchen')),
+  branch_id_snapshot text,
+  branch_scope_snapshot text check (branch_scope_snapshot is null or branch_scope_snapshot in ('all', 'assigned')),
+  module text not null,
+  action text not null,
+  target_type text,
+  target_id text,
+  http_method text not null,
+  request_path text not null,
+  request_data jsonb,
+  success boolean not null,
+  status_code integer not null,
+  error_message text,
+  ip_address text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+create index if not exists admin_audit_logs_created_idx on public.admin_audit_logs (created_at desc);
+create index if not exists admin_audit_logs_admin_created_idx on public.admin_audit_logs (admin_user_id, created_at desc);
+create index if not exists admin_audit_logs_module_created_idx on public.admin_audit_logs (module, created_at desc);
+alter table public.admin_audit_logs enable row level security;
+revoke all on table public.admin_audit_logs from public, anon, authenticated;
+revoke update, delete, truncate, references, trigger on table public.admin_audit_logs from service_role;
+grant select, insert on table public.admin_audit_logs to service_role;
 
 create table if not exists public.store_branches (
   id text primary key,
@@ -230,6 +264,14 @@ create index if not exists store_branches_active_sort_idx on public.store_branch
 alter table public.store_branches enable row level security;
 
 alter table public.admin_users add column if not exists assigned_branch_id text references public.store_branches(id) on delete set null;
+alter table public.admin_users add column if not exists branch_scope text not null default 'assigned';
+alter table public.admin_users drop constraint if exists admin_users_branch_scope_check;
+alter table public.admin_users add constraint admin_users_branch_scope_check check (branch_scope in ('all', 'assigned'));
+update public.admin_users set branch_scope = 'all', assigned_branch_id = null where role = 'admin';
+update public.admin_users set branch_scope = 'assigned' where role = 'kitchen';
+alter table public.admin_audit_logs add column if not exists branch_scope_snapshot text;
+alter table public.admin_audit_logs drop constraint if exists admin_audit_logs_branch_scope_snapshot_check;
+alter table public.admin_audit_logs add constraint admin_audit_logs_branch_scope_snapshot_check check (branch_scope_snapshot is null or branch_scope_snapshot in ('all', 'assigned'));
 create index if not exists admin_users_assigned_branch_idx on public.admin_users (assigned_branch_id);
 
 create table if not exists public.orders (
@@ -1745,3 +1787,140 @@ $$;
 
 revoke all on function public.delete_agent_if_safe(uuid, uuid) from public, anon, authenticated;
 grant execute on function public.delete_agent_if_safe(uuid, uuid) to service_role;
+
+-- Delivery pricing, quote locks, and manually approved out-of-range requests.
+create table if not exists public.delivery_settings (
+  id text primary key default 'default',
+  max_auto_distance_km numeric(6, 2) not null default 20,
+  lalamove_enabled boolean not null default false,
+  lalamove_markup_percent numeric(6, 2) not null default 15,
+  quote_lock_minutes integer not null default 30,
+  request_expiry_minutes integer not null default 120,
+  approval_expiry_minutes integer not null default 30,
+  fallback_fee_tiers jsonb not null default '[{"maxKm":3,"fee":6},{"maxKm":5,"fee":8},{"maxKm":8,"fee":12},{"maxKm":10,"fee":15},{"maxKm":12,"fee":18},{"maxKm":15,"fee":22},{"maxKm":18,"fee":26},{"maxKm":20,"fee":30}]'::jsonb,
+  updated_by uuid references public.admin_users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  constraint delivery_settings_singleton check (id = 'default'),
+  constraint delivery_settings_values_check check (
+    max_auto_distance_km > 0 and max_auto_distance_km <= 100
+    and lalamove_markup_percent >= 0 and lalamove_markup_percent <= 200
+    and quote_lock_minutes between 5 and 180
+    and request_expiry_minutes between 15 and 1440
+    and approval_expiry_minutes between 5 and 240
+    and jsonb_typeof(fallback_fee_tiers) = 'array'
+  )
+);
+
+insert into public.delivery_settings (id) values ('default') on conflict (id) do nothing;
+
+create table if not exists public.delivery_quotes (
+  id uuid primary key default gen_random_uuid(),
+  token_hash text not null unique,
+  user_id uuid references public.users(id) on delete set null,
+  actor_hash text not null,
+  branch_id text not null references public.store_branches(id),
+  branch_name text not null,
+  address text not null,
+  address_hash text not null,
+  latitude numeric(10, 7) not null,
+  longitude numeric(10, 7) not null,
+  distance_km numeric(10, 2) not null,
+  duration_min integer not null,
+  deliverability text not null default 'deliverable',
+  source text not null,
+  provider_quote_id text,
+  provider_cost numeric(10, 2),
+  customer_fee numeric(10, 2) not null,
+  fallback_reason text,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  constraint delivery_quotes_source_check check (source in ('lalamove', 'fallback')),
+  constraint delivery_quotes_deliverability_check check (deliverability in ('deliverable', 'manual_confirmation_required')),
+  constraint delivery_quotes_values_check check (
+    distance_km > 0 and duration_min > 0 and customer_fee >= 0
+    and (provider_cost is null or provider_cost >= 0)
+  )
+);
+
+alter table public.delivery_quotes add column if not exists deliverability text not null default 'deliverable';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'delivery_quotes_deliverability_check'
+      and conrelid = 'public.delivery_quotes'::regclass
+  ) then
+    alter table public.delivery_quotes
+      add constraint delivery_quotes_deliverability_check
+      check (deliverability in ('deliverable', 'manual_confirmation_required'));
+  end if;
+end;
+$$;
+
+create index if not exists delivery_quotes_actor_created_idx on public.delivery_quotes (actor_hash, created_at desc);
+create index if not exists delivery_quotes_cache_idx on public.delivery_quotes (branch_id, latitude, longitude, source, created_at desc);
+create index if not exists delivery_quotes_expires_idx on public.delivery_quotes (expires_at);
+
+create table if not exists public.delivery_approval_requests (
+  id uuid primary key default gen_random_uuid(),
+  request_no text not null unique,
+  user_id uuid not null references public.users(id) on delete cascade,
+  status text not null default 'pending',
+  branch_id text not null references public.store_branches(id),
+  branch_name text not null,
+  customer_name text not null,
+  customer_phone text not null,
+  address text not null,
+  address_hash text not null,
+  latitude numeric(10, 7) not null,
+  longitude numeric(10, 7) not null,
+  distance_km numeric(10, 2) not null,
+  duration_min integer not null,
+  cart_hash text not null,
+  cart_snapshot jsonb not null,
+  subtotal numeric(10, 2) not null,
+  approved_delivery_fee numeric(10, 2),
+  delivery_provider text,
+  estimated_delivery_min integer,
+  customer_note text,
+  review_note text,
+  reviewed_by uuid references public.admin_users(id) on delete set null,
+  reviewed_by_name text,
+  reviewed_at timestamptz,
+  request_expires_at timestamptz not null,
+  approval_expires_at timestamptz,
+  consumed_order_id uuid references public.orders(id) on delete set null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint delivery_approval_status_check check (status in ('pending', 'approved', 'rejected', 'cancelled', 'expired', 'consumed')),
+  constraint delivery_approval_values_check check (
+    distance_km > 0 and duration_min > 0 and subtotal >= 0
+    and (approved_delivery_fee is null or approved_delivery_fee >= 0)
+    and (estimated_delivery_min is null or estimated_delivery_min > 0)
+  )
+);
+
+create unique index if not exists delivery_approval_one_active_user_idx
+  on public.delivery_approval_requests (user_id) where status in ('pending', 'approved');
+create index if not exists delivery_approval_user_created_idx on public.delivery_approval_requests (user_id, created_at desc);
+create index if not exists delivery_approval_status_created_idx on public.delivery_approval_requests (status, created_at desc);
+
+alter table public.orders add column if not exists delivery_quote_id uuid references public.delivery_quotes(id) on delete set null;
+alter table public.orders add column if not exists delivery_approval_request_id uuid references public.delivery_approval_requests(id) on delete set null;
+create unique index if not exists orders_delivery_approval_unique_idx
+  on public.orders (delivery_approval_request_id) where delivery_approval_request_id is not null;
+create index if not exists orders_delivery_quote_idx on public.orders (delivery_quote_id);
+
+alter table public.delivery_settings enable row level security;
+alter table public.delivery_quotes enable row level security;
+alter table public.delivery_approval_requests enable row level security;
+revoke all on table public.delivery_settings, public.delivery_quotes, public.delivery_approval_requests from public, anon, authenticated;
+grant select, insert, update, delete on table public.delivery_settings, public.delivery_quotes, public.delivery_approval_requests to service_role;
+
+drop trigger if exists delivery_settings_set_updated_at on public.delivery_settings;
+create trigger delivery_settings_set_updated_at before update on public.delivery_settings
+for each row execute function public.set_updated_at();
+drop trigger if exists delivery_approval_requests_set_updated_at on public.delivery_approval_requests;
+create trigger delivery_approval_requests_set_updated_at before update on public.delivery_approval_requests
+for each row execute function public.set_updated_at();

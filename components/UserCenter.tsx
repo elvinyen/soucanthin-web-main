@@ -24,6 +24,7 @@ import type { TFunction } from 'i18next';
 import type { AuthMeResponse, UserAddress, WalletTransaction } from '../types/auth';
 import type { ReceiptImage } from '../types/order';
 import { AgentPortal } from './AgentPortal';
+import LanguageSelector from './LanguageSelector';
 
 export type UserCenterTab = 'profile' | 'wallet' | 'addresses' | 'coupons' | 'agent' | 'settings';
 
@@ -51,7 +52,7 @@ const tabs: { id: UserCenterTab; labelKey: string; subtitle: string; icon: React
 
 const quickAmounts = [1, 5, 10, 20, 50, 100];
 const pageShell = 'min-h-screen max-w-md mx-auto bg-stone-50 text-[#2D2D2D]';
-const pagePanel = 'relative min-h-screen overflow-hidden bg-stone-50';
+const pagePanel = 'relative min-h-screen bg-stone-50';
 const sheetPanel = 'absolute bottom-0 left-0 right-0 h-[85dvh] max-h-[85vh] overflow-hidden rounded-t-[2.25rem] border border-stone-100 bg-white/95 shadow-[0_-24px_70px_rgba(45,45,45,0.16)] backdrop-blur-2xl animate-slide-up';
 const glassPanel = 'rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_16px_45px_rgba(45,45,45,0.07)]';
 const glassCard = 'rounded-[1.65rem] border border-stone-100 bg-white shadow-[0_14px_40px_rgba(45,45,45,0.06)]';
@@ -385,25 +386,29 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-stone-100" />
         {!isPage && <div className="relative w-12 h-1.5 bg-stone-200 rounded-full mx-auto mt-4 flex-none shadow-sm" />}
 
-        {isPage && isPageRoot ? (
-          <div className="relative flex-none px-6 pt-7">
-            <h1 className="serif text-2xl font-bold text-[#2D2D2D]">{t('user.mine')}</h1>
-          </div>
+        {isPage ? (
+          <>
+            <header className="fixed left-1/2 top-0 z-[60] flex h-16 w-full max-w-md -translate-x-1/2 items-center bg-stone-50/95 px-6 shadow-sm backdrop-blur-md">
+              {!isPageRoot && (
+                <button
+                  onClick={() => setIsPageRoot(true)}
+                  className="mr-3 flex h-10 w-10 items-center justify-center rounded-full border border-stone-100 bg-white text-[#2D2D2D] shadow-sm transition active:scale-95"
+                  aria-label={t('common.back')}
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              <h1 className="serif flex-1 text-2xl font-bold text-[#2D2D2D]">{isPageRoot ? t('user.mine') : t(activeMeta.labelKey)}</h1>
+              <LanguageSelector />
+            </header>
+            <div className="h-16" aria-hidden="true" />
+          </>
         ) : (
           <div className="relative flex flex-none items-center justify-between px-7 pb-4 pt-6">
             <div className="flex items-center space-x-3">
               {!isPage && (
                 <button
                   onClick={onClose}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-100 bg-stone-50 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
-                  aria-label={t('common.back')}
-                >
-                  <ArrowLeft size={20} />
-                </button>
-              )}
-              {isPage && !isPageRoot && (
-                <button
-                  onClick={() => setIsPageRoot(true)}
                   className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-100 bg-stone-50 text-[#2D2D2D] shadow-sm backdrop-blur-xl transition active:scale-95"
                   aria-label={t('common.back')}
                 >

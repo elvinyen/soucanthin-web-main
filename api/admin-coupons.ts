@@ -52,7 +52,7 @@ const RECORD_SELECT = 'id,user_id,coupon_id,status,source,expires_at,issued_at,u
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    const admin = await requireAdminRole(req, ['admin', 'owner', 'manager', 'customer_service']);
+    const admin = await requireAdminRole(req, ['admin', 'customer_service']);
     const method = req.method || 'GET';
     if (method === 'GET') return await getCouponCenter(req, res);
     if (method === 'POST') return await createOrIssueCoupon(req, res, admin);
@@ -127,8 +127,6 @@ async function createOrIssueCoupon(
   const input = parseAdminBody<Record<string, unknown>>(req.body);
   const action = String(input.action || 'create');
   if (action === 'issue') return await issueCoupon(res, input, admin);
-  if (admin.role !== 'admin' && admin.role !== 'owner') throw new AdminError('只有管理员或老板可以创建优惠券', 403);
-
   const payload = normalizeCampaignInput(input);
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/coupons', {
@@ -146,13 +144,13 @@ async function issueCoupon(
   input: Record<string, unknown>,
   admin: Awaited<ReturnType<typeof requireAdminRole>>,
 ) {
-  if (!['admin', 'owner', 'manager', 'customer_service'].includes(admin.role)) throw new AdminError('没有发券权限', 403);
   const couponId = String(input.couponId || '').trim();
   const userIds = Array.from(new Set((Array.isArray(input.userIds) ? input.userIds : []).map(value => String(value).trim()).filter(Boolean)));
   const reason = String(input.reason || '').trim();
   if (!couponId) throw new AdminError('请选择优惠券');
   if (!userIds.length) throw new AdminError('请选择至少一位用户');
-  if (userIds.length > 500) throw new AdminError('单次最多向 500 位用户发券');
+  const issueLimit = admin.role === 'admin' ? 500 : 20;
+  if (userIds.length > issueLimit) throw new AdminError(`当前账号单次最多向 ${issueLimit} 位用户发券`);
   if (reason.length < 2) throw new AdminError('请填写发放原因');
 
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
@@ -194,7 +192,6 @@ async function updateCoupon(
   const action = String(input.action || 'status');
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   if (action === 'revoke') {
-    if (admin.role !== 'admin' && admin.role !== 'owner' && admin.role !== 'customer_service') throw new AdminError('没有撤销优惠券权限', 403);
     const id = String(input.id || '').trim();
     const reason = String(input.reason || '').trim();
     if (!id || reason.length < 2) throw new AdminError('请填写撤销原因');
@@ -204,7 +201,6 @@ async function updateCoupon(
     });
     return res.status(200).json({ success: true });
   }
-  if (admin.role !== 'admin' && admin.role !== 'owner') throw new AdminError('只有管理员或老板可以更改活动状态', 403);
   const id = String(input.id || '').trim();
   const status = String(input.status || '') as CouponStatus;
   if (!id || !['draft', 'active', 'paused', 'ended'].includes(status)) throw new AdminError('活动状态不正确');

@@ -6,22 +6,18 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  Gift,
-  History,
   MapPin,
   PackageCheck,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
-  ShoppingBag,
-  UserRound,
-  WalletCards,
   X,
 } from 'lucide-react';
+import { AdminTabs } from './AdminTabs';
 
 type ApiClient = <T,>(path: string, init?: RequestInit) => Promise<T>;
-type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'customer_service' | 'kitchen' | 'delivery';
+type AdminRole = 'admin' | 'customer_service' | 'kitchen';
 
 type UserSummary = {
   id: string;
@@ -134,7 +130,7 @@ export function UserManagement({ api, adminRole, onNotice }: {
   const [createPhone, setCreatePhone] = useState('');
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
-  const canRecharge = adminRole === 'admin' || adminRole === 'owner';
+  const canRecharge = adminRole === 'admin';
 
   useEffect(() => {
     void loadUsers(1);
@@ -245,30 +241,18 @@ export function UserManagement({ api, adminRole, onNotice }: {
     }
   };
 
-  const totalWallet = users.reduce((sum, user) => sum + Number(user.walletBalance || 0), 0);
-  const totalSpent = users.reduce((sum, user) => sum + Number(user.totalSpent || 0), 0);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric icon={<UserRound size={18} />} label="本页用户" value={String(users.length)} tone="blue" />
-        <Metric icon={<WalletCards size={18} />} label="本页钱包余额" value={`RM ${totalWallet.toFixed(2)}`} tone="emerald" />
-        <Metric icon={<ShoppingBag size={18} />} label="本页累计消费" value={`RM ${totalSpent.toFixed(2)}`} tone="amber" />
-      </div>
-
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-        <form onSubmit={submitSearch} className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">用户列表</h2><p className="mt-1 text-xs text-slate-500">管理用户资料、钱包余额与消费记录</p></div><button type="button" onClick={openCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={16} />新建用户</button></div>
+        <form onSubmit={submitSearch} className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-            <input value={search} onChange={event => setSearch(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:bg-white" placeholder="搜索姓名、手机号或邮箱" />
+            <input value={search} onChange={event => setSearch(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-[#C7A46A] focus:bg-white" placeholder="搜索姓名、手机号或邮箱" />
           </div>
           <button type="submit" disabled={loading} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-50">
             {loading ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
             查询用户
-          </button>
-          <button type="button" onClick={openCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,.18)] hover:bg-blue-500">
-            <Plus size={16} />
-            新建用户
           </button>
         </form>
 
@@ -337,14 +321,7 @@ export function UserManagement({ api, adminRole, onNotice }: {
                   {canRecharge && <button type="button" onClick={openRecharge} className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 text-sm font-black text-emerald-950 hover:bg-emerald-300"><CircleDollarSign size={18} />钱包充值</button>}
                 </div>
 
-                <div className="flex gap-1 overflow-x-auto border-b border-slate-200 p-2">
-                  {([
-                    ['profile', '用户资料', UserRound],
-                    ['wallet', '钱包流水', History],
-                    ['orders', '订单记录', ShoppingBag],
-                    ['coupons', '优惠券', Gift],
-                  ] as const).map(([id, label, Icon]) => <button key={id} type="button" onClick={() => setDetailTab(id)} className={`flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-bold ${detailTab === id ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-100'}`}><Icon size={15} />{label}</button>)}
-                </div>
+                <AdminTabs label="用户详情页面" value={detailTab} onChange={setDetailTab} items={[{ id: 'profile', label: '用户资料' }, { id: 'wallet', label: '钱包流水' }, { id: 'orders', label: '订单记录' }, { id: 'coupons', label: '优惠券' }]} />
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-5">
                   {detailTab === 'profile' && <ProfileTab detail={detail} />}
@@ -367,13 +344,13 @@ export function UserManagement({ api, adminRole, onNotice }: {
             </header>
             <div className="grid gap-4 p-5">
               {createError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{createError}</div>}
-              <label><span className="mb-2 block text-xs font-bold text-slate-600">用户姓名</span><input required autoFocus maxLength={60} value={createName} onChange={event => setCreateName(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white" placeholder="请输入用户姓名" /></label>
-              <label><span className="mb-2 block text-xs font-bold text-slate-600">马来西亚手机号</span><input required inputMode="tel" autoComplete="tel" value={createPhone} onChange={event => setCreatePhone(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white" placeholder="例如：012-345 6789" /></label>
+              <label><span className="mb-2 block text-xs font-bold text-slate-600">用户姓名</span><input required autoFocus maxLength={60} value={createName} onChange={event => setCreateName(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-[#C7A46A] focus:bg-white" placeholder="请输入用户姓名" /></label>
+              <label><span className="mb-2 block text-xs font-bold text-slate-600">马来西亚手机号</span><input required inputMode="tel" autoComplete="tel" value={createPhone} onChange={event => setCreatePhone(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-[#C7A46A] focus:bg-white" placeholder="例如：012-345 6789" /></label>
               <div className="flex gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-700"><ShieldCheck size={18} className="mt-0.5 shrink-0" /><span>手机号会自动标准化并检查重复。用户之后可以使用相同手机号接收 OTP 登录。</span></div>
             </div>
             <footer className="grid grid-cols-[.8fr_1.2fr] gap-3 border-t border-slate-100 p-5">
               <button type="button" onClick={() => setCreateOpen(false)} className="h-12 rounded-xl border border-slate-200 text-sm font-bold text-slate-600">取消</button>
-              <button type="submit" disabled={creating || !createName.trim() || !createPhone.trim()} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-black text-white disabled:opacity-50">{creating ? <RefreshCw size={17} className="animate-spin" /> : <Plus size={17} />}{creating ? '正在创建' : '确认创建'}</button>
+              <button type="submit" disabled={creating || !createName.trim() || !createPhone.trim()} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-black text-white disabled:opacity-50">{creating ? <RefreshCw size={17} className="animate-spin" /> : <Plus size={17} />}{creating ? '正在创建' : '确认创建'}</button>
             </footer>
           </form>
         </div>
@@ -415,11 +392,6 @@ function OrdersTab({ orders }: { orders: UserOrder[] }) {
 
 function CouponsTab({ coupons }: { coupons: UserCoupon[] }) {
   return coupons.length ? <div className="grid gap-3">{coupons.map(coupon => <div key={coupon.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-4"><div><p className="font-bold">{coupon.coupons?.title || '优惠券'}</p><p className="mt-1 font-mono text-xs text-amber-600">{coupon.coupons?.code || '—'}</p></div><div className="text-right"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{labelCouponStatus(coupon.status)}</span><p className="mt-2 text-[11px] text-slate-400">{coupon.expires_at ? `${formatDate(coupon.expires_at)} 到期` : '长期有效'}</p></div></div>)}</div> : <Empty text="暂无优惠券" />;
-}
-
-function Metric({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: 'blue' | 'emerald' | 'amber' }) {
-  const colors = tone === 'emerald' ? 'bg-emerald-50 text-emerald-600' : tone === 'amber' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600';
-  return <div className="flex items-center gap-3 rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,.04)]"><span className={`grid h-10 w-10 place-items-center rounded-xl ${colors}`}>{icon}</span><div><p className="text-xs font-bold text-slate-400">{label}</p><p className="mt-1 text-lg font-black text-slate-950">{value}</p></div></div>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) { return <section><h4 className="mb-3 text-xs font-black uppercase tracking-[.14em] text-slate-400">{title}</h4>{children}</section>; }

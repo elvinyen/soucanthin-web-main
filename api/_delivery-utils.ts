@@ -1,11 +1,13 @@
 import type { Order } from '../types/order';
 import { getSupabaseConfig, roundMoney, supabaseRequest } from './_order-utils';
 
-export type DeliveryQuoteCode = 'GEOCODE_FAILED' | 'OUT_OF_RANGE' | 'ROUTE_FAILED';
+export type DeliveryQuoteCode = 'GEOCODE_FAILED' | 'OUT_OF_RANGE' | 'ROUTE_FAILED' | 'QUOTE_EXPIRED' | 'APPROVAL_REQUIRED';
 
 export type DeliveryQuote = {
   branchId: string;
   branchName: string;
+  branchLatitude?: number;
+  branchLongitude?: number;
   addressLatitude: number;
   addressLongitude: number;
   distanceKm: number;
@@ -72,6 +74,15 @@ export async function applyDeliveryQuoteToOrder(order: Order) {
 }
 
 export async function getDeliveryQuoteForAddress(address: string, preferredBranchId?: string): Promise<DeliveryQuote> {
+  const route = await getDeliveryRouteForAddress(address, preferredBranchId);
+  const maxDistanceKm = getMaxDeliveryDistanceKm();
+  if (route.distanceKm > maxDistanceKm) {
+    throw new DeliveryQuoteError('OUT_OF_RANGE', `该地址超过 ${maxDistanceKm}km 自动配送范围`);
+  }
+  return { ...route, deliveryFee: calculateDeliveryFee(route.distanceKm) };
+}
+
+export async function getDeliveryRouteForAddress(address: string, preferredBranchId?: string): Promise<DeliveryQuote> {
   const normalizedAddress = address.trim();
   if (!normalizedAddress) {
     throw new DeliveryQuoteError('GEOCODE_FAILED', '请填写外卖地址');
@@ -99,30 +110,30 @@ export async function getDeliveryQuoteForAddress(address: string, preferredBranc
   const branch = branches[bestRoute.branchIndex];
   const distanceKm = roundMoney(bestRoute.distanceMeters / 1000);
   const durationMin = Math.max(1, Math.ceil(bestRoute.durationSeconds / 60));
-  const maxDistanceKm = getMaxDeliveryDistanceKm();
-
-  if (distanceKm > maxDistanceKm) {
-    throw new DeliveryQuoteError('OUT_OF_RANGE', `该地址超过 ${maxDistanceKm}km 配送范围`);
-  }
 
   return {
     branchId: branch.id,
     branchName: branch.name,
+    branchLatitude: Number(branch.latitude),
+    branchLongitude: Number(branch.longitude),
     addressLatitude: destination.latitude,
     addressLongitude: destination.longitude,
     distanceKm,
     durationMin,
-    deliveryFee: calculateDeliveryFee(distanceKm),
+    deliveryFee: 0,
     provider: bestRoute.provider,
   };
 }
 
 export function calculateDeliveryFee(distanceKm: number) {
-  if (distanceKm <= 3) return 5;
+  if (distanceKm <= 3) return 6;
   if (distanceKm <= 5) return 8;
   if (distanceKm <= 8) return 12;
   if (distanceKm <= 10) return 15;
-  if (distanceKm <= getMaxDeliveryDistanceKm()) return 18;
+  if (distanceKm <= 12) return 18;
+  if (distanceKm <= 15) return 22;
+  if (distanceKm <= 18) return 26;
+  if (distanceKm <= getMaxDeliveryDistanceKm()) return 30;
   throw new DeliveryQuoteError('OUT_OF_RANGE', `该地址超过 ${getMaxDeliveryDistanceKm()}km 配送范围`);
 }
 
@@ -134,9 +145,9 @@ function getGoogleMapsApiKey() {
   return apiKey;
 }
 
-function getMaxDeliveryDistanceKm() {
-  const value = Number(process.env.DELIVERY_MAX_DISTANCE_KM || 12);
-  return Number.isFinite(value) && value > 0 ? value : 12;
+export function getMaxDeliveryDistanceKm() {
+  const value = Number(process.env.DELIVERY_MAX_DISTANCE_KM || 20);
+  return Number.isFinite(value) && value > 0 ? value : 20;
 }
 
 async function getActiveBranches(apiKey: string) {

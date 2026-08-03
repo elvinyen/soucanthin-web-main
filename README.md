@@ -47,6 +47,10 @@ SESSION_SECRET="replace-with-a-long-random-secret"
 AGENT_CODE_SECRET="replace-with-a-separate-long-random-secret"
 ADMIN_REVIEW_TOKEN="replace-with-a-long-random-admin-token"
 ADMIN_SESSION_SECRET="replace-with-a-long-random-admin-session-secret"
+GOOGLE_MAPS_API_KEY="your-google-maps-api-key"
+LALAMOVE_API_KEY=""
+LALAMOVE_API_SECRET=""
+LALAMOVE_API_ENV="sandbox"
 VITE_FACEBOOK_URL="https://www.facebook.com/your-page"
 VITE_WHATSAPP_URL="https://wa.me/60123456789"
 ```
@@ -68,6 +72,10 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - `AGENT_CODE_SECRET`
 - `ADMIN_SESSION_SECRET`
 - `ADMIN_REVIEW_TOKEN`
+- `GOOGLE_MAPS_API_KEY`
+- `LALAMOVE_API_KEY`
+- `LALAMOVE_API_SECRET`
+- `LALAMOVE_API_ENV`
 
 前端只允许使用 `VITE_FACEBOOK_URL`、`VITE_WHATSAPP_URL` 这类公开变量。
 
@@ -82,6 +90,22 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 - `order_items` 保存每个菜品明细、所选加价选项和单品备注。
 - `payment-receipts` Supabase Storage bucket 保存 TNG 付款截图。
 - Telegram 通知失败时，订单仍会成功返回，`orders.notification_status` 会记录为 `failed`。
+
+## 吉隆坡配送与超范围审批
+
+- 20km 内由服务端报价。后台未启用 Lalamove、密钥缺失或接口失败时，自动使用 RM6–RM30 的备用阶梯价。
+- 启用 Lalamove 后，顾客配送费按实时报价加 15% 并向上取整；报价默认锁定 30 分钟。密钥只放在服务端环境变量中。
+- 超过 20km 不会自动生成申请，也不会显示付款或 TNG 截图区域。顾客先联系 WhatsApp，再登录并主动点击提交申请。
+- 客服、经理、管理员和老板在“配送工作台 → 超范围申请”审批；批准时必须填写配送费、配送方式和预计时间，拒绝时必须填写原因。
+- 待处理申请默认 2 小时过期，批准后 30 分钟内必须下单。地址、门店、商品、数量或选项变化后，原审批不可使用。
+- 系统当前只调用 Lalamove 报价接口，不会自动叫车。厨房完成后仍由员工人工叫车，并在现有配送工作台填写配送单号和成本。
+
+首次上线建议保持后台的“启用 Lalamove 实时报价”关闭，确认备用阶梯价流程正常后，再配置 Sandbox 密钥进行验证。生产密钥切换步骤：
+
+1. 将 `LALAMOVE_API_ENV` 改为 `production`，配置生产 API Key 与 Secret。
+2. 重启 API 服务。
+3. 在后台配送设置中开启 Lalamove 实时报价。
+4. 观察报价降级原因、顾客配送费与实际叫车成本差额；异常时可直接在后台关闭实时报价，系统立即回退阶梯价。
 
 ## 支付流程
 
@@ -103,6 +127,18 @@ VITE_WHATSAPP_URL="https://wa.me/60123456789"
 ```text
 http://localhost:3000/admin
 ```
+
+后台员工统一使用三种角色：
+
+- `admin`：管理员，拥有账号、资金、财务、佣金、安全设置和全部业务权限。
+- `customer_service`：运营助理，负责订单、顾客、菜单、优惠券、代理申请、配送审批与日常设置；可由管理员授予“所有门店”或“指定门店”范围，但不能管理后台账号、钱包调账、佣金提现或财务冲销。
+- `kitchen`：厨房工人，登录后固定进入 `/admin/kitchen` 独立厨房看板，只能处理所属门店的开始制作、完成制作和缺货上报。
+
+厨房账号必须分配一个所属门店；运营助理可以查看所有门店，也可以限制到一个指定门店。订单、厨房、配送及超范围审批接口会在服务端校验门店，不能仅依靠前端菜单隐藏。
+
+三个角色登录后都可从账号区或厨房设置菜单进入“修改密码”。修改成功会撤销该账号的其他登录会话，并为当前设备签发新会话。
+
+管理员可在 `/admin/audit-logs` 查看统一操作日志。登录、审核、设置以及所有后台人工写操作都会记录操作者、当时角色、门店、请求结果、IP 和设备信息；密码、令牌、验证码、图片数据及个人敏感字段会被过滤。日志表只允许新增和查询，不允许后台更新或删除。
 
 首次打开时，如果数据库还没有管理员账号，页面会显示“创建首个管理员”。输入：
 
@@ -149,6 +185,7 @@ stripe listen --forward-to localhost:3001/api/stripe-webhook
 ## 验证命令
 
 ```bash
+npm test
 npm run lint
 npm run build
 ```

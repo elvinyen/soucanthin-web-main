@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  KeyRound,
   LogOut,
   MoreHorizontal,
   Megaphone,
@@ -22,6 +23,8 @@ import {
   RefreshCw,
   Save,
   Search,
+  ScrollText,
+  Settings,
   ShieldCheck,
   ShoppingCart,
   Soup,
@@ -38,9 +41,14 @@ import { FinanceCenter } from './admin/FinanceCenter';
 import { CouponCenter } from './admin/CouponCenter';
 import { AgentCenter } from './admin/AgentCenter';
 import { UserManagement } from './admin/UserManagement';
+import { AdminLocaleTranslator } from './admin/AdminLocaleTranslator';
+import { DeliverySettingsPanel } from './admin/DeliverySettingsPanel';
+import { AuditLogCenter } from './admin/AuditLogCenter';
+import { ChangePasswordDialog } from './admin/ChangePasswordDialog';
 
-type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'users' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'agents' | 'wallet' | 'accounts' | 'storeBranches';
-type AdminRole = 'admin' | 'owner' | 'manager' | 'staff' | 'customer_service' | 'kitchen' | 'delivery';
+type AdminSection = 'menuItems' | 'menuCategories' | 'orders' | 'users' | 'customerOrder' | 'kitchen' | 'delivery' | 'finance' | 'coupons' | 'agents' | 'wallet' | 'accounts' | 'storeBranches' | 'systemSettings' | 'auditLogs';
+type AdminRole = 'admin' | 'customer_service' | 'kitchen';
+type AdminLanguage = 'zh' | 'en';
 type OrderStatus = 'pending_confirm' | 'waiting_kitchen' | 'cooking' | 'kitchen_done' | 'stock_issue' | 'preparing' | 'delivering' | 'delivered' | 'completed' | 'cancelled';
 type MenuSalesStatus = 'active' | 'sold_out' | 'inactive';
 
@@ -52,6 +60,7 @@ type AdminMe = {
     username: string;
     displayName: string;
     role: AdminRole;
+    branchScope?: 'all' | 'assigned' | null;
     assignedBranchId?: string | null;
   } | null;
 };
@@ -197,6 +206,7 @@ type AdminAccountRow = {
   username: string;
   displayName: string;
   role: AdminRole;
+  branchScope: 'all' | 'assigned';
   assignedBranchId?: string | null;
   active: boolean;
   lastLoginAt?: string | null;
@@ -285,6 +295,7 @@ type AccountFormState = {
   username: string;
   displayName: string;
   role: AdminRole;
+  branchScope: 'all' | 'assigned';
   password: string;
   active: boolean;
   assignedBranchId: string;
@@ -334,6 +345,7 @@ const emptyAccountForm: AccountFormState = {
   username: '',
   displayName: '',
   role: 'kitchen',
+  branchScope: 'assigned',
   password: '',
   active: true,
   assignedBranchId: '',
@@ -392,7 +404,32 @@ const sections = [
   { id: 'storeBranches' as const, label: '门店管理', icon: Store },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
   { id: 'accounts' as const, label: '账号管理', icon: ShieldCheck },
+  { id: 'systemSettings' as const, label: '系统设置', icon: Settings },
+  { id: 'auditLogs' as const, label: '操作日志', icon: ScrollText },
 ];
+
+const ADMIN_LANGUAGE_STORAGE_KEY = 'soucanthin.admin.language';
+
+const adminCopy = {
+  zh: {
+    systemSettings: '系统设置', general: '通用', language: '语言', languageDescription: '选择后台系统的显示语言。设置会保存在当前设备。',
+    chinese: '简体中文', english: 'English', saved: '语言已切换', settingsHint: '后台所有固定界面文案会使用所选语言。业务数据与已填写内容不会被修改。',
+    menuManagement: '菜单管理', itemManagement: '菜品管理', categoryManagement: '分类管理', collapseSidebar: '折叠侧栏', expandSidebar: '展开侧栏', logout: '退出', logoutAdmin: '退出后台', updatedAt: '更新于', autoSync: '进入页面后自动同步',
+  },
+  en: {
+    systemSettings: 'System Settings', general: 'General', language: 'Language', languageDescription: 'Choose the display language for the admin system. Your preference is saved on this device.',
+    chinese: 'Simplified Chinese', english: 'English', saved: 'Language updated', settingsHint: 'All fixed admin interface text uses the selected language. Business data and existing content are not changed.',
+    menuManagement: 'Menu Management', itemManagement: 'Menu Items', categoryManagement: 'Categories', collapseSidebar: 'Collapse sidebar', expandSidebar: 'Expand sidebar', logout: 'Log out', logoutAdmin: 'Log out of admin', updatedAt: 'Updated', autoSync: 'Automatically synced when this page opens',
+  },
+} as const;
+
+function sectionLabel(section: AdminSection, language: AdminLanguage) {
+  if (section === 'systemSettings') return adminCopy[language].systemSettings;
+  const englishLabels: Partial<Record<AdminSection, string>> = {
+    menuItems: 'Menu Items', menuCategories: 'Categories', orders: 'Orders', users: 'Users', customerOrder: 'Create Order', kitchen: 'Kitchen', delivery: 'Delivery', finance: 'Finance', coupons: 'Marketing', agents: 'Agents', wallet: 'Top-up Review', accounts: 'Accounts', storeBranches: 'Stores', auditLogs: 'Audit Logs',
+  };
+  return language === 'en' ? englishLabels[section] || section : sections.find(item => item.id === section)?.label || section;
+}
 
 function initialAdminSection(): AdminSection {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -407,6 +444,8 @@ function initialAdminSection(): AdminSection {
   if (pathname === '/admin/users') return 'users';
   if (pathname === '/admin/customer-order') return 'customerOrder';
   if (pathname === '/admin/accounts') return 'accounts';
+  if (pathname === '/admin/system-settings') return 'systemSettings';
+  if (pathname === '/admin/audit-logs') return 'auditLogs';
   return 'menuItems';
 }
 
@@ -442,7 +481,12 @@ const menuDisplayTags = menuDisplayLabelOptions.map(item => item.tag).filter(Boo
 const AdminDashboard: React.FC = () => {
   const [auth, setAuth] = useState<AdminMe | null>(null);
   const [section, setSection] = useState<AdminSection>(initialAdminSection);
+  const [adminLanguage, setAdminLanguage] = useState<AdminLanguage>(() => {
+    const saved = window.localStorage.getItem(ADMIN_LANGUAGE_STORAGE_KEY);
+    return saved === 'en' ? 'en' : 'zh';
+  });
   const [notice, setNotice] = useState('');
+  const noticeTimerRef = useRef<number | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -470,7 +514,7 @@ const AdminDashboard: React.FC = () => {
   const [editingCategory, setEditingCategory] = useState<MenuCategoryRow | null>(null);
   const [isCategoryEditorOpen, setIsCategoryEditorOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [menuNavOpen, setMenuNavOpen] = useState(true);
+  const [menuNavOpen, setMenuNavOpen] = useState(false);
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderStatus, setOrderStatus] = useState<OrderStatus | 'all'>('all');
@@ -492,6 +536,7 @@ const AdminDashboard: React.FC = () => {
   const [deliveryPreview, setDeliveryPreview] = useState<{ deliveryFee: number; distanceKm: number; durationMin: number } | null>(null);
   const [deliveryPreviewLoading, setDeliveryPreviewLoading] = useState(false);
   const [accounts, setAccounts] = useState<AdminAccountRow[]>([]);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [accountForm, setAccountForm] = useState<AccountFormState>(emptyAccountForm);
   const [accountError, setAccountError] = useState('');
   const [isAccountEditorOpen, setIsAccountEditorOpen] = useState(false);
@@ -504,13 +549,11 @@ const AdminDashboard: React.FC = () => {
 
   const authenticated = Boolean(auth?.authenticated);
   const setupRequired = Boolean(auth?.setupRequired);
+  const copy = adminCopy[adminLanguage];
   const availableSections = sections.filter(item => {
     const role = auth?.admin?.role;
-    if (!role || role === 'admin' || role === 'owner') return true;
-    if (role === 'manager') return ['orders', 'users', 'customerOrder', 'kitchen', 'delivery', 'finance', 'coupons', 'agents'].includes(item.id);
-    if (role === 'staff') return item.id === 'finance';
-    if (role === 'customer_service') return item.id === 'orders' || item.id === 'users' || item.id === 'customerOrder' || item.id === 'delivery' || item.id === 'coupons' || item.id === 'agents';
-    if (role === 'delivery') return item.id === 'delivery';
+    if (!role || role === 'admin') return true;
+    if (role === 'customer_service') return ['menuItems', 'menuCategories', 'orders', 'users', 'customerOrder', 'kitchen', 'delivery', 'coupons', 'agents', 'storeBranches', 'systemSettings'].includes(item.id);
     return item.id === 'kitchen';
   });
   const filteredMenuItems = menuItems.filter(item => {
@@ -533,6 +576,11 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     void refreshAuth();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(ADMIN_LANGUAGE_STORAGE_KEY, adminLanguage);
+    document.documentElement.lang = adminLanguage === 'en' ? 'en' : 'zh-CN';
+  }, [adminLanguage]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -696,31 +744,13 @@ const AdminDashboard: React.FC = () => {
       return;
     }
     if (auth.admin.role === 'customer_service') {
-      const nextSection: AdminSection = pathname === '/admin/orders'
-        ? 'orders'
-        : pathname === '/admin/users'
-        ? 'users'
-        : pathname === '/admin/customer-order'
-        ? 'customerOrder'
-        : pathname === '/admin/coupons'
-        ? 'coupons'
-        : 'delivery';
+      const requestedSection = sectionForPath(pathname);
+      const nextSection: AdminSection = requestedSection && availableSections.some(item => item.id === requestedSection)
+        ? requestedSection
+        : 'orders';
       if (section !== nextSection) setSection(nextSection);
       const nextPath = pathForSection(nextSection);
       if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
-      return;
-    }
-    if (auth.admin.role === 'delivery') {
-      if (section !== 'delivery') setSection('delivery');
-      if (pathname !== '/admin/delivery') window.history.replaceState({}, '', '/admin/delivery');
-      return;
-    }
-    if (auth.admin.role === 'staff') {
-      if (section !== 'finance') setSection('finance');
-      return;
-    }
-    if (auth.admin.role === 'manager' && !availableSections.some(item => item.id === section)) {
-      setSection('finance');
       return;
     }
     const pathSection = sectionForPath(pathname);
@@ -739,8 +769,12 @@ const AdminDashboard: React.FC = () => {
   };
 
   const showNotice = (message: string) => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
     setNotice(message);
-    window.setTimeout(() => setNotice(''), 2400);
+    noticeTimerRef.current = window.setTimeout(() => {
+      setNotice('');
+      noticeTimerRef.current = null;
+    }, 2400);
   };
 
   const clearPendingImage = () => {
@@ -803,6 +837,11 @@ const AdminDashboard: React.FC = () => {
     const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
     const nextPath = pathForSection(nextSection);
     if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
+  };
+
+  const changeAdminLanguage = (nextLanguage: AdminLanguage) => {
+    setAdminLanguage(nextLanguage);
+    showNotice(adminCopy[nextLanguage].saved);
   };
 
   const loadMenuItems = async () => {
@@ -1018,6 +1057,7 @@ const AdminDashboard: React.FC = () => {
       username: account.username,
       displayName: account.displayName,
       role: account.role,
+      branchScope: account.branchScope || (account.role === 'admin' ? 'all' : 'assigned'),
       password: '',
       active: account.active,
       assignedBranchId: account.assignedBranchId || '',
@@ -1048,6 +1088,7 @@ const AdminDashboard: React.FC = () => {
             username: accountForm.username,
             displayName: accountForm.displayName,
             role: accountForm.role,
+            branchScope: accountForm.branchScope,
             active: accountForm.active,
             assignedBranchId: accountForm.assignedBranchId || null,
             ...(accountForm.password.trim() ? { password: accountForm.password } : {}),
@@ -1056,6 +1097,7 @@ const AdminDashboard: React.FC = () => {
             username: accountForm.username,
             displayName: accountForm.displayName,
             role: accountForm.role,
+            branchScope: accountForm.branchScope,
             password: accountForm.password,
             active: accountForm.active,
             assignedBranchId: accountForm.assignedBranchId || null,
@@ -1170,8 +1212,10 @@ const AdminDashboard: React.FC = () => {
         id: storeBranchForm.id,
         name: storeBranchForm.name,
         address: storeBranchForm.address,
-        active: storeBranchForm.active,
-        sort_order: Number(storeBranchForm.sort_order || 0),
+        ...(auth.admin?.role === 'admin' ? {
+          active: storeBranchForm.active,
+          sort_order: Number(storeBranchForm.sort_order || 0),
+        } : {}),
       };
       const existingLatitude = existing?.latitude === null || existing?.latitude === undefined ? '' : String(existing.latitude);
       const existingLongitude = existing?.longitude === null || existing?.longitude === undefined ? '' : String(existing.longitude);
@@ -1577,7 +1621,8 @@ const AdminDashboard: React.FC = () => {
 
   if (!auth) {
     return (
-      <div className="grid min-h-screen place-items-center bg-slate-50 text-slate-950">
+      <div data-admin-shell className="grid min-h-screen place-items-center bg-slate-50 text-slate-950">
+        <AdminLocaleTranslator language={adminLanguage} />
         <div className="h-10 w-10 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
       </div>
     );
@@ -1585,7 +1630,8 @@ const AdminDashboard: React.FC = () => {
 
   if (!authenticated) {
     return (
-      <div className="relative min-h-screen overflow-hidden bg-[#F6F7F9] text-[#111827]">
+      <div data-admin-shell className="relative min-h-screen overflow-hidden bg-[#F6F7F9] text-[#111827]">
+        <AdminLocaleTranslator language={adminLanguage} />
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#FAFAF8_0%,#F6F7F9_100%)]" />
         <div className="absolute inset-0 hidden opacity-[0.28] sm:block [background-image:linear-gradient(rgba(17,24,39,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(17,24,39,0.035)_1px,transparent_1px)] [background-size:56px_56px]" />
         <div className="absolute left-[-140px] top-[-180px] hidden h-[420px] w-[420px] rounded-full bg-[#E9D8B9]/[0.28] blur-3xl sm:block" />
@@ -1641,19 +1687,25 @@ const AdminDashboard: React.FC = () => {
 
   if (auth.admin?.role === 'kitchen') {
     return (
-      <KitchenBoard
-        api={api}
-        onLogout={logout}
-        userName={auth.admin.displayName || auth.admin.username}
-        standalone
-      />
+      <div data-admin-shell>
+        <AdminLocaleTranslator language={adminLanguage} />
+        <KitchenBoard
+          api={api}
+          onLogout={logout}
+          onChangePassword={() => setPasswordDialogOpen(true)}
+          userName={auth.admin.displayName || auth.admin.username}
+          standalone
+        />
+        <ChangePasswordDialog open={passwordDialogOpen} api={api} onClose={() => setPasswordDialogOpen(false)} onChanged={() => showNotice('密码已修改，其他设备已退出登录')} />
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F6F8FB] text-slate-950">
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden border-r border-[#E5E7EB] bg-white px-4 py-4 shadow-[10px_0_30px_rgba(15,23,42,0.035)] transition-[width] duration-200 lg:block ${sidebarCollapsed ? 'w-24' : 'w-64'}`}>
-        <div className={`flex h-12 items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3 px-1'}`}>
+    <div data-admin-shell className="min-h-screen bg-[#F6F8FB] text-slate-950">
+      <AdminLocaleTranslator language={adminLanguage} />
+      <aside className={`fixed inset-y-0 left-0 z-30 hidden flex-col overflow-hidden border-r border-[#E5E7EB] bg-white px-4 py-4 shadow-[10px_0_30px_rgba(15,23,42,0.035)] transition-[width] duration-200 lg:flex ${sidebarCollapsed ? 'w-24' : 'w-64'}`}>
+        <div className={`flex h-12 shrink-0 items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between gap-3 px-1'}`}>
           <div className={`flex items-center gap-2.5 ${sidebarCollapsed ? '' : 'min-w-0'}`}>
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
               <ShieldCheck size={21} />
@@ -1666,32 +1718,32 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
           {!sidebarCollapsed && (
-            <IconButton title="折叠侧栏" onClick={() => setSidebarCollapsed(true)}><PanelLeftClose size={16} /></IconButton>
+            <IconButton title={copy.collapseSidebar} onClick={() => setSidebarCollapsed(true)}><PanelLeftClose size={16} /></IconButton>
           )}
         </div>
         {sidebarCollapsed && (
-          <button type="button" onClick={() => setSidebarCollapsed(false)} className="mt-5 flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-950" title="展开侧栏" aria-label="展开侧栏">
+          <button type="button" onClick={() => setSidebarCollapsed(false)} className="mt-5 flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-950" title={copy.expandSidebar} aria-label={copy.expandSidebar}>
             <PanelLeftOpen size={17} />
           </button>
         )}
-        <nav className="mt-7 space-y-1.5">
+        <nav className="mt-7 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
           {availableSections.some(item => item.id === 'menuItems') && (
             <div className="space-y-1">
               <button
                 type="button"
                 onClick={() => sidebarCollapsed ? selectSection('menuItems') : setMenuNavOpen(open => !open)}
-                title={sidebarCollapsed ? '菜单管理' : undefined}
+                title={sidebarCollapsed ? copy.menuManagement : undefined}
                 className={`relative flex h-12 w-full items-center rounded-[14px] px-3 text-sm font-bold transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${section === 'menuItems' || section === 'menuCategories' ? 'bg-[#F1F5F9] text-[#111827]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}
               >
                 {(section === 'menuItems' || section === 'menuCategories') && !sidebarCollapsed && <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}
                 <Soup size={18} />
-                {!sidebarCollapsed && <><span className="flex-1 text-left">菜单管理</span><ChevronDown size={15} className={`text-slate-400 transition-transform ${menuNavOpen ? 'rotate-180' : ''}`} /></>}
+                {!sidebarCollapsed && <><span className="flex-1 text-left">{copy.menuManagement}</span><ChevronDown size={15} className={`text-slate-400 transition-transform ${menuNavOpen ? 'rotate-180' : ''}`} /></>}
               </button>
               {!sidebarCollapsed && menuNavOpen && (
                 <div className="ml-4 grid gap-1 border-l border-slate-200 pl-3">
                   {[
-                    { id: 'menuItems' as const, label: '菜品管理' },
-                    { id: 'menuCategories' as const, label: '分类管理' },
+                    { id: 'menuItems' as const, label: copy.itemManagement },
+                    { id: 'menuCategories' as const, label: copy.categoryManagement },
                   ].map(item => (
                     <button
                       key={item.id}
@@ -1715,42 +1767,41 @@ const AdminDashboard: React.FC = () => {
                 key={item.id}
                 type="button"
                 onClick={() => selectSection(item.id)}
-                title={sidebarCollapsed ? item.label : undefined}
+                title={sidebarCollapsed ? sectionLabel(item.id, adminLanguage) : undefined}
                 className={`relative flex h-12 w-full items-center rounded-[14px] px-3 text-sm font-bold transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${active ? 'bg-[#F1F5F9] text-[#111827]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}
               >
                 {active && !sidebarCollapsed && <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}
                 <Icon size={18} className={active ? 'text-[#111827]' : ''} />
-                {!sidebarCollapsed && item.label}
+                {!sidebarCollapsed && sectionLabel(item.id, adminLanguage)}
               </button>
             );
           })}
         </nav>
-        <div className="absolute bottom-4 left-4 right-4">
+        <div className="mt-4 shrink-0">
           {!sidebarCollapsed && <div className="mb-2 rounded-[14px] border border-[#E5E7EB] bg-[#F8FAFC] px-3 py-2.5">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-slate-950">{auth.admin?.displayName || auth.admin?.username}</p>
                 <p className="mt-0.5 text-xs text-[#64748B]">{labelAdminRole(auth.admin?.role || 'admin')}</p>
               </div>
-              <button type="button" onClick={logout} className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-white hover:text-slate-950">
-                退出
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                <button type="button" onClick={() => setPasswordDialogOpen(true)} title="修改密码" className="grid h-8 w-8 place-items-center rounded-lg text-[#64748B] hover:bg-white hover:text-slate-950"><KeyRound size={15} /></button>
+                <button type="button" onClick={logout} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-white hover:text-slate-950">{copy.logout}</button>
+              </div>
             </div>
           </div>}
-          {sidebarCollapsed && <button type="button" onClick={logout} title="退出后台" className="flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950">
-            <LogOut size={17} />
-          </button>}
+          {sidebarCollapsed && <div className="grid gap-2"><button type="button" onClick={() => setPasswordDialogOpen(true)} title="修改密码" className="flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"><KeyRound size={17} /></button><button type="button" onClick={logout} title={copy.logoutAdmin} className="flex h-10 w-full items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"><LogOut size={17} /></button></div>}
         </div>
       </aside>
 
-      <main className={`${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
+      <main className={`${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
         <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-[22px] font-bold leading-8 text-slate-950">{sections.find(item => item.id === section)?.label}</h2>
+              <h2 className="text-[22px] font-bold leading-8 text-slate-950">{sectionLabel(section, adminLanguage)}</h2>
               {section !== 'kitchen' && section !== 'delivery' && section !== 'wallet' && (
                 <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
-                  {lastUpdatedAt[section] ? `更新于 ${lastUpdatedAt[section]?.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : '进入页面后自动同步'}
+                  {lastUpdatedAt[section] ? `${copy.updatedAt} ${lastUpdatedAt[section]?.toLocaleTimeString(adminLanguage === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : copy.autoSync}
                 </p>
               )}
             </div>
@@ -1763,19 +1814,20 @@ const AdminDashboard: React.FC = () => {
               </div>
             )}
             <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
+              <button type="button" onClick={() => setPasswordDialogOpen(true)} className="flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-slate-600"><KeyRound size={14} />修改密码</button>
               {availableSections.map(item => (
                 <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold ${section === item.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-500'}`}>
-                  {item.label}
+                  {sectionLabel(item.id, adminLanguage)}
                 </button>
               ))}
             </div>
           </div>
         </header>
 
-        <div className={section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons'
+        <div className={section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs'
           ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 lg:p-6'
           : 'grid min-h-[calc(100vh-57px)] gap-3 p-3 sm:p-5 lg:p-6'}>
-          {notice && <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{notice}</div>}
+          {notice && <div role="status" className="fixed left-1/2 top-4 z-[200] flex h-auto w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 shadow-[0_16px_45px_rgba(15,23,42,0.16)]"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-50"><Check size={16} /></span><span className="min-w-0 flex-1 leading-5">{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="关闭通知" className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={15} /></button></div>}
           {error && (
             <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
               <AlertCircle className="mt-0.5 shrink-0" size={16} />
@@ -1802,7 +1854,7 @@ const AdminDashboard: React.FC = () => {
                       <option value="inactive">下架</option>
                     </select>
                     <div className="flex justify-end lg:col-span-3 xl:col-span-1">
-                      <button type="button" onClick={startCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] transition hover:bg-blue-500 sm:min-w-[128px]">
+                      <button type="button" onClick={startCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition sm:min-w-[128px]">
                         <Plus size={17} />
                         新增菜品
                       </button>
@@ -1999,6 +2051,7 @@ const AdminDashboard: React.FC = () => {
             <KitchenBoard
               api={api}
               onLogout={logout}
+              onChangePassword={() => setPasswordDialogOpen(true)}
               userName={auth.admin?.displayName || auth.admin?.username || '管理员'}
             />
           )}
@@ -2019,6 +2072,7 @@ const AdminDashboard: React.FC = () => {
 
           {section === 'storeBranches' && (
             <StoreBranchManager
+              canAdminister={auth.admin?.role === 'admin'}
               branches={storeBranches}
               form={storeBranchForm}
               setForm={setStoreBranchForm}
@@ -2046,6 +2100,18 @@ const AdminDashboard: React.FC = () => {
               onToggleActive={toggleAccountActive}
               onDelete={deleteAccount}
               onCancel={resetAccountForm}
+            />
+          )}
+
+          {section === 'auditLogs' && auth.admin?.role === 'admin' && <AuditLogCenter api={api} />}
+
+          {section === 'systemSettings' && (
+            <SystemSettings
+              adminRole={auth.admin?.role || 'admin'}
+              language={adminLanguage}
+              copy={copy}
+              onLanguageChange={changeAdminLanguage}
+              api={api}
             />
           )}
 
@@ -2221,7 +2287,7 @@ const AdminDashboard: React.FC = () => {
               <div>
                 <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">订单状态</label>
                 <select value={selectedOrder.order.status} onChange={event => updateOrderStatus(selectedOrder.order.id, event.target.value as OrderStatus)} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-blue-500">
-                  {orderStatusOptions.filter(item => item.value !== 'all').map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  {orderStatusOptions.filter(item => item.value !== 'all' && canSelectOrderStatus(auth.admin?.role || 'admin', selectedOrder.order.status, item.value, selectedOrder.order.order_type)).map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
               </div>
 
@@ -2286,7 +2352,7 @@ const AdminDashboard: React.FC = () => {
                           {receiptUrl && (
                             <a href={receiptUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-bold text-blue-600 hover:text-blue-500">查看本次付款截图</a>
                           )}
-                          {isPendingSubmission && (auth.admin?.role === 'admin' || auth.admin?.role === 'owner') && (
+                          {isPendingSubmission && (auth.admin?.role === 'admin' || auth.admin?.role === 'customer_service') && (
                             <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-3">
                               <textarea
                                 value={paymentReviewReason}
@@ -2362,6 +2428,7 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {isLoading && <div className="fixed bottom-5 right-5 rounded-full bg-slate-950 px-4 py-2 text-xs font-bold text-white shadow-xl">加载中</div>}
+      <ChangePasswordDialog open={passwordDialogOpen} api={api} onClose={() => setPasswordDialogOpen(false)} onChanged={() => showNotice('密码已修改，其他设备已退出登录')} />
     </div>
   );
 };
@@ -3479,12 +3546,13 @@ function ReceiptRow({ label, value }: { label: string; value: React.ReactNode })
   );
 }
 
-function StoreBranchManager({ branches, form, setForm, error, editorOpen, onSubmit, onCreate, onEdit, onToggleActive, onCancel }: {
+function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdminister, onSubmit, onCreate, onEdit, onToggleActive, onCancel }: {
   branches: StoreBranchRow[];
   form: StoreBranchFormState;
   setForm: React.Dispatch<React.SetStateAction<StoreBranchFormState>>;
   error: string;
   editorOpen: boolean;
+  canAdminister: boolean;
   onSubmit: (event: React.FormEvent) => void;
   onCreate: () => void;
   onEdit: (branch: StoreBranchRow) => void;
@@ -3503,26 +3571,19 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, onSubm
   });
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <MetricCard label="门店总数" value={branches.length} />
-        <MetricCard label="营业中" value={branches.filter(branch => branch.active).length} tone="green" />
-        <MetricCard label="已停用" value={branches.filter(branch => !branch.active).length} tone="muted" />
-      </div>
+    <div className="relative flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="grid shrink-0 gap-3 border-b border-slate-200 bg-white p-4 md:grid-cols-[minmax(280px,1fr)_180px_auto] md:items-center">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">门店列表</h2><p className="mt-1 text-xs text-slate-500">管理门店资料、营业状态和配送位置</p></div>{canAdminister && <button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={17} />新增门店</button>}</div>
+        <div className="grid shrink-0 gap-3 border-b border-slate-100 bg-white p-4 md:grid-cols-[minmax(280px,1fr)_180px] md:items-center">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索门店名称或地址" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:bg-white" />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索门店名称或地址" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-[#C7A46A] focus:bg-white" />
           </div>
-          <select value={status} onChange={event => setStatus(event.target.value as typeof status)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+          <select value={status} onChange={event => setStatus(event.target.value as typeof status)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A] focus:bg-white">
             <option value="all">全部状态</option>
             <option value="active">营业中</option>
             <option value="inactive">已停用</option>
           </select>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onCreate} className="flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] hover:bg-blue-500"><Plus size={17} />新增门店</button>
-          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
@@ -3551,7 +3612,7 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, onSubm
                   </td>
                   <td className="px-4 py-3 text-left align-middle text-slate-600"><p className="line-clamp-2 leading-5">{branch.address}</p></td>
                   <td className="px-4 py-4 text-center align-middle">
-                    <button type="button" onClick={event => { event.stopPropagation(); onToggleActive(branch); }} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold ${branch.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${branch.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />{branch.active ? '营业中' : '已停用'}</button>
+                    <button type="button" disabled={!canAdminister} onClick={event => { event.stopPropagation(); if (canAdminister) onToggleActive(branch); }} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold disabled:cursor-default ${branch.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${branch.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />{branch.active ? '营业中' : '已停用'}</button>
                   </td>
                   <td className="px-4 py-4 text-center align-middle text-slate-600">{branch.sort_order}</td>
                   <td className="px-4 py-4 text-center align-middle">
@@ -3570,8 +3631,8 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, onSubm
       </Panel>
 
       {editorOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
-          <aside className="ml-auto flex h-full w-full max-w-[460px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
+          <aside className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div><h3 className="text-xl font-bold text-slate-950">{editing ? '编辑门店' : '新增门店'}</h3><p className="mt-1 text-xs text-slate-500">管理门店资料、营业状态与配送位置</p></div>
               <IconButton title="关闭" onClick={onCancel}><X size={17} /></IconButton>
@@ -3583,10 +3644,9 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, onSubm
                 <Input label="门店名称" value={form.name} onChange={value => update('name', value)} placeholder="PUDU 区" required />
                 <TextArea label="门店地址" value={form.address} onChange={value => update('address', value)} required />
                 <div className="grid gap-3 sm:grid-cols-2"><Input label="纬度" value={form.latitude} onChange={value => update('latitude', value)} type="number" placeholder="可留空自动解析" /><Input label="经度" value={form.longitude} onChange={value => update('longitude', value)} type="number" placeholder="可留空自动解析" /></div>
-                <Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" />
-                <Toggle label={form.active ? '门店营业中' : '门店已停用'} checked={form.active} onChange={value => update('active', value)} />
+                {canAdminister && <><Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" /><Toggle label={form.active ? '门店营业中' : '门店已停用'} checked={form.active} onChange={value => update('active', value)} /></>}
               </div>
-              <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"><Save size={16} />{editing ? '保存更改' : '创建门店'}</button></div>
+              <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-bold text-white"><Save size={16} />{editing ? '保存更改' : '创建门店'}</button></div>
             </form>
           </aside>
         </div>
@@ -3614,6 +3674,12 @@ function AccountManager({ accounts, branches, form, setForm, error, editorOpen, 
   const [roleFilter, setRoleFilter] = useState<'all' | AdminRole>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const update = (key: keyof AccountFormState, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+  const updateRole = (role: AdminRole) => setForm(prev => ({
+    ...prev,
+    role,
+    branchScope: role === 'admin' ? 'all' : role === 'kitchen' ? 'assigned' : prev.role === 'customer_service' ? prev.branchScope : 'assigned',
+    assignedBranchId: role === 'admin' ? '' : prev.assignedBranchId,
+  }));
   const normalizedSearch = search.trim().toLowerCase();
   const filteredAccounts = accounts.filter(account => {
     const matchesSearch = !normalizedSearch
@@ -3624,23 +3690,23 @@ function AccountManager({ accounts, branches, form, setForm, error, editorOpen, 
     return matchesSearch && matchesRole && matchesStatus;
   });
   const activeCount = accounts.filter(account => account.active).length;
-  const privilegedCount = accounts.filter(account => account.role === 'admin' || account.role === 'owner').length;
+  const privilegedCount = accounts.filter(account => account.role === 'admin').length;
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden">
       <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="grid shrink-0 gap-3 border-b border-slate-200 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_170px_150px_auto] md:items-center">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">后台账号</h2><p className="mt-1 text-xs text-slate-500">管理登录身份、角色权限和所属门店</p></div><button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={17} />新增账号</button></div>
+        <div className="grid shrink-0 gap-3 border-b border-slate-100 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_170px_150px] md:items-center">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索账号或显示名称" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white" />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索账号或显示名称" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-[#C7A46A] focus:bg-white" />
           </div>
-          <select value={roleFilter} onChange={event => setRoleFilter(event.target.value as typeof roleFilter)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
-            <option value="all">全部角色</option><option value="admin">管理员</option><option value="owner">老板</option><option value="manager">店长</option><option value="staff">门店员工</option><option value="customer_service">客服助理</option><option value="kitchen">厨房工人</option><option value="delivery">配送人员</option>
+          <select value={roleFilter} onChange={event => setRoleFilter(event.target.value as typeof roleFilter)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A] focus:bg-white">
+            <option value="all">全部角色</option><option value="admin">管理员</option><option value="customer_service">运营助理</option><option value="kitchen">厨房工人</option>
           </select>
-          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A] focus:bg-white">
             <option value="all">全部状态</option><option value="active">启用</option><option value="inactive">停用</option>
           </select>
-          <button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] hover:bg-blue-500"><Plus size={17} />新增账号</button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[920px] table-fixed border-collapse text-sm">
@@ -3664,7 +3730,7 @@ function AccountManager({ accounts, branches, form, setForm, error, editorOpen, 
                   <td className="px-4 py-4 text-center align-middle">
                     <Badge tone={toneForAdminRole(account.role)}>{labelAdminRole(account.role)}</Badge>
                   </td>
-                  <td className="px-4 py-4 text-center align-middle text-slate-600">{account.assignedBranchId ? branches.find(branch => branch.id === account.assignedBranchId)?.name || account.assignedBranchId : <span className="text-slate-400">全部门店</span>}</td>
+                  <td className="px-4 py-4 text-center align-middle text-slate-600">{account.branchScope === 'all' ? <span className="font-bold text-blue-600">所有门店</span> : account.assignedBranchId ? branches.find(branch => branch.id === account.assignedBranchId)?.name || account.assignedBranchId : <span className="text-red-500">未分配</span>}</td>
                   <td className="px-4 py-4 text-center align-middle">
                     <button type="button" onClick={() => onToggleActive(account)} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold transition ${account.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${account.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />{account.active ? '启用' : '停用'}</button>
                   </td>
@@ -3688,21 +3754,23 @@ function AccountManager({ accounts, branches, form, setForm, error, editorOpen, 
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-5 py-3 text-xs font-bold text-slate-500"><span>当前显示 {filteredAccounts.length} / {accounts.length} 个账号</span><span className="flex gap-4"><span>启用 {activeCount}</span><span>高权限 {privilegedCount}</span></span></div>
       </Panel>
 
-      {editorOpen && <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
-        <aside className="ml-auto flex h-full w-full max-w-[440px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+      {editorOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
+        <aside className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h3 className="text-xl font-bold text-slate-950">{editing ? '编辑后台账号' : '新增后台账号'}</h3><p className="mt-1 text-xs text-slate-500">配置登录身份、角色权限和所属门店</p></div><IconButton title="关闭" onClick={onCancel}><X size={17} /></IconButton></div>
           <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col">
             <div className="grid gap-4 overflow-y-auto p-5">
               {error && <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700"><AlertCircle className="mt-0.5 shrink-0" size={16} />{error}</div>}
               <Input label="登录账号" value={form.username} onChange={value => update('username', value)} placeholder="例如 service01" required />
               <Input label="显示名称" value={form.displayName} onChange={value => update('displayName', value)} placeholder="例如 厨房早班" />
-              <SelectInput label="账号角色" value={form.role} onChange={value => update('role', value as AccountFormState['role'])}><option value="admin">管理员</option><option value="owner">老板</option><option value="manager">店长</option><option value="staff">门店员工</option><option value="customer_service">客服助理</option><option value="kitchen">厨房工人</option><option value="delivery">配送人员</option></SelectInput>
-              {form.role !== 'admin' && form.role !== 'owner' && <SelectInput label="所属门店" value={form.assignedBranchId} onChange={value => update('assignedBranchId', value)}><option value="">暂不分配</option>{branches.filter(branch => branch.active).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</SelectInput>}
+              <SelectInput label="账号角色" value={form.role} onChange={value => updateRole(value as AccountFormState['role'])}><option value="admin">管理员</option><option value="customer_service">运营助理</option><option value="kitchen">厨房工人</option></SelectInput>
+              {form.role === 'customer_service' && <SelectInput label="门店权限" value={form.branchScope} onChange={value => setForm(prev => ({ ...prev, branchScope: value as AccountFormState['branchScope'], assignedBranchId: value === 'all' ? '' : prev.assignedBranchId }))}><option value="all">所有门店</option><option value="assigned">指定门店</option></SelectInput>}
+              {form.role !== 'admin' && form.branchScope === 'assigned' && <SelectInput label="所属门店" value={form.assignedBranchId} onChange={value => update('assignedBranchId', value)}><option value="">请选择门店</option>{branches.filter(branch => branch.active).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</SelectInput>}
+              {form.role === 'kitchen' && <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">厨房工人使用独立厨房页面，只能查看和处理所属门店的厨房订单。</div>}
               <Input label={editing ? '新密码（留空则不修改）' : '初始密码'} value={form.password} onChange={value => update('password', value)} type="password" placeholder="至少 8 位" required={!editing} />
               <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700">密码只会以安全哈希形式保存，创建后无法查看原密码。</div>
               <Toggle label={form.active ? '账号已启用' : '账号已停用'} checked={form.active} onChange={value => update('active', value)} />
             </div>
-            <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"><Save size={16} />{editing ? '保存更改' : '创建账号'}</button></div>
+            <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-bold text-white"><Save size={16} />{editing ? '保存更改' : '创建账号'}</button></div>
           </form>
         </aside>
       </div>}
@@ -3735,21 +3803,17 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
   return (
     <div className="relative">
       <Panel className="overflow-hidden">
-        <div className="grid gap-3 border-b border-slate-200 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_180px_auto] md:items-center">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">菜单分类</h2><p className="mt-1 text-xs text-slate-500">管理分类名称、展示顺序和启用状态</p></div><button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={17} />新增分类</button></div>
+        <div className="grid gap-3 border-b border-slate-100 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_180px] md:items-center">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索分类名称" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-blue-500 focus:bg-white" />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索分类名称" className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none transition focus:border-[#C7A46A] focus:bg-white" />
           </div>
-          <select value={status} onChange={event => setStatus(event.target.value as typeof status)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:bg-white">
+          <select value={status} onChange={event => setStatus(event.target.value as typeof status)} className="h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A] focus:bg-white">
             <option value="all">全部状态</option>
             <option value="active">启用</option>
             <option value="inactive">停用</option>
           </select>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-[0_8px_18px_rgba(37,99,235,0.18)] hover:bg-blue-500">
-              <Plus size={17} />新增分类
-            </button>
-          </div>
         </div>
         <div className="max-h-[calc(100vh-230px)] overflow-auto">
           <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
@@ -3800,8 +3864,8 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
       </Panel>
 
       {editorOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
-          <aside className="ml-auto flex h-full w-full max-w-[420px] flex-col border-l border-slate-200 bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4 backdrop-blur-sm" onMouseDown={event => event.target === event.currentTarget && onCancel()}>
+          <aside className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h3 className="text-xl font-bold text-slate-950">{editingCategory ? '编辑分类' : '新增分类'}</h3>
@@ -3817,7 +3881,7 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
               </div>
               <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5">
                 <button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button>
-                <button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">
+                <button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white">
                   <Save size={16} />{editingCategory ? '保存更改' : '创建分类'}
                 </button>
               </div>
@@ -3923,16 +3987,6 @@ function Panel({ children, className = '' }: { children: React.ReactNode; classN
   return <section className={`rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)] ${className}`}>{children}</section>;
 }
 
-function MetricCard({ label, value, tone = 'blue' }: { label: string; value: number; tone?: 'blue' | 'green' | 'muted' }) {
-  const toneClass = tone === 'green' ? 'bg-emerald-50 text-emerald-700' : tone === 'muted' ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-blue-700';
-  return (
-    <Panel className="flex min-w-[132px] items-center gap-2.5 px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${toneClass}`}><Store size={15} /></div>
-      <div className="flex items-baseline gap-2"><p className="text-xs font-bold text-slate-500">{label}</p><p className="text-lg font-black text-slate-950">{value}</p></div>
-    </Panel>
-  );
-}
-
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <Panel className="p-5">
@@ -3954,7 +4008,7 @@ function Input({ label, value, onChange, type = 'text', required, disabled, plac
   return (
     <label className="block">
       <span className="text-xs font-bold text-slate-500">{label}</span>
-      <input value={value} onChange={event => onChange(event.target.value)} type={type} required={required} disabled={disabled} placeholder={placeholder} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400" />
+      <input value={value} onChange={event => onChange(event.target.value)} type={type} required={required} disabled={disabled} placeholder={placeholder} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#C7A46A] focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400" />
     </label>
   );
 }
@@ -3969,7 +4023,7 @@ function SelectInput({ label, value, onChange, required, children }: {
   return (
     <label className="block">
       <span className="text-xs font-bold text-slate-500">{label}</span>
-      <select value={value} onChange={event => onChange(event.target.value)} required={required} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-blue-500 focus:bg-white">
+      <select value={value} onChange={event => onChange(event.target.value)} required={required} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-[#C7A46A] focus:bg-white">
         {children}
       </select>
     </label>
@@ -3980,7 +4034,7 @@ function TextArea({ label, value, onChange, required, disabled }: { label: strin
   return (
     <label className="block">
       <span className="text-xs font-bold text-slate-500">{label}</span>
-      <textarea value={value} onChange={event => onChange(event.target.value)} required={required} disabled={disabled} rows={3} className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-950 outline-none transition focus:border-blue-500 focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400" />
+      <textarea value={value} onChange={event => onChange(event.target.value)} required={required} disabled={disabled} rows={3} className="mt-1.5 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-950 outline-none transition focus:border-[#C7A46A] focus:bg-white disabled:cursor-not-allowed disabled:text-slate-400" />
     </label>
   );
 }
@@ -4194,12 +4248,67 @@ function labelOrderChangeAction(action: OrderChangeRecord['action']) {
   return '付款审核拒绝';
 }
 
+function SystemSettings({ language, copy, onLanguageChange, api, adminRole }: {
+  adminRole: AdminRole;
+  language: AdminLanguage;
+  copy: typeof adminCopy.zh | typeof adminCopy.en;
+  onLanguageChange: (language: AdminLanguage) => void;
+  api: <T,>(path: string, init?: RequestInit) => Promise<T>;
+}) {
+  const currentLanguage = language === 'zh' ? copy.chinese : copy.english;
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
+  return (
+    <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 overflow-y-auto overscroll-contain pb-6 pr-1">
+      <div className="mb-5 px-1">
+        <h3 className="text-xl font-bold text-slate-950">{copy.systemSettings}</h3>
+        <p className="mt-1.5 text-sm leading-6 text-slate-500">{copy.settingsHint}</p>
+      </div>
+      <Panel className="overflow-hidden">
+        <div className="border-b border-slate-100 px-5 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-400 sm:px-6">{copy.general}</div>
+        <div className="divide-y divide-slate-100">
+          <div>
+            <button type="button" onClick={() => setLanguagePickerOpen(open => !open)} aria-expanded={languagePickerOpen} className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50 sm:px-6">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Settings size={19} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-slate-950">{copy.language}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{copy.languageDescription}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 text-sm font-semibold text-slate-500"><span>{currentLanguage}</span><ChevronDown size={16} className={`transition-transform duration-200 ${languagePickerOpen ? 'rotate-180' : ''}`} /></div>
+            </button>
+            {languagePickerOpen ? <div className="grid">
+              <div className="overflow-hidden">
+                <div className="border-t border-slate-100 bg-slate-50/80 px-5 py-2 sm:px-6">
+                  {([
+                    { value: 'zh' as const, title: copy.chinese, subtitle: 'zh-CN' },
+                    { value: 'en' as const, title: copy.english, subtitle: 'en' },
+                  ]).map(option => {
+                    const active = language === option.value;
+                    return (
+                      <button key={option.value} type="button" onClick={() => { onLanguageChange(option.value); setLanguagePickerOpen(false); }} aria-pressed={active} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${active ? 'bg-white shadow-sm' : 'hover:bg-white/80'}`}>
+                        <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${active ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white'}`}>{active && <Check size={13} strokeWidth={3} />}</span>
+                        <span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-slate-900">{option.title}</span><span className="mt-0.5 block text-xs text-slate-500">{option.subtitle}</span></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div> : null}
+          </div>
+        </div>
+      </Panel>
+      <DeliverySettingsPanel api={api} canToggleLalamove={adminRole === 'admin'} />
+    </div>
+  );
+}
+
 function pathForSection(section: AdminSection) {
   if (section === 'menuItems') return '/admin';
   if (section === 'menuCategories') return '/admin/menu-categories';
   if (section === 'customerOrder') return '/admin/customer-order';
   if (section === 'users') return '/admin/users';
   if (section === 'storeBranches') return '/admin/store-branches';
+  if (section === 'systemSettings') return '/admin/system-settings';
+  if (section === 'auditLogs') return '/admin/audit-logs';
   return `/admin/${section}`;
 }
 
@@ -4209,6 +4318,7 @@ function sectionForPath(pathname: string): AdminSection | null {
   if (pathname === '/admin/customer-order') return 'customerOrder';
   if (pathname === '/admin/users') return 'users';
   if (pathname === '/admin/store-branches') return 'storeBranches';
+  if (pathname === '/admin/system-settings') return 'systemSettings';
   const section = pathname.slice('/admin/'.length) as AdminSection;
   return sections.some(item => item.id === section) ? section : null;
 }
@@ -4216,19 +4326,13 @@ function sectionForPath(pathname: string): AdminSection | null {
 function labelAdminRole(role: AdminRole) {
   return {
     admin: '管理员',
-    owner: '老板',
-    manager: '店长',
-    staff: '门店员工',
-    customer_service: '客服助理',
+    customer_service: '运营助理',
     kitchen: '厨房工人',
-    delivery: '配送人员',
   }[role];
 }
 
 function toneForAdminRole(role: AdminRole): 'green' | 'red' | 'blue' | 'orange' | 'muted' {
-  if (role === 'admin' || role === 'owner') return 'blue';
-  if (role === 'manager') return 'green';
-  if (role === 'staff') return 'muted';
+  if (role === 'admin') return 'blue';
   if (role === 'customer_service') return 'green';
   if (role === 'kitchen') return 'orange';
   return 'muted';
@@ -4240,6 +4344,16 @@ function toneForOrder(status: OrderStatus): 'green' | 'red' | 'blue' | 'orange' 
   if (status === 'pending_confirm' || status === 'cooking') return 'blue';
   if (status === 'waiting_kitchen') return 'orange';
   return 'muted';
+}
+
+function canSelectOrderStatus(role: AdminRole, current: OrderStatus, next: OrderStatus, orderType: 'dinein' | 'takeaway') {
+  if (role === 'admin' || current === next) return true;
+  const allowed = new Set([
+    'pending_confirm:waiting_kitchen', 'pending_confirm:cancelled', 'waiting_kitchen:cancelled',
+    'stock_issue:waiting_kitchen', 'stock_issue:cancelled', 'delivered:completed',
+    ...(orderType === 'dinein' ? ['kitchen_done:completed'] : []),
+  ]);
+  return allowed.has(`${current}:${next}`);
 }
 
 function labelPayment(method: string) {

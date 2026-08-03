@@ -58,8 +58,8 @@ type OrderRow = {
   created_at: string;
 };
 
-const FINANCE_ROLES: AdminRole[] = ['admin', 'owner', 'manager', 'staff'];
-const MANAGER_ROLES: AdminRole[] = ['admin', 'owner', 'manager'];
+const FINANCE_ROLES: AdminRole[] = ['admin'];
+const MANAGER_ROLES: AdminRole[] = ['admin'];
 const PAYMENT_METHODS = ['cash', 'tng', 'bank', 'card', 'stripe', 'wallet'] as const;
 const TRANSACTION_SELECT = 'id,branch_id,transaction_type,category_id,amount,payment_method,occurred_at,vendor_name,note,receipt_path,status,created_by,created_by_name,approved_by,approved_at,voided_by,voided_at,void_reason,created_at';
 
@@ -244,14 +244,14 @@ async function updateTransaction(req: ApiRequest, res: ApiResponse, admin: Await
 }
 
 function enforceBranchAccess(admin: Awaited<ReturnType<typeof requireAdminRole>>, requestedBranch: string) {
-  if (admin.role === 'admin' || admin.role === 'owner') return requestedBranch;
+  if (admin.role === 'admin') return requestedBranch;
   if (!admin.assignedBranchId) throw new AdminError('当前账号尚未分配门店，请联系管理员', 403);
   if (requestedBranch && requestedBranch !== admin.assignedBranchId) throw new AdminError('没有权限访问其他门店', 403);
   return admin.assignedBranchId;
 }
 
 function canAccessBranch(admin: Awaited<ReturnType<typeof requireAdminRole>>, branchId: string) {
-  return admin.role === 'admin' || admin.role === 'owner' || admin.assignedBranchId === branchId;
+  return admin.role === 'admin' || admin.assignedBranchId === branchId;
 }
 
 function isRecognizedOrderIncome(order: OrderRow) {

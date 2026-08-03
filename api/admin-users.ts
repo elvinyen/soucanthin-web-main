@@ -39,7 +39,7 @@ const TRANSACTION_SELECT = 'id,type,method,amount,status,note,recharge_channel,r
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    const admin = await requireAdminRole(req, ['admin', 'owner', 'manager', 'customer_service']);
+    const admin = await requireAdminRole(req, ['admin', 'customer_service']);
     const method = req.method || 'GET';
     if (method === 'GET') return await getUsers(req, res);
     if (method === 'POST') return await rechargeWallet(req, res, admin);
@@ -131,7 +131,7 @@ async function rechargeWallet(
   res: ApiResponse,
   admin: Awaited<ReturnType<typeof requireAdminRole>>,
 ) {
-  if (!['admin', 'owner'].includes(admin.role)) throw new AdminError('只有管理员或老板可以直接充值', 403);
+  if (admin.role !== 'admin') throw new AdminError('只有管理员可以直接充值', 403);
   const input = parseAdminBody<Record<string, unknown>>(req.body);
   if (String(input.action || '') !== 'manual_recharge') throw new AdminError('不支持的操作');
   const userId = String(input.userId || '').trim();

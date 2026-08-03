@@ -1,4 +1,4 @@
-import { AdminError, jsonError, parseAdminBody, requireAdminRole } from './_admin-utils';
+import { AdminError, enforceAdminBranch, hasAllBranchAccess, jsonError, parseAdminBody, requireAdminRole } from './_admin-utils';
 import type { ApiRequest, ApiResponse, OrderItemRecord, OrderRecord } from './_order-utils';
 import {
   editTelegramDeliveryMessage,
@@ -43,6 +43,7 @@ const ORDER_SELECT = [
   'customer_name',
   'customer_phone',
   'delivery_address',
+  'assigned_branch_id',
   'assigned_branch_name',
   'delivery_latitude',
   'delivery_longitude',
@@ -64,10 +65,10 @@ const ORDER_SELECT = [
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    const admin = await requireAdminRole(req, ['admin', 'customer_service', 'delivery']);
+    const admin = await requireAdminRole(req, ['admin', 'customer_service']);
     const method = req.method || 'GET';
 
-    if (method === 'GET') return await getDeliveryOrders(res);
+    if (method === 'GET') return await getDeliveryOrders(res, admin);
     if (method === 'POST' || method === 'PATCH') {
       const input = parseAdminBody<Record<string, unknown>>(req.body);
       const action = String(input.action || '') as DeliveryAction;
@@ -85,13 +86,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 }
 
-async function getDeliveryOrders(res: ApiResponse) {
+async function getDeliveryOrders(res: ApiResponse, admin: Awaited<ReturnType<typeof requireAdminRole>>) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const branch = hasAllBranchAccess(admin) ? '' : `assigned_branch_id=eq.${encodeURIComponent(enforceAdminBranch(admin) || '')}&`;
   const [orderRows, taskRows] = await Promise.all([
     supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      `/orders?order_type=eq.takeaway&status=in.(kitchen_done,delivering,delivered,completed)&select=${ORDER_SELECT}&order=created_at.desc&limit=100`,
+      `/orders?${branch}order_type=eq.takeaway&status=in.(kitchen_done,delivering,delivered,completed)&select=${ORDER_SELECT}&order=created_at.desc&limit=100`,
       { method: 'GET' },
     ),
     supabaseRequest(
@@ -120,10 +122,11 @@ async function getDeliveryOrders(res: ApiResponse) {
 
 async function assignDelivery(
   res: ApiResponse,
-  admin: { id: string; displayName: string; username: string },
+  admin: Awaited<ReturnType<typeof requireAdminRole>>,
   input: Record<string, unknown>,
 ) {
   const order = await requireDeliveryOrder(String(input.orderId || ''), ['kitchen_done']);
+  enforceAdminBranch(admin, order.assigned_branch_id);
   const provider = String(input.provider || '') as DeliveryProvider;
   if (!['in_house', 'grab', 'lalamove', 'other'].includes(provider)) throw new AdminError('请选择配送方式');
 
@@ -190,7 +193,7 @@ async function assignDelivery(
 
 async function advanceDelivery(
   res: ApiResponse,
-  admin: { id: string; displayName: string; username: string },
+  admin: Awaited<ReturnType<typeof requireAdminRole>>,
   input: Record<string, unknown>,
   action: 'start' | 'deliver',
 ) {
@@ -198,6 +201,7 @@ async function advanceDelivery(
   const fromStatus = action === 'start' ? 'kitchen_done' : 'delivering';
   const nextStatus = action === 'start' ? 'delivering' : 'delivered';
   const order = await requireDeliveryOrder(orderId, [fromStatus]);
+  enforceAdminBranch(admin, order.assigned_branch_id);
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const taskRows = await supabaseRequest(
     supabaseUrl,

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2, Banknote } from 'lucide-react';
+import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2, MessageCircle, Clock3 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CartLine } from '../data/menu';
 import { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
@@ -26,6 +26,7 @@ interface CartProps {
   onOrderSuccess: () => void;
   onRefreshSession: () => Promise<void>;
   onWalletRecharge: () => void;
+  onLogin: () => void;
 }
 
 type CheckoutStep = 'summary' | 'details';
@@ -42,8 +43,30 @@ type DeliveryQuote = {
   distanceKm: number;
   durationMin: number;
   deliverable: true;
+  quoteToken: string;
+  quoteExpiresAt: string;
+  quoteSource: 'lalamove' | 'fallback';
 };
-type DeliveryQuoteStatus = 'idle' | 'loading' | 'success' | 'error';
+type ManualDeliveryInfo = {
+  maxDistanceKm: number;
+  distanceKm: number;
+  durationMin: number;
+};
+type DeliveryApproval = {
+  id: string;
+  requestNo: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'consumed';
+  address: string;
+  distanceKm: number;
+  durationMin: number;
+  approvedDeliveryFee: number | null;
+  deliveryProvider?: string | null;
+  estimatedDeliveryMin?: number | null;
+  reviewNote?: string | null;
+  requestExpiresAt: string;
+  approvalExpiresAt?: string | null;
+};
+type DeliveryQuoteStatus = 'idle' | 'loading' | 'success' | 'manual_required' | 'error';
 
 const isValidPhone = (value: string) => /^[0-9+\-\s()]{8,20}$/.test(value.trim());
 const ONLINE_PAYMENT_ENABLED = false;
@@ -53,6 +76,30 @@ const checkoutInput = 'h-12 w-full rounded-2xl border border-stone-200/70 bg-whi
 const checkoutHelp = 'text-xs leading-5 text-stone-500';
 const checkoutError = 'px-2 text-[11px] leading-4 text-red-500';
 const buttonSeparator = <span className="h-4 w-[2px] rounded-full bg-white/60" aria-hidden="true" />;
+const APPROVAL_STORAGE_KEY = 'sct.deliveryApprovalRequestId:v1';
+
+function readApprovalId() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(APPROVAL_STORAGE_KEY) || 'null') as { id?: string; expiresAt?: number } | null;
+    if (!saved?.id || Number(saved.expiresAt) <= Date.now()) {
+      window.localStorage.removeItem(APPROVAL_STORAGE_KEY);
+      return '';
+    }
+    return saved.id;
+  } catch {
+    window.localStorage.removeItem(APPROVAL_STORAGE_KEY);
+    return '';
+  }
+}
+
+function saveApprovalId(id?: string) {
+  try {
+    if (id) window.localStorage.setItem(APPROVAL_STORAGE_KEY, JSON.stringify({ id, expiresAt: Date.now() + 24 * 60 * 60_000 }));
+    else window.localStorage.removeItem(APPROVAL_STORAGE_KEY);
+  } catch {
+    // Polling still works for the current page when storage is unavailable.
+  }
+}
 
 function calculateCouponDiscount(coupon: UserCoupon, subtotal: number, deliveryFee: number) {
   const eligibleAmount = subtotal + (coupon.excludeDeliveryFee ? 0 : deliveryFee);
@@ -103,6 +150,7 @@ const Cart: React.FC<CartProps> = ({
   onOrderSuccess,
   onRefreshSession,
   onWalletRecharge,
+  onLogin,
 }) => {
   const { t } = useTranslation();
   const hasScannedTable = Boolean(tableNumber?.trim());
@@ -118,6 +166,10 @@ const Cart: React.FC<CartProps> = ({
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [deliveryQuoteStatus, setDeliveryQuoteStatus] = useState<DeliveryQuoteStatus>('idle');
   const [deliveryQuoteError, setDeliveryQuoteError] = useState('');
+  const [manualDeliveryInfo, setManualDeliveryInfo] = useState<ManualDeliveryInfo | null>(null);
+  const [deliveryApproval, setDeliveryApproval] = useState<DeliveryApproval | null>(null);
+  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+  const [contactedCustomerService, setContactedCustomerService] = useState(false);
   const [deliveryUnit, setDeliveryUnit] = useState('');
   const [deliveryInstruction, setDeliveryInstruction] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('wallet');
@@ -151,7 +203,9 @@ const Cart: React.FC<CartProps> = ({
       setDeliveryQuote(null);
       setDeliveryQuoteStatus('idle');
       setDeliveryQuoteError('');
-      setPaymentMethod(orderType === 'dinein' ? 'cash' : 'wallet');
+      setManualDeliveryInfo(null);
+      setContactedCustomerService(false);
+      setPaymentMethod('wallet');
       if (session.user) {
         setName(session.user.name || '');
         setPhone(session.user.displayPhone || '');
@@ -172,7 +226,7 @@ const Cart: React.FC<CartProps> = ({
         setTableNo(scannedTableNo);
         setIsTableLocked(true);
         setOrderType('dinein');
-        setPaymentMethod('cash');
+        setPaymentMethod('wallet');
       } else if (!tableNo.trim()) {
         setIsTableLocked(false);
       }
@@ -180,12 +234,37 @@ const Cart: React.FC<CartProps> = ({
   }, [isOpen, tableNumber]);
 
   useEffect(() => {
+    if (!isOpen || !session.authenticated) return;
+    const savedId = readApprovalId();
+    const url = savedId ? `/api/delivery-approval?id=${encodeURIComponent(savedId)}` : '/api/delivery-approval';
+    fetch(url)
+      .then(response => response.json())
+      .then(payload => {
+        if (!payload.success) return;
+        const request = payload.request as DeliveryApproval | null;
+        setDeliveryApproval(request);
+        saveApprovalId(request?.id);
+      })
+      .catch(() => undefined);
+  }, [isOpen, session.authenticated]);
+
+  useEffect(() => {
+    if (!isOpen || deliveryApproval?.status !== 'pending') return;
+    const refresh = () => {
+      fetch(`/api/delivery-approval?id=${encodeURIComponent(deliveryApproval.id)}`)
+        .then(response => response.json())
+        .then(payload => {
+          if (payload.success && payload.request) setDeliveryApproval(payload.request as DeliveryApproval);
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 5_000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, deliveryApproval?.id, deliveryApproval?.status]);
+
+  useEffect(() => {
     if (!isOpen) return;
-    setPaymentMethod(current => {
-      if (orderType === 'dinein' && current !== 'cash') return 'cash';
-      if (orderType === 'takeaway' && current === 'cash') return 'wallet';
-      return current;
-    });
+    setPaymentMethod(current => current === 'cash' ? 'wallet' : current);
   }, [isOpen, orderType]);
 
   useEffect(() => {
@@ -215,6 +294,7 @@ const Cart: React.FC<CartProps> = ({
       setDeliveryQuote(null);
       setDeliveryQuoteStatus('idle');
       setDeliveryQuoteError('');
+      setManualDeliveryInfo(null);
       return;
     }
 
@@ -223,6 +303,7 @@ const Cart: React.FC<CartProps> = ({
       setDeliveryQuote(null);
       setDeliveryQuoteStatus('idle');
       setDeliveryQuoteError('');
+      setManualDeliveryInfo(null);
       return;
     }
 
@@ -230,6 +311,7 @@ const Cart: React.FC<CartProps> = ({
     setDeliveryQuoteStatus('loading');
     setDeliveryQuote(null);
     setDeliveryQuoteError('');
+    setManualDeliveryInfo(null);
 
     const timer = window.setTimeout(async () => {
       try {
@@ -241,12 +323,25 @@ const Cart: React.FC<CartProps> = ({
         });
         const payload = await res.json();
 
+        if (res.ok && payload.success && payload.deliverability === 'manual_confirmation_required') {
+          setManualDeliveryInfo({
+            maxDistanceKm: Number(payload.maxDistanceKm || 20),
+            distanceKm: Number(payload.distanceKm || 0),
+            durationMin: Number(payload.durationMin || 0),
+          });
+          setDeliveryQuoteStatus('manual_required');
+          return;
+        }
+
         if (res.ok && payload.success && payload.deliverable) {
           setDeliveryQuote({
             deliveryFee: Number(payload.deliveryFee || 0),
             distanceKm: Number(payload.distanceKm || 0),
             durationMin: Number(payload.durationMin || 0),
             deliverable: true,
+            quoteToken: String(payload.quoteToken || ''),
+            quoteExpiresAt: String(payload.quoteExpiresAt || ''),
+            quoteSource: payload.quoteSource === 'lalamove' ? 'lalamove' : 'fallback',
           });
           setDeliveryQuoteStatus('success');
           return;
@@ -277,7 +372,23 @@ const Cart: React.FC<CartProps> = ({
   const cartItems = cart;
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-  const deliveryFee = orderType === 'takeaway' ? deliveryQuote?.deliveryFee || 0 : 0;
+  const approvalMatchesAddress = Boolean(deliveryApproval && deliveryApproval.address.trim().toLowerCase() === address.trim().replace(/\s+/g, ' ').toLowerCase());
+  const approvedManualDelivery = deliveryQuoteStatus === 'manual_required'
+    && approvalMatchesAddress
+    && deliveryApproval?.status === 'approved'
+    && Number(deliveryApproval.approvedDeliveryFee) >= 0;
+  const paymentAvailable = orderType === 'dinein' || deliveryQuoteStatus === 'success' || approvedManualDelivery;
+  const whatsappContactUrl = buildWhatsAppContactUrl({
+    address,
+    distanceKm: manualDeliveryInfo?.distanceKm,
+    subtotal,
+    phone,
+  });
+  const deliveryFee = orderType === 'takeaway'
+    ? approvedManualDelivery
+      ? Number(deliveryApproval?.approvedDeliveryFee || 0)
+      : deliveryQuote?.deliveryFee || 0
+    : 0;
   const serviceCharge = 0;
   const total = subtotal + deliveryFee + serviceCharge;
   const couponOptions = (session.coupons || []).map(coupon => ({
@@ -314,6 +425,11 @@ const Cart: React.FC<CartProps> = ({
     if (orderType === 'takeaway' && !address.trim()) return t('cart.validation.address');
     if (orderType === 'takeaway' && deliveryQuoteStatus === 'loading') return t('cart.validation.deliveryQuoteLoading');
     if (orderType === 'takeaway' && deliveryQuoteStatus === 'error') return deliveryQuoteError || t('cart.validation.deliveryQuoteFailed');
+    if (orderType === 'takeaway' && deliveryQuoteStatus === 'manual_required' && !approvedManualDelivery) {
+      if (deliveryApproval?.status === 'pending' && approvalMatchesAddress) return '客服正在确认该配送申请';
+      if (deliveryApproval?.status === 'rejected' && approvalMatchesAddress) return deliveryApproval.reviewNote || '客服暂时无法安排该地址配送';
+      return `该地址超过${manualDeliveryInfo?.maxDistanceKm || 20}km，请先联系客服确认配送`;
+    }
     if (orderType === 'takeaway' && !deliveryQuote) return t('cart.validation.deliveryQuoteRequired');
     if (paymentMethod === 'tng' && !receiptFile) return t('cart.validation.receipt');
     if (paymentMethod === 'wallet' && !session.authenticated) return t('cart.validation.walletLogin');
@@ -389,6 +505,93 @@ const Cart: React.FC<CartProps> = ({
     setSelectedCouponId('');
     setSubmitError('');
     setAttemptedSubmit(false);
+    setDeliveryApproval(null);
+    setManualDeliveryInfo(null);
+    saveApprovalId();
+  };
+
+  const buildOrderPayload = (receiptImage?: ReceiptImage): Order => {
+    const takeawayNote = [
+      deliveryUnit.trim() ? `${t('cart.deliveryUnitLabel')}: ${deliveryUnit.trim()}` : '',
+      deliveryInstruction.trim(),
+    ].filter(Boolean).join('\n');
+    return {
+      orderType,
+      paymentMethod,
+      customer: { name: name.trim(), phone: phone.trim() },
+      ...(orderType === 'dinein'
+        ? { dineIn: { tableNo: tableNo.trim() } }
+        : { takeaway: { address: address.trim(), note: takeawayNote || undefined } }),
+      items: cartItems.map(item => ({
+        id: item.itemId.toString(), code: item.code, name: item.name, basePrice: item.basePrice,
+        optionsTotal: item.optionsTotal, price: item.unitPrice, qty: item.quantity,
+        options: item.selectedOptions, note: item.note,
+      })),
+      subtotal: Number(subtotal.toFixed(2)),
+      deliveryFee: Number(deliveryFee.toFixed(2)),
+      serviceCharge: Number(serviceCharge.toFixed(2)),
+      total: Number(total.toFixed(2)),
+      couponId: selectedCouponId || undefined,
+      discountAmount: Number(discountAmount.toFixed(2)),
+      payableTotal: Number(payableTotal.toFixed(2)),
+      receiptImage,
+      note: takeawayNote || undefined,
+      deliveryQuoteToken: approvedManualDelivery ? undefined : deliveryQuote?.quoteToken,
+      deliveryApprovalRequestId: approvedManualDelivery ? deliveryApproval?.id : undefined,
+      createdAt: new Date().toISOString(),
+    };
+  };
+
+  const submitDeliveryApproval = async () => {
+    if (!session.authenticated) {
+      onLogin();
+      return;
+    }
+    if (!name.trim() || !phone.trim() || !isValidPhone(phone)) {
+      setSubmitError('请先填写正确的姓名和联系电话');
+      setStep('details');
+      return;
+    }
+    setApprovalSubmitting(true);
+    setSubmitError('');
+    try {
+      const response = await fetch('/api/delivery-approval', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildOrderPayload()),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '配送申请提交失败');
+      const request = payload.request as DeliveryApproval;
+      setDeliveryApproval(request);
+      saveApprovalId(request.id);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : '配送申请提交失败');
+    } finally {
+      setApprovalSubmitting(false);
+    }
+  };
+
+  const cancelDeliveryApproval = async () => {
+    if (!deliveryApproval?.id) return;
+    setApprovalSubmitting(true);
+    try {
+      const response = await fetch('/api/delivery-approval', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: deliveryApproval.id }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) throw new Error(payload.error || '取消申请失败');
+      setDeliveryApproval(payload.request as DeliveryApproval);
+      saveApprovalId();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : '取消申请失败');
+    } finally {
+      setApprovalSubmitting(false);
+    }
+  };
+
+  const clearFinishedDeliveryApproval = () => {
+    setDeliveryApproval(null);
+    setContactedCustomerService(false);
+    saveApprovalId();
   };
 
   const handlePlaceOrder = async () => {
@@ -416,44 +619,7 @@ const Cart: React.FC<CartProps> = ({
       return;
     }
 
-    const takeawayNote = [
-      deliveryUnit.trim() ? `${t('cart.deliveryUnitLabel')}: ${deliveryUnit.trim()}` : '',
-      deliveryInstruction.trim(),
-    ].filter(Boolean).join('\n');
-
-    const orderData: Order = {
-      orderType,
-      paymentMethod,
-      customer: {
-        name: name.trim(),
-        phone: phone.trim(),
-      },
-      ...(orderType === 'dinein' 
-        ? { dineIn: { tableNo: tableNo.trim() } } 
-        : { takeaway: { address: address.trim(), note: takeawayNote || undefined } }
-      ),
-      items: cartItems.map(item => ({
-        id: item.itemId.toString(),
-        code: item.code,
-        name: item.name,
-        basePrice: item.basePrice,
-        optionsTotal: item.optionsTotal,
-        price: item.unitPrice,
-        qty: item.quantity,
-        options: item.selectedOptions,
-        note: item.note,
-      })),
-      subtotal: Number(subtotal.toFixed(2)),
-      deliveryFee: Number(deliveryFee.toFixed(2)),
-      serviceCharge: Number(serviceCharge.toFixed(2)),
-      total: Number(total.toFixed(2)),
-      couponId: selectedCouponId || undefined,
-      discountAmount: Number(discountAmount.toFixed(2)),
-      payableTotal: Number(payableTotal.toFixed(2)),
-      receiptImage,
-      note: takeawayNote || undefined,
-      createdAt: new Date().toISOString(),
-    };
+    const orderData = buildOrderPayload(receiptImage);
 
     try {
       const endpoint = paymentMethod === 'stripe' ? '/api/stripe-checkout' : '/api/order';
@@ -675,7 +841,7 @@ const Cart: React.FC<CartProps> = ({
                           <PriceLine
                             label={t('common.deliveryFee')}
                             value={deliveryFee}
-                            muted={orderType === 'dinein' ? t('cart.takeaway') : orderType === 'takeaway' && !deliveryQuote ? t('cart.deliveryQuotePending') : undefined}
+                            muted={orderType === 'dinein' ? t('cart.takeaway') : orderType === 'takeaway' && !deliveryQuote && !approvedManualDelivery ? t('cart.deliveryQuotePending') : undefined}
                           />
                           {discountAmount > 0 && <PriceLine label={t('common.discount')} value={-discountAmount} highlight />}
                           <div className="flex items-center justify-between pt-2">
@@ -798,6 +964,37 @@ const Cart: React.FC<CartProps> = ({
                                       minutes: deliveryQuote.durationMin,
                                     })}</span>
                                   )}
+                                  {deliveryQuoteStatus === 'manual_required' && manualDeliveryInfo && (
+                                    <div>
+                                      <div className="rounded-xl border border-[#DCC7A8] bg-[#FBF7F0] px-3 py-2.5 font-semibold leading-5 text-[#765C3B]">
+                                        配送距离约 {manualDeliveryInfo.distanceKm.toFixed(1)}km，已超过 {manualDeliveryInfo.maxDistanceKm}km 配送范围，需要客服确认费用。
+                                      </div>
+                                      {deliveryApproval && !approvalMatchesAddress && ['pending', 'approved'].includes(deliveryApproval.status) ? (
+                                        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white px-3 py-2.5">
+                                          <div className="min-w-0"><p className="font-semibold text-stone-700">当前地址与已有申请不同</p><p className="mt-0.5 truncate text-[10px] text-stone-400">旧申请：{deliveryApproval.requestNo}</p></div>
+                                          <button type="button" disabled={approvalSubmitting} onClick={cancelDeliveryApproval} className="h-8 shrink-0 rounded-lg border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 transition active:scale-[0.98] disabled:opacity-50">撤回旧申请</button>
+                                        </div>
+                                      ) : deliveryApproval && approvalMatchesAddress && ['pending', 'approved', 'rejected', 'expired'].includes(deliveryApproval.status) ? (
+                                        <div aria-live="polite" className="mt-3 border-t border-stone-200 pt-3">
+                                          <div className="flex items-center justify-between gap-3"><span className="font-semibold text-stone-700">{deliveryApproval.requestNo}</span><span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-stone-500">{labelApprovalStatus(deliveryApproval.status)}</span></div>
+                                          {deliveryApproval.status === 'pending' && <p className="mt-2 flex items-center gap-2 text-[#765C3B]"><Clock3 size={13} />客服正在确认，页面会自动更新</p>}
+                                          {deliveryApproval.status === 'approved' && <p className="mt-2 flex items-center gap-2 text-emerald-700"><CheckCircle2 size={13} />配送费 RM {Number(deliveryApproval.approvedDeliveryFee || 0).toFixed(2)} · 预计 {deliveryApproval.estimatedDeliveryMin || deliveryApproval.durationMin} 分钟</p>}
+                                          {deliveryApproval.status === 'rejected' && <p className="mt-2 text-red-600">{deliveryApproval.reviewNote || '客服暂时无法安排配送'}</p>}
+                                          {deliveryApproval.status === 'expired' && <p className="mt-2 text-red-600">申请或审批已过期，请重新联系客服。</p>}
+                                          {['rejected', 'expired'].includes(deliveryApproval.status) && <button type="button" onClick={clearFinishedDeliveryApproval} className="mt-2 text-[11px] font-semibold text-stone-500 underline underline-offset-4">重新申请</button>}
+                                        </div>
+                                      ) : (
+                                        <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3">
+                                          <a href={whatsappContactUrl} target="_blank" rel="noopener noreferrer" onClick={() => setContactedCustomerService(true)} className="flex h-10 items-center justify-center gap-2 rounded-full bg-[#2D2D2D] text-xs font-semibold text-white"><MessageCircle size={14} />联系 WhatsApp 客服</a>
+                                          {!session.authenticated ? (
+                                            <button type="button" onClick={onLogin} className="h-10 rounded-full border border-stone-200 bg-white text-xs font-semibold text-stone-600">登录后提交申请</button>
+                                          ) : (
+                                            <button type="button" disabled={!contactedCustomerService || approvalSubmitting} onClick={submitDeliveryApproval} className="h-10 rounded-full border border-stone-200 bg-white text-xs font-semibold text-stone-600 disabled:bg-stone-100 disabled:text-stone-400">{approvalSubmitting ? '正在提交…' : contactedCustomerService ? '已联系客服，提交申请' : '联系后即可提交申请'}</button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                   {deliveryQuoteStatus === 'error' && (deliveryQuoteError || t('cart.validation.deliveryQuoteFailed'))}
                                   {deliveryQuoteStatus === 'idle' && t('cart.deliveryQuoteIdle')}
                                 </div>
@@ -836,12 +1033,9 @@ const Cart: React.FC<CartProps> = ({
                         </div>
                       </div>
 
-                      <div className={checkoutCard}>
+                      {paymentAvailable && <div className={checkoutCard}>
                         <h3 className={checkoutTitle}>{t('cart.paymentMethod')}</h3>
-                        <div className={`mt-4 grid gap-2 ${orderType === 'dinein' ? ONLINE_PAYMENT_ENABLED ? 'grid-cols-4' : 'grid-cols-3' : ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                          {orderType === 'dinein' && (
-                            <PaymentTab active={paymentMethod === 'cash'} icon={<Banknote size={16} />} label={t('cart.cashPayment')} onClick={() => setPaymentMethod('cash')} />
-                          )}
+                        <div className={`mt-4 grid gap-2 ${ONLINE_PAYMENT_ENABLED ? 'grid-cols-3' : 'grid-cols-2'}`}>
                           <PaymentTab active={paymentMethod === 'wallet'} icon={<WalletCards size={16} />} label="Wallet" onClick={() => setPaymentMethod('wallet')} />
                           <PaymentTab active={paymentMethod === 'tng'} icon={<WalletCards size={16} />} label="Touch 'n Go" onClick={() => setPaymentMethod('tng')} />
                           {ONLINE_PAYMENT_ENABLED && (
@@ -855,20 +1049,6 @@ const Cart: React.FC<CartProps> = ({
                             <PriceLine label={t('cart.thisPayment')} value={payableTotal} />
                             <PriceLine label={t('cart.balanceAfter')} value={Math.max(walletAfterPayment, 0)} highlight={walletInsufficient} />
                             {walletInsufficient && <p className="text-[11px] leading-5 text-amber-700">{t('cart.walletInsufficient')}</p>}
-                          </div>
-                        )}
-
-                        {paymentMethod === 'cash' && (
-                          <div className="mt-4 rounded-2xl bg-stone-50 p-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#C8A97E]">
-                                <Banknote size={20} />
-                              </div>
-                              <div>
-                                <p className="text-sm font-semibold text-[#2D2D2D]">{t('cart.cashPayment')}</p>
-                                <p className={checkoutHelp}>{t('cart.cashHint')}</p>
-                              </div>
-                            </div>
                           </div>
                         )}
 
@@ -946,7 +1126,7 @@ const Cart: React.FC<CartProps> = ({
                             </div>
                           </div>
                         )}
-                      </div>
+                      </div>}
 
                       {(session.coupons || []).length > 0 && (
                         <div className={checkoutCard}>
@@ -1130,6 +1310,31 @@ function ItemCustomization({ item }: { item: CartLine }) {
       {item.note && <p className="line-clamp-2">{t('common.note')}：{item.note}</p>}
     </div>
   );
+}
+
+function buildWhatsAppContactUrl(params: { address: string; distanceKm?: number; subtotal: number; phone: string }) {
+  const configured = String(import.meta.env.VITE_WHATSAPP_URL || '').trim();
+  if (!configured) return '#';
+  const message = [
+    '你好，我想咨询超范围配送。',
+    `地址：${params.address || '-'}`,
+    `预计距离：${params.distanceKm ? `${params.distanceKm.toFixed(2)}km` : '-'}`,
+    `商品金额：RM ${params.subtotal.toFixed(2)}`,
+    `联系电话：${params.phone || '-'}`,
+  ].join('\n');
+  try {
+    const url = new URL(configured);
+    url.searchParams.set('text', message);
+    return url.toString();
+  } catch {
+    return configured;
+  }
+}
+
+function labelApprovalStatus(status: DeliveryApproval['status']) {
+  return {
+    pending: '等待客服确认', approved: '已批准', rejected: '已拒绝', cancelled: '已取消', expired: '已过期', consumed: '已使用',
+  }[status];
 }
 
 export default Cart;

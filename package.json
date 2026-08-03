@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
     "start": "NODE_ENV=production tsx server/index.ts"
   },
   "dependencies": {

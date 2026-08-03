@@ -1,4 +1,4 @@
-import { AdminError, jsonError, parseAdminBody, parseQuery, requireAdmin } from './_admin-utils';
+import { AdminError, jsonError, parseAdminBody, parseQuery, requireAdminRole } from './_admin-utils';
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, supabaseRequest } from './_order-utils';
 
@@ -20,7 +20,7 @@ type CategoryRow = {
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
-    await requireAdmin(req);
+    await requireAdminRole(req, ['admin', 'customer_service']);
     const method = req.method || 'GET';
 
     if (method === 'GET') return await listCategories(res);

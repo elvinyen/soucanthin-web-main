@@ -60,6 +60,8 @@ export interface Order {
   deliveryQuote?: {
     branchId: string;
     branchName: string;
+    branchLatitude?: number;
+    branchLongitude?: number;
     addressLatitude: number;
     addressLongitude: number;
     distanceKm: number;
@@ -67,6 +69,9 @@ export interface Order {
     deliveryFee: number;
     provider: string;
   };
+  deliveryQuoteToken?: string;
+  deliveryQuoteId?: string;
+  deliveryApprovalRequestId?: string;
   serviceCharge: number;
   total: number;
   couponId?: string;

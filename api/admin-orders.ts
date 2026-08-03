@@ -1,4 +1,5 @@
-import { AdminError, jsonError, parseAdminBody, parseQuery, requireAdminRole } from './_admin-utils';
+import { AdminError, enforceAdminBranch, hasAllBranchAccess, jsonError, parseAdminBody, parseQuery, requireAdminRole } from './_admin-utils';
+import type { AdminRole } from './_admin-utils';
 import type { ApiRequest, ApiResponse, OrderRecord } from './_order-utils';
 import {
   createOrderWithItems,
@@ -33,7 +34,9 @@ type AdminContext = {
   id: string;
   displayName: string;
   username: string;
-  role: 'admin' | 'owner' | 'manager' | 'staff' | 'customer_service' | 'kitchen' | 'delivery';
+  role: AdminRole;
+  branchScope?: 'all' | 'assigned';
+  assignedBranchId?: string | null;
 };
 
 type OrderChangeRecord = {
@@ -58,7 +61,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const admin = await requireAdminRole(req, ['admin', 'customer_service']);
     const method = req.method || 'GET';
 
-    if (method === 'GET') return await getOrders(req, res);
+    if (method === 'GET') return await getOrders(req, res, admin);
     if (method === 'POST') return await createAdminOrder(req, res, admin);
     if (method === 'PATCH' || method === 'PUT') return await updateAdminOrder(req, res, admin);
 
@@ -83,6 +86,7 @@ async function createAdminOrder(req: ApiRequest, res: ApiResponse, admin: AdminC
   if (!customer) throw new AdminError('顾客不存在', 404);
   const branchId = String(order.assignedBranch?.id || order.deliveryQuote?.branchId || '').trim();
   if (!branchId) throw new AdminError('请选择门店');
+  enforceAdminBranch(admin, branchId);
   const branch = await findActiveBranchById(branchId);
   if (!branch) throw new AdminError('所选门店不可用或未启用', 404);
 
@@ -176,7 +180,7 @@ async function createAdminOrder(req: ApiRequest, res: ApiResponse, admin: AdminC
   });
 }
 
-async function getOrders(req: ApiRequest, res: ApiResponse) {
+async function getOrders(req: ApiRequest, res: ApiResponse, admin: AdminContext) {
   const query = parseQuery(req.url);
   const id = query.get('id')?.trim();
   const status = query.get('status')?.trim();
@@ -186,7 +190,7 @@ async function getOrders(req: ApiRequest, res: ApiResponse) {
     const rows = await supabaseRequest(
       supabaseUrl,
       serviceRoleKey,
-      `/orders?id=eq.${encodeURIComponent(id)}&select=${ORDER_SELECT}`,
+      `/orders?id=eq.${encodeURIComponent(id)}&${branchFilter(admin)}select=${ORDER_SELECT}`,
       { method: 'GET' },
     );
     const order = Array.isArray(rows) ? rows[0] as OrderRecord | undefined : undefined;
@@ -197,6 +201,7 @@ async function getOrders(req: ApiRequest, res: ApiResponse) {
   }
 
   const filters = [`select=${ORDER_SELECT}`, 'order=created_at.desc', 'limit=80'];
+  if (!hasAllBranchAccess(admin)) filters.push(`assigned_branch_id=eq.${encodeURIComponent(enforceAdminBranch(admin) || '')}`);
   if (status && status !== 'all') filters.push(`status=eq.${encodeURIComponent(status)}`);
 
   const rows = await supabaseRequest(
@@ -233,6 +238,8 @@ async function updateOrderStatus(req: ApiRequest, res: ApiResponse, admin: Admin
   );
   const order = Array.isArray(rows) ? rows[0] as OrderRecord | undefined : undefined;
   if (!order) throw new AdminError('订单不存在', 404);
+  enforceAdminBranch(admin, order.assigned_branch_id);
+  validateAdminOrderTransition(admin.role, order.status, nextStatus, order.order_type);
 
   await supabaseRequest(supabaseUrl, serviceRoleKey, `/orders?id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -308,6 +315,7 @@ async function submitPaymentMethodChange(req: ApiRequest, res: ApiResponse, admi
 
   const order = await findOrderById(id);
   if (!order) throw new AdminError('订单不存在', 404);
+  enforceAdminBranch(admin, order.assigned_branch_id);
   validatePaymentChangeOrder(order);
 
   const receiptUrl = await uploadReceipt(order.order_no, input.receiptImage!);
@@ -331,7 +339,6 @@ async function submitPaymentMethodChange(req: ApiRequest, res: ApiResponse, admi
 }
 
 async function reviewPaymentMethodChange(req: ApiRequest, res: ApiResponse, admin: AdminContext) {
-  if (admin.role !== 'admin' && admin.role !== 'owner') throw new AdminError('只有管理员或老板可以审核付款截图', 403);
   const input = parseAdminBody<{
     id?: string;
     changeId?: string;
@@ -346,6 +353,9 @@ async function reviewPaymentMethodChange(req: ApiRequest, res: ApiResponse, admi
   if (!id || !changeId) throw new AdminError('缺少付款修改记录');
   if (decision !== 'approve' && decision !== 'reject') throw new AdminError('审核操作不正确');
   if (decision === 'reject' && reason.length < 2) throw new AdminError('请填写拒绝原因');
+  const order = await findOrderById(id);
+  if (!order) throw new AdminError('订单不存在', 404);
+  enforceAdminBranch(admin, order.assigned_branch_id);
 
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const eventId = await callOrderChangeRpc(
@@ -365,6 +375,25 @@ async function reviewPaymentMethodChange(req: ApiRequest, res: ApiResponse, admi
   const updatedOrder = await findOrderById(id);
   if (updatedOrder) await editTelegramOrderMessage(updatedOrder, await getOrderItems(updatedOrder.id));
   return res.status(200).json({ success: true, eventId, order: updatedOrder });
+}
+
+function branchFilter(admin: AdminContext) {
+  return hasAllBranchAccess(admin) ? '' : `assigned_branch_id=eq.${encodeURIComponent(enforceAdminBranch(admin) || '')}&`;
+}
+
+export function validateAdminOrderTransition(role: AdminRole, current: OrderStatus, next: OrderStatus, orderType: Order['orderType']) {
+  if (current === next) return;
+  if (role === 'admin') return;
+  const allowed = new Set<string>([
+    'pending_confirm:waiting_kitchen',
+    'pending_confirm:cancelled',
+    'waiting_kitchen:cancelled',
+    'stock_issue:waiting_kitchen',
+    'stock_issue:cancelled',
+    'delivered:completed',
+    ...(orderType === 'dinein' ? ['kitchen_done:completed'] : []),
+  ]);
+  if (!allowed.has(`${current}:${next}`)) throw new AdminError('运营助理不能执行该订单状态流转，请按厨房和配送流程操作', 403);
 }
 
 async function findOrderById(id: string) {
