@@ -806,6 +806,20 @@ alter table public.users drop constraint if exists users_source_check;
 alter table public.users
   add constraint users_source_check check (source in ('otp', 'admin_created'));
 
+create table if not exists public.otp_challenges (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.users(id) on delete cascade,
+  phone text not null,
+  display_phone text not null,
+  provider_reqid text not null,
+  purpose text not null check (purpose in ('login', 'update_phone')),
+  request_fingerprint text not null,
+  attempt_count integer not null default 0 check (attempt_count >= 0 and attempt_count <= 5),
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.user_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
@@ -906,6 +920,11 @@ alter table public.orders
 
 create index if not exists user_sessions_token_hash_idx on public.user_sessions (token_hash);
 create index if not exists user_sessions_expires_at_idx on public.user_sessions (expires_at);
+create index if not exists otp_challenges_phone_created_idx on public.otp_challenges (phone, created_at desc);
+create index if not exists otp_challenges_fingerprint_created_idx on public.otp_challenges (request_fingerprint, created_at desc);
+create index if not exists otp_challenges_expires_idx on public.otp_challenges (expires_at);
+create index if not exists otp_challenges_user_created_idx on public.otp_challenges (user_id, created_at desc);
+create index if not exists user_sessions_user_created_idx on public.user_sessions (user_id, created_at desc);
 create index if not exists users_source_idx on public.users (source);
 create index if not exists users_created_by_admin_id_idx on public.users (created_by_admin_id);
 create index if not exists wallets_user_id_idx on public.wallets (user_id);
@@ -919,6 +938,34 @@ create index if not exists user_addresses_user_id_idx on public.user_addresses (
 create index if not exists user_coupons_user_id_idx on public.user_coupons (user_id);
 create index if not exists orders_assigned_branch_id_idx on public.orders (assigned_branch_id);
 
+alter table public.users enable row level security;
+alter table public.otp_challenges enable row level security;
+alter table public.user_sessions enable row level security;
+alter table public.wallets enable row level security;
+alter table public.wallet_transactions enable row level security;
+alter table public.user_addresses enable row level security;
+alter table public.user_coupons enable row level security;
+
+revoke all on table
+  public.users,
+  public.otp_challenges,
+  public.user_sessions,
+  public.wallets,
+  public.wallet_transactions,
+  public.user_addresses,
+  public.user_coupons
+from public, anon, authenticated;
+
+grant select, insert, update, delete on table
+  public.users,
+  public.otp_challenges,
+  public.user_sessions,
+  public.wallets,
+  public.wallet_transactions,
+  public.user_addresses,
+  public.user_coupons
+to service_role;
+
 create or replace function public.process_wallet_payment(
   user_id_input uuid,
   order_id_input uuid,
@@ -927,6 +974,7 @@ create or replace function public.process_wallet_payment(
 returns void
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   current_balance numeric(10, 2);
@@ -964,6 +1012,7 @@ create or replace function public.approve_wallet_recharge(
 returns void
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   tx public.wallet_transactions%rowtype;
@@ -1008,6 +1057,11 @@ begin
   where id = tx.id;
 end;
 $$;
+
+revoke all on function public.process_wallet_payment(uuid, uuid, numeric) from public, anon, authenticated;
+revoke all on function public.approve_wallet_recharge(uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.process_wallet_payment(uuid, uuid, numeric) to service_role;
+grant execute on function public.approve_wallet_recharge(uuid, text, text, text) to service_role;
 
 create or replace function public.admin_manual_wallet_recharge(
   user_id_input uuid,
@@ -1471,6 +1525,10 @@ create table if not exists public.agents (
   agent_no text not null unique,
   user_id uuid not null unique references public.users(id) on delete restrict,
   referral_code text not null unique,
+  full_name text,
+  region text,
+  promotion_channel text,
+  whatsapp_phone text,
   status text not null default 'active' check (status in ('active', 'suspended', 'terminated')),
   commission_rate numeric(5, 2) check (commission_rate is null or (commission_rate >= 0 and commission_rate <= 100)),
   source text not null default 'application' check (source in ('application', 'admin_manual', 'admin_import')),
@@ -1485,6 +1543,45 @@ create table if not exists public.agents (
 
 create index if not exists agents_status_created_idx on public.agents (status, created_at desc);
 create index if not exists agents_created_by_admin_idx on public.agents (created_by_admin_id);
+
+-- Existing installations are upgraded in place. The current profile is copied
+-- from the approved application so agents never receive a generated display name.
+alter table public.agents add column if not exists full_name text;
+alter table public.agents add column if not exists region text;
+alter table public.agents add column if not exists promotion_channel text;
+alter table public.agents add column if not exists whatsapp_phone text;
+update public.agents a
+set full_name = coalesce(nullif(a.full_name, ''), ap.full_name),
+    region = coalesce(nullif(a.region, ''), ap.region),
+    promotion_channel = coalesce(nullif(a.promotion_channel, ''), ap.promotion_channel),
+    whatsapp_phone = coalesce(nullif(a.whatsapp_phone, ''), ap.whatsapp_phone)
+from public.agent_applications ap
+where a.application_id = ap.id
+  and (a.full_name is null or a.region is null or a.promotion_channel is null or a.whatsapp_phone is null);
+
+create table if not exists public.agent_profile_change_requests (
+  id uuid primary key default gen_random_uuid(),
+  request_no text not null unique,
+  agent_id uuid not null references public.agents(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  before_data jsonb not null default '{}'::jsonb,
+  requested_data jsonb not null default '{}'::jsonb,
+  reason text,
+  status text not null default 'pending' check (status in ('pending', 'changes_requested', 'approved', 'rejected', 'cancelled')),
+  reviewed_by uuid references public.admin_users(id) on delete set null,
+  reviewed_at timestamptz,
+  review_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists agent_profile_changes_one_open_idx
+  on public.agent_profile_change_requests (agent_id)
+  where status in ('pending', 'changes_requested');
+create index if not exists agent_profile_changes_status_created_idx
+  on public.agent_profile_change_requests (status, created_at desc);
+create index if not exists agent_profile_changes_agent_created_idx
+  on public.agent_profile_change_requests (agent_id, created_at desc);
 
 create table if not exists public.agent_activation_codes (
   id uuid primary key default gen_random_uuid(),
@@ -1644,7 +1741,8 @@ begin
   foreach table_name in array array[
     'agent_applications', 'agents', 'agent_activation_codes',
     'agent_commission_rules', 'agent_referrals', 'agent_order_attributions',
-    'agent_commission_ledger', 'agent_payouts', 'agent_audit_logs'
+    'agent_commission_ledger', 'agent_payouts', 'agent_audit_logs',
+    'agent_profile_change_requests'
   ] loop
     execute format('alter table public.%I enable row level security', table_name);
     execute format('revoke all on table public.%I from anon, authenticated', table_name);
@@ -1657,6 +1755,9 @@ create trigger set_agent_applications_updated_at before update on public.agent_a
 for each row execute function public.set_updated_at();
 drop trigger if exists set_agents_updated_at on public.agents;
 create trigger set_agents_updated_at before update on public.agents
+for each row execute function public.set_updated_at();
+drop trigger if exists set_agent_profile_changes_updated_at on public.agent_profile_change_requests;
+create trigger set_agent_profile_changes_updated_at before update on public.agent_profile_change_requests
 for each row execute function public.set_updated_at();
 drop trigger if exists set_agent_commission_rules_updated_at on public.agent_commission_rules;
 create trigger set_agent_commission_rules_updated_at before update on public.agent_commission_rules
@@ -1699,10 +1800,16 @@ begin
   end if;
 
   insert into public.agents (
-    agent_no, user_id, referral_code, source, application_id, created_by_admin_id
-  ) values (
-    agent_no_input, user_id_input, referral_code_input, 'application', activation.application_id, activation.created_by
-  ) returning id into new_agent_id;
+    agent_no, user_id, referral_code, full_name, region, promotion_channel,
+    whatsapp_phone, source, application_id, created_by_admin_id
+  )
+  select
+    agent_no_input, user_id_input, referral_code_input, application.full_name,
+    application.region, application.promotion_channel, application.whatsapp_phone,
+    'application', activation.application_id, activation.created_by
+  from public.agent_applications application
+  where application.id = activation.application_id
+  returning id into new_agent_id;
 
   update public.agent_activation_codes set used_at = now() where id = activation.id;
   update public.agent_applications set status = 'activated', updated_at = now()

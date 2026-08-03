@@ -2,6 +2,7 @@ import type { ApiRequest, ApiResponse } from './_order-utils';
 import { clearSessionCookie, destroySession } from './_auth-utils';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  res.setHeader?.('Cache-Control', 'no-store');
   if (req.method && req.method !== 'POST') {
     res.setHeader?.('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'Method not allowed' });

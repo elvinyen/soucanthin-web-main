@@ -6,6 +6,35 @@ import type { AuthUser, UserAddress, UserCoupon, UserOrderSummary, WalletSummary
 
 const SESSION_COOKIE = 'sct_session';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+const MAX_ACTIVE_SESSIONS_PER_USER = 5;
+const OTP_VALIDITY_SECONDS = 5 * 60;
+const OTP_MAX_VERIFY_ATTEMPTS = 5;
+const OTP_PHONE_HOURLY_LIMIT = 5;
+const OTP_PHONE_DAILY_LIMIT = 15;
+const OTP_CLIENT_HOURLY_LIMIT = 20;
+const OTP_CLIENT_DAILY_LIMIT = 100;
+
+export type OtpPurpose = 'login' | 'update_phone';
+
+type OtpChallengeRecord = {
+  id: string;
+  user_id?: string | null;
+  phone: string;
+  display_phone: string;
+  provider_reqid: string;
+  purpose: OtpPurpose;
+  request_fingerprint: string;
+  attempt_count: number;
+  expires_at: string;
+  consumed_at?: string | null;
+  created_at: string;
+};
+
+export class AuthError extends Error {
+  constructor(message: string, public readonly statusCode = 400) {
+    super(message);
+  }
+}
 
 export type UserRecord = {
   id: string;
@@ -120,6 +149,169 @@ export async function verifyMoceanOtp(reqid: string, code: string) {
   }
 }
 
+export async function createOtpChallenge(
+  req: ApiRequest,
+  phone: string,
+  displayPhone: string,
+  purpose: OtpPurpose,
+  userId: string | null = null,
+) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const now = Date.now();
+  const oneMinuteAgo = new Date(now - 60_000).toISOString();
+  const oneHourAgo = new Date(now - 60 * 60_000).toISOString();
+  const oneDayAgo = new Date(now - 24 * 60 * 60_000).toISOString();
+  const requestFingerprint = hashToken(readClientAddress(req), getSessionSecret());
+
+  await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/otp_challenges?created_at=lt.${encodeURIComponent(oneDayAgo)}`,
+    { method: 'DELETE' },
+  );
+
+  const [recentPhone, hourlyPhone, dailyPhone, hourlyClient, dailyClient] = await Promise.all([
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/otp_challenges?phone=eq.${encodeURIComponent(phone)}&created_at=gte.${encodeURIComponent(oneMinuteAgo)}&select=id&limit=1`,
+      { method: 'GET' },
+    ),
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/otp_challenges?phone=eq.${encodeURIComponent(phone)}&created_at=gte.${encodeURIComponent(oneHourAgo)}&select=id`,
+      { method: 'GET' },
+    ),
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/otp_challenges?phone=eq.${encodeURIComponent(phone)}&created_at=gte.${encodeURIComponent(oneDayAgo)}&select=id`,
+      { method: 'GET' },
+    ),
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/otp_challenges?request_fingerprint=eq.${encodeURIComponent(requestFingerprint)}&created_at=gte.${encodeURIComponent(oneHourAgo)}&select=id`,
+      { method: 'GET' },
+    ),
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/otp_challenges?request_fingerprint=eq.${encodeURIComponent(requestFingerprint)}&created_at=gte.${encodeURIComponent(oneDayAgo)}&select=id`,
+      { method: 'GET' },
+    ),
+  ]);
+
+  if (Array.isArray(recentPhone) && recentPhone.length > 0) {
+    throw new AuthError('验证码发送过于频繁，请稍后再试', 429);
+  }
+  if (Array.isArray(hourlyPhone) && hourlyPhone.length >= OTP_PHONE_HOURLY_LIMIT) {
+    throw new AuthError('该手机号请求验证码次数过多，请一小时后再试', 429);
+  }
+  if (Array.isArray(dailyPhone) && dailyPhone.length >= OTP_PHONE_DAILY_LIMIT) {
+    throw new AuthError('该手机号今日请求验证码次数过多，请明天再试', 429);
+  }
+  if (Array.isArray(hourlyClient) && hourlyClient.length >= OTP_CLIENT_HOURLY_LIMIT) {
+    throw new AuthError('验证码请求次数过多，请一小时后再试', 429);
+  }
+  if (Array.isArray(dailyClient) && dailyClient.length >= OTP_CLIENT_DAILY_LIMIT) {
+    throw new AuthError('今日验证码请求次数过多，请明天再试', 429);
+  }
+
+  const providerReqid = await requestMoceanOtp(phone);
+  const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/otp_challenges', {
+    method: 'POST',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      user_id: userId,
+      phone,
+      display_phone: displayPhone,
+      provider_reqid: providerReqid,
+      purpose,
+      request_fingerprint: requestFingerprint,
+      attempt_count: 0,
+      expires_at: new Date(now + OTP_VALIDITY_SECONDS * 1000).toISOString(),
+    }),
+  });
+  const challenge = Array.isArray(created) ? created[0] as OtpChallengeRecord | undefined : undefined;
+  if (!challenge?.id) throw new Error('验证码请求未保存');
+
+  return {
+    challengeId: challenge.id,
+    displayPhone,
+    expiresIn: OTP_VALIDITY_SECONDS,
+  };
+}
+
+export async function verifyOtpChallenge(params: {
+  challengeId: string;
+  code: string;
+  purpose: OtpPurpose;
+  userId?: string | null;
+  expectedPhone?: string;
+}) {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const now = new Date().toISOString();
+  const rows = await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/otp_challenges?id=eq.${encodeURIComponent(params.challengeId)}&purpose=eq.${encodeURIComponent(params.purpose)}&consumed_at=is.null&expires_at=gt.${encodeURIComponent(now)}&select=*`,
+    { method: 'GET' },
+  );
+  const challenge = Array.isArray(rows) ? rows[0] as OtpChallengeRecord | undefined : undefined;
+
+  if (!challenge) throw new AuthError('验证码请求不存在或已过期');
+  if (challenge.attempt_count >= OTP_MAX_VERIFY_ATTEMPTS) {
+    throw new AuthError('验证码尝试次数过多，请重新获取');
+  }
+  if (params.purpose === 'update_phone' && (!params.userId || challenge.user_id !== params.userId)) {
+    throw new AuthError('验证码请求与当前账号不匹配');
+  }
+  if (params.expectedPhone && challenge.phone !== params.expectedPhone) {
+    throw new AuthError('验证码与手机号码不匹配');
+  }
+
+  try {
+    await verifyMoceanOtp(challenge.provider_reqid, params.code);
+  } catch {
+    const nextAttemptCount = challenge.attempt_count + 1;
+    await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/otp_challenges?id=eq.${encodeURIComponent(challenge.id)}&consumed_at=is.null`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          attempt_count: nextAttemptCount,
+          ...(nextAttemptCount >= OTP_MAX_VERIFY_ATTEMPTS ? { consumed_at: now } : {}),
+        }),
+      },
+    );
+    throw new AuthError(nextAttemptCount >= OTP_MAX_VERIFY_ATTEMPTS
+      ? '验证码尝试次数过多，请重新获取'
+      : '验证码不正确或已过期');
+  }
+
+  const consumed = await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/otp_challenges?id=eq.${encodeURIComponent(challenge.id)}&consumed_at=is.null&expires_at=gt.${encodeURIComponent(now)}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ consumed_at: now }),
+    },
+  );
+  const consumedChallenge = Array.isArray(consumed) ? consumed[0] as OtpChallengeRecord | undefined : undefined;
+  if (!consumedChallenge?.id) throw new AuthError('验证码已经使用或已过期');
+
+  return {
+    phone: consumedChallenge.phone,
+    displayPhone: consumedChallenge.display_phone,
+  };
+}
+
 async function moceanRequest(url: string, body: URLSearchParams, apiToken: string) {
   const response = await fetch(url, {
     method: 'POST',
@@ -190,6 +382,13 @@ export async function createSession(userId: string) {
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000).toISOString();
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
 
+  await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/user_sessions?expires_at=lte.${encodeURIComponent(new Date().toISOString())}`,
+    { method: 'DELETE' },
+  );
+
   await supabaseRequest(supabaseUrl, serviceRoleKey, '/user_sessions', {
     method: 'POST',
     body: JSON.stringify({
@@ -198,6 +397,25 @@ export async function createSession(userId: string) {
       expires_at: expiresAt,
     }),
   });
+
+  const activeSessions = await supabaseRequest(
+    supabaseUrl,
+    serviceRoleKey,
+    `/user_sessions?user_id=eq.${encodeURIComponent(userId)}&select=id&order=created_at.desc`,
+    { method: 'GET' },
+  );
+  const staleSessionIds = (Array.isArray(activeSessions) ? activeSessions : [])
+    .slice(MAX_ACTIVE_SESSIONS_PER_USER)
+    .map((session: { id?: string }) => session.id)
+    .filter((id): id is string => Boolean(id));
+  if (staleSessionIds.length > 0) {
+    await supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/user_sessions?id=in.(${staleSessionIds.map(id => encodeURIComponent(id)).join(',')})`,
+      { method: 'DELETE' },
+    );
+  }
 
   return token;
 }
@@ -427,6 +645,17 @@ function readSessionToken(req: ApiRequest) {
   return cookies[SESSION_COOKIE] || '';
 }
 
+function readClientAddress(req: ApiRequest) {
+  const forwarded = req.headers?.['x-forwarded-for'];
+  const forwardedText = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const realIp = req.headers?.['x-real-ip'];
+  const realIpText = Array.isArray(realIp) ? realIp[0] : realIp;
+  return String(req.ip || req.socket?.remoteAddress || realIpText || forwardedText || 'unknown')
+    .split(',')[0]
+    .trim()
+    .slice(0, 128);
+}
+
 function serializeCookie(name: string, value: string, maxAge: number) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
@@ -442,5 +671,8 @@ function getSessionSecret() {
     return 'local-dev-session-secret';
   }
   if (!secret) throw new Error('SESSION_SECRET is not configured');
+  if (process.env.NODE_ENV === 'production' && (secret.length < 32 || secret.includes('replace-with'))) {
+    throw new Error('SESSION_SECRET must be a random value of at least 32 characters');
+  }
   return secret;
 }

@@ -15,14 +15,15 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthenticated: (session: AuthMeResponse) => void;
+  presentation?: 'sheet' | 'page';
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated, presentation = 'sheet' }) => {
   const { t } = useTranslation();
   const [phone, setPhone] = useState('');
   const [dialCode, setDialCode] = useState('+60');
   const [code, setCode] = useState('');
-  const [reqid, setReqid] = useState('');
+  const [challengeId, setChallengeId] = useState('');
   const [displayPhone, setDisplayPhone] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [isLoading, setIsLoading] = useState(false);
@@ -56,11 +57,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
       const res = await fetch('/api/auth/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: getComposedPhone() }),
+        body: JSON.stringify({ phone: getComposedPhone(), purpose: 'login' }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.success) throw new Error(payload.error || t('auth.sendFailed'));
-      setReqid(payload.reqid);
+      setChallengeId(payload.challengeId);
       setDisplayPhone(payload.displayPhone);
       setStep('otp');
       setCooldown(60);
@@ -74,7 +75,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
   const resetPhoneStep = () => {
     setStep('phone');
     setCode('');
-    setReqid('');
+    setChallengeId('');
     setDisplayPhone('');
     setError('');
   };
@@ -87,7 +88,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: getComposedPhone(), reqid, code }),
+        body: JSON.stringify({ challengeId, code }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.success) throw new Error(payload.error || t('auth.loginFailed'));
@@ -103,15 +104,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
 
   if (!isOpen) return null;
 
+  const isPage = presentation === 'page';
   const isSubmitDisabled = isLoading || !agreedToTerms || !phone.trim() || (step === 'otp' && code.length < 4);
 
   return (
-    <div className="fixed inset-0 z-[120] max-w-md mx-auto">
-      <div className="absolute inset-0 bg-black/35 backdrop-blur-md" onClick={onClose} />
-      <div className="absolute bottom-0 left-0 right-0 flex h-[76vh] max-h-[76vh] min-h-[34rem] flex-col overflow-hidden rounded-t-[2rem] bg-[#FAFAFB] shadow-[0_-28px_70px_rgba(0,0,0,0.22)] animate-slide-up">
-        <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-[#D2D2D7] flex-none" />
+    <div className={`fixed inset-0 z-[120] mx-auto ${isPage ? 'bg-[#EEF2F6]' : 'max-w-md'}`}>
+      {!isPage && <div className="absolute inset-0 bg-black/35 backdrop-blur-md" onClick={onClose} />}
+      <div className={isPage
+        ? 'absolute inset-0 flex flex-col overflow-y-auto bg-[#EEF2F6] sm:inset-y-8 sm:left-1/2 sm:right-auto sm:w-[calc(100%-4rem)] sm:max-w-[38rem] sm:-translate-x-1/2 sm:rounded-[2rem] sm:border sm:border-slate-200/80 sm:bg-white sm:shadow-[0_28px_80px_rgba(51,65,85,0.14)]'
+        : 'absolute bottom-0 left-0 right-0 flex h-[76vh] max-h-[76vh] min-h-[34rem] flex-col overflow-hidden rounded-t-[2rem] bg-[#FAFAFB] shadow-[0_-28px_70px_rgba(0,0,0,0.22)] animate-slide-up'}>
+        {!isPage && <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-[#D2D2D7] flex-none" />}
 
-        <div className="relative flex flex-none items-center justify-between px-6 pt-5">
+        <div className={`relative flex flex-none items-center justify-between px-6 ${isPage ? 'mx-auto w-full max-w-lg pt-8' : 'pt-5'}`}>
           {step === 'otp' ? (
             <button
               onClick={resetPhoneStep}
@@ -128,26 +132,29 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated 
             alt={`${t('common.brand')} Logo`}
             className="absolute left-1/2 top-5 h-10 w-28 -translate-x-1/2 object-contain"
           />
-          <button
-            onClick={onClose}
-            aria-label={t('common.close')}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/80 text-[#6E6E73] shadow-sm ring-1 ring-black/5 backdrop-blur transition hover:text-[#1D1D1F]"
-          >
-            <X size={18} />
-          </button>
+          {isPage ? <a href="/" className="grid h-10 w-10 place-items-center rounded-full bg-white/80 text-[#6E6E73] shadow-sm ring-1 ring-black/5">←</a> : (
+            <button
+              onClick={onClose}
+              aria-label={t('common.close')}
+              className="grid h-10 w-10 place-items-center rounded-full bg-white/80 text-[#6E6E73] shadow-sm ring-1 ring-black/5 backdrop-blur transition hover:text-[#1D1D1F]"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
-        <div className="flex flex-none flex-col items-center px-8 pt-12 text-center">
-          <h2 className="text-[32px] font-semibold leading-tight tracking-normal text-[#1D1D1F]">{t('auth.loginTitle')}</h2>
+        <div className={`flex flex-none flex-col items-center px-6 text-center sm:px-8 ${isPage ? 'pt-14 sm:pt-20' : 'pt-12'}`}>
+          {isPage && <p className="mb-3 text-xs font-bold tracking-[0.18em] text-[#A78345]">{t('common.brandZh')} · {t('agentWorkspace.brandSection', { defaultValue: '代理中心' })}</p>}
+          <h2 className="text-[32px] font-semibold leading-tight tracking-normal text-[#1D1D1F]">{isPage ? t('agentWorkspace.loginTitle', { defaultValue: '登录代理中心' }) : t('auth.loginTitle')}</h2>
           <div className="mt-3 h-1 w-10 rounded-full bg-[#B08A5B]" />
           <p className="mt-4 max-w-[18.5rem] text-[15px] leading-6 text-[#6E6E73]">
             {step === 'phone'
-              ? t('auth.loginSubtitle')
+              ? (isPage ? t('agentWorkspace.loginSubtitle', { defaultValue: '使用申请代理时绑定的手机号登录' }) : t('auth.loginSubtitle'))
               : t('auth.otpHint', { phone: displayPhone })}
           </p>
         </div>
 
-        <div className="flex min-h-0 flex-1 items-start px-6 pb-7 pt-8">
+        <div className={`flex min-h-0 flex-1 items-start px-5 pb-7 pt-7 sm:px-6 sm:pt-8 ${isPage ? 'mx-auto w-full max-w-lg' : ''}`}>
           <div className="w-full space-y-4">
             <div className="space-y-3">
               <div className="flex overflow-hidden rounded-[1.35rem] border border-black/10 bg-white shadow-sm transition focus-within:border-black/20">

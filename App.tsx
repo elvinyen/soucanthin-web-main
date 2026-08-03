@@ -16,6 +16,7 @@ import UserCenter, { type UserCenterTab } from './components/UserCenter';
 import UserDropdown from './components/UserDropdown';
 import OrdersPage from './components/OrdersPage';
 import AdminDashboard from './components/AdminDashboard';
+import AgentApp from './components/AgentApp';
 import type { AuthMeResponse } from './types/auth';
 import type { CartLine } from './data/menu';
 import type { BottomTab } from './components/Footer';
@@ -38,6 +39,7 @@ const App: React.FC = () => {
   const { t } = useTranslation();
   const normalizedPathname = window.location.pathname.replace(/\/+$/, '') || '/';
   const isAdminRoute = normalizedPathname === '/admin' || normalizedPathname.startsWith('/admin/');
+  const isAgentRoute = normalizedPathname === '/agent' || normalizedPathname.startsWith('/agent/');
   const [scrolled, setScrolled] = useState(false);
   const [view, setView] = useState<MainView>('home');
   const [initialCheckoutDraft] = useState(readSavedCart);
@@ -81,6 +83,13 @@ const App: React.FC = () => {
     const paymentOrderNo = params.get('order');
     const walletTransactionId = params.get('tx');
     const referralCode = (params.get('ref') || '').trim().toUpperCase();
+    const accountSection = params.get('account');
+    if (accountSection === 'agent') {
+      setView('mine');
+      setUserCenterTab('agent');
+      params.delete('account');
+      window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`);
+    }
     if (referralCode) window.localStorage.setItem('sct_referral_code', referralCode);
     if (table) {
       setTableNumber(table);
@@ -138,7 +147,8 @@ const App: React.FC = () => {
     try {
       const res = await fetch('/api/auth/me');
       const payload = await res.json();
-      if (payload.success) setSession(payload);
+      if (res.ok && payload.success) setSession(payload);
+      else setSession({ success: false, authenticated: false });
     } catch {
       setSession({ success: false, authenticated: false });
     }
@@ -274,6 +284,10 @@ const App: React.FC = () => {
 
   if (isAdminRoute) {
     return <AdminDashboard />;
+  }
+
+  if (isAgentRoute) {
+    return <AgentApp />;
   }
 
   return (

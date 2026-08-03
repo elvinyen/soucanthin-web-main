@@ -18,25 +18,27 @@ type PortalData = {
   };
   agent: null | {
     agentNo: string;
+    fullName: string;
     referralCode: string;
     referralUrl: string;
     status: 'active' | 'suspended' | 'terminated';
     commissionRate: number | null;
     activatedAt: string;
   };
-  summary: { pending: number; available: number; paid: number; referrals: number; orders: number };
+  summary: { pending: number; available: number; paid: number; referrals: number; orders: number; todayEarnings: number; sevenDayEarnings: number; thirtyDayEarnings: number; totalEarnings: number; todayOrders: number; sevenDayOrders: number; thirtyDayOrders: number };
   commissions: { id: string; type: string; amount: number; status: string; note?: string | null; createdAt: string }[];
   whatsappUrl: string;
 };
 
 interface AgentPortalProps {
   user: AuthUser;
+  context?: 'account' | 'workspace';
 }
 
-const card = 'rounded-[1.65rem] border border-stone-100 bg-white p-5 shadow-[0_14px_40px_rgba(45,45,45,0.06)]';
-const inputClass = 'w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm outline-none focus:border-[#C8A97E]';
+const card = 'rounded-[1.65rem] border border-slate-200/80 bg-white p-5 shadow-[0_16px_45px_rgba(51,65,85,0.07)]';
+const inputClass = 'w-full rounded-2xl border border-slate-200 bg-[#F8FAFC] px-4 py-3.5 text-sm text-[#292724] outline-none transition placeholder:text-slate-400 focus:border-[#9B7B50] focus:bg-white focus:ring-4 focus:ring-[#9B7B50]/10';
 
-export function AgentPortal({ user }: AgentPortalProps) {
+export function AgentPortal({ user, context = 'account' }: AgentPortalProps) {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<PortalData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,13 +155,58 @@ export function AgentPortal({ user }: AgentPortalProps) {
   if (loading && !data) return <div className={card}>{t('agentPortal.loading')}</div>;
   if (!data) return <Feedback error={error} notice={notice} />;
 
+  if (data.agent && context === 'account') {
+    const isActive = data.agent.status === 'active';
+    return (
+      <section className="space-y-3">
+        <div className="relative overflow-hidden rounded-[1.6rem] bg-[#292724] p-5 text-white shadow-[0_18px_45px_rgba(30,41,59,0.16)] sm:p-6">
+          <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full border border-[#C7A46A]/18" />
+          <div className="pointer-events-none absolute -right-9 -top-12 h-36 w-36 rounded-full border border-white/[0.04]" />
+          <div className="relative flex min-w-0 items-center gap-3.5">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-[#C7A46A]/20 bg-[#C7A46A]/12 text-[#E7C996]">
+              <Handshake size={22} strokeWidth={1.8} />
+            </span>
+            <div className="min-w-0">
+              <h3 className="truncate text-xl font-bold leading-tight">{data.agent.fullName || user.name || '-'}</h3>
+              <p className="mt-1.5 truncate font-mono text-xs font-bold tracking-[0.08em] text-[#E7C996]">{data.agent.agentNo}</p>
+            </div>
+          </div>
+
+          <div className="relative mt-5 grid grid-cols-2 border-y border-white/10 py-4">
+            <div className="border-r border-white/10 pr-4">
+              <p className="text-[11px] text-white/40">{t('agentPortal.status')}</p>
+              <p className="mt-1.5 flex items-center gap-2 text-sm font-bold"><span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'}`} />{agentStatusLabel(data.agent.status)}</p>
+            </div>
+            <div className="pl-4">
+              <p className="text-[11px] text-white/40">{t('agentPortal.commissionRate', { defaultValue: '佣金比例' })}</p>
+              <p className="mt-1.5 text-sm font-bold text-[#E7C996]">{data.agent.commissionRate == null ? t('agentPortal.defaultCommission') : `${data.agent.commissionRate}%`}</p>
+            </div>
+          </div>
+
+          <a
+            href="/agent"
+            className="relative mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#C7A46A] px-4 py-3 text-sm font-bold text-white shadow-[0_10px_25px_rgba(199,164,106,0.2)] transition active:scale-[0.98]"
+          >
+            {t('agentPortal.enterWorkspace', { defaultValue: '进入代理中心' })}
+            <ExternalLink size={16} />
+          </a>
+        </div>
+
+        <a href="/agent/account" className="flex min-h-14 items-center justify-between rounded-[1.25rem] border border-stone-100 bg-white px-4 py-3 text-sm font-bold text-[#2D2D2D] shadow-[0_10px_30px_rgba(45,45,45,0.06)] transition active:scale-[0.99]">
+          <span>{t('agentWorkspace.agentProfile', { defaultValue: '代理资料' })}</span>
+          <ExternalLink size={16} className="text-[#A78345]" />
+        </a>
+      </section>
+    );
+  }
+
   if (data.agent) {
     return (
       <section className="space-y-4">
         <div className="relative overflow-hidden rounded-[1.75rem] bg-[#2B2B2B] p-6 text-white shadow-xl">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E7C996]">{t('agentPortal.center')}</p>
           <div className="mt-3 flex items-center justify-between gap-3">
-            <div><h3 className="text-xl font-bold">{data.agent.agentNo}</h3><p className="mt-1 text-xs text-white/50">{t('agentPortal.status')}：{agentStatusLabel(data.agent.status)}</p></div>
+            <div><h3 className="text-xl font-bold">{data.agent.fullName || user.name || '-'}</h3><p className="mt-1 font-mono text-xs text-[#E7C996]">{data.agent.agentNo}</p><p className="mt-1 text-xs text-white/50">{t('agentPortal.status')}：{agentStatusLabel(data.agent.status)}</p></div>
             <span className="rounded-full bg-[#C7A46A]/20 px-3 py-1 text-xs font-bold text-[#E7C996]">{data.agent.commissionRate == null ? t('agentPortal.defaultCommission') : `${data.agent.commissionRate}%`}</span>
           </div>
           <div className="mt-6 grid grid-cols-3 gap-2">
@@ -210,24 +257,29 @@ export function AgentPortal({ user }: AgentPortalProps) {
     const application = data.application;
     return (
       <section className="space-y-4">
-        <div className={card}>
-          <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 text-[#A78345]" size={22} /><div><h3 className="font-bold">{t('agentPortal.application')}：{applicationStatusLabel(application.status)}</h3><p className="mt-1 font-mono text-xs text-stone-400">{application.applicationNo}</p></div></div>
-          {application.reviewNote && <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{t('agentPortal.reviewNote')}：{application.reviewNote}</div>}
-          {['pending', 'changes_requested'].includes(application.status) && <div className="mt-4 rounded-2xl bg-stone-50 px-4 py-3 text-sm leading-6 text-stone-600"><p className="font-bold text-stone-800">{t('agentPortal.nextStep')}</p><p className="mt-1">{t('agentPortal.pendingGuide')}</p></div>}
+        <div className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(51,65,85,0.08)]">
+          <div className="relative overflow-hidden bg-[#292724] p-5 text-white sm:p-6">
+            <div className="pointer-events-none absolute -right-14 -top-20 h-48 w-48 rounded-full border border-[#C7A46A]/20" />
+            <div className="relative flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-2xl bg-white/8 text-[#E7C996]"><CheckCircle2 size={20} /></span><div><h3 className="font-bold">{t('agentPortal.application')} · {applicationStatusLabel(application.status)}</h3><p className="mt-1 font-mono text-xs tracking-[0.08em] text-white/40">{application.applicationNo}</p></div></div>
+          </div>
+          <div className="p-5 sm:p-6">
+          {application.reviewNote && <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">{t('agentPortal.reviewNote')}：{application.reviewNote}</div>}
+          {['pending', 'changes_requested'].includes(application.status) && <div className={`${application.reviewNote ? 'mt-3' : ''} rounded-2xl bg-[#F1F5F9] px-4 py-3 text-sm leading-6 text-slate-600`}><p className="font-bold text-slate-800">{t('agentPortal.nextStep')}</p><p className="mt-1">{t('agentPortal.pendingGuide')}</p></div>}
           {application.status === 'approved' && <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800"><p className="font-bold">{t('agentPortal.approvedTitle')}</p><p className="mt-1">{t('agentPortal.approvedGuide')}</p></div>}
-          {data.whatsappUrl && <a href={data.whatsappUrl} target="_blank" rel="noreferrer" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#25D366] py-3 text-sm font-bold text-white"><Send size={16} />{t('agentPortal.contactWhatsapp')}</a>}
+          {data.whatsappUrl && <a href={data.whatsappUrl} target="_blank" rel="noreferrer" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-[#292724] py-3.5 text-sm font-bold text-white"><Send size={16} />{t('agentPortal.contactWhatsapp')}</a>}
+          </div>
         </div>
-        {application.status === 'approved' && <div className={card}><div className="flex items-center gap-2"><KeyRound size={20} className="text-[#A78345]" /><h3 className="font-bold">{t('agentPortal.activateTitle')}</h3></div><p className="mt-2 text-xs leading-5 text-stone-500">{t('agentPortal.activateHint')}</p><input value={activationCode} onChange={event => setActivationCode(event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" placeholder={t('agentPortal.activationPlaceholder')} className={`mt-4 ${inputClass} text-center font-mono tracking-[0.3em]`} /><button type="button" disabled={submitting || activationCode.length !== 8} onClick={() => submit({ action: 'activate', activationCode }, t('agentPortal.activated'))} className="mt-3 w-full rounded-full bg-[#C7A46A] py-4 text-sm font-bold text-white disabled:opacity-50">{t('agentPortal.activateNow')}</button></div>}
+        {application.status === 'approved' && <div className={card}><div className="flex items-center gap-2"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#F1F5F9] text-[#9B7B50]"><KeyRound size={18} /></span><h3 className="font-bold">{t('agentPortal.activateTitle')}</h3></div><p className="mt-3 text-xs leading-5 text-slate-500">{t('agentPortal.activateHint')}</p><input value={activationCode} onChange={event => setActivationCode(event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" placeholder={t('agentPortal.activationPlaceholder')} className={`mt-4 ${inputClass} text-center font-mono tracking-[0.3em]`} /><button type="button" disabled={submitting || activationCode.length !== 8} onClick={() => submit({ action: 'activate', activationCode }, t('agentPortal.activated'))} className="mt-3 w-full rounded-full bg-[#C7A46A] py-4 text-sm font-bold text-white disabled:opacity-50">{t('agentPortal.activateNow')}</button></div>}
         {application.status === 'rejected' && !showReapply && <button type="button" onClick={() => setShowReapply(true)} className="w-full rounded-full bg-[#2D2D2D] py-4 text-sm font-bold text-white">{t('agentPortal.reapply')}</button>}
         {(application.status === 'changes_requested' || (application.status === 'rejected' && showReapply)) && (
-          <div className={`${card} space-y-3`}>
+          <div className={`${card} space-y-3 bg-[#F8FAFC]`}>
             <h3 className="font-bold">{application.status === 'changes_requested' ? t('agentPortal.supplementApplication') : t('agentPortal.resubmitApplication')}</h3>
             <Field label={t('agentPortal.fullName')} value={form.fullName} onChange={value => setForm(current => ({ ...current, fullName: value }))} />
             <Field label={t('agentPortal.region')} value={form.region} onChange={value => setForm(current => ({ ...current, region: value }))} />
             <Field label={t('agentPortal.promotionChannel')} value={form.promotionChannel} onChange={value => setForm(current => ({ ...current, promotionChannel: value }))} />
             <Field label={t('agentPortal.whatsappPhone')} value={form.whatsappPhone} onChange={value => setForm(current => ({ ...current, whatsappPhone: value }))} />
             <label className="block"><span className="mb-1 block text-[11px] font-bold text-stone-400">{t('agentPortal.applicationMessage')}</span><textarea value={form.message} onChange={event => setForm(current => ({ ...current, message: event.target.value }))} rows={3} className={inputClass} /></label>
-            <label className="flex items-start gap-3 rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-600"><input type="checkbox" checked={form.consent} onChange={event => setForm(current => ({ ...current, consent: event.target.checked }))} className="mt-1" /><span>{t('agentPortal.resubmitConsent')}</span></label>
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-xs leading-5 text-slate-600"><input type="checkbox" checked={form.consent} onChange={event => setForm(current => ({ ...current, consent: event.target.checked }))} className="mt-1 accent-[#A78345]" /><span>{t('agentPortal.resubmitConsent')}</span></label>
             <button type="button" disabled={submitting || !form.consent} onClick={apply} className="w-full rounded-full bg-[#C7A46A] py-4 text-sm font-bold text-white disabled:opacity-50">{t('agentPortal.submitReview')}</button>
           </div>
         )}
@@ -237,15 +289,18 @@ export function AgentPortal({ user }: AgentPortalProps) {
   }
 
   return (
-    <section className="space-y-4">
-      <div className={card}><div className="flex items-center gap-3"><Handshake size={22} className="text-[#A78345]" /><div><h3 className="font-bold">{t('agentPortal.applyTitle')}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{t('agentPortal.applyDescription')}</p></div></div></div>
-      <div className={`${card} space-y-3`}>
+    <section className="overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(51,65,85,0.08)]">
+      <div className="relative overflow-hidden bg-[#292724] p-5 text-white sm:p-6">
+        <div className="pointer-events-none absolute -right-14 -top-20 h-48 w-48 rounded-full border border-[#C7A46A]/20" />
+        <div className="relative flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/8 text-[#E7C996]"><Handshake size={21} /></span><div><h3 className="text-lg font-bold">{t('agentPortal.applyTitle')}</h3><p className="mt-1 text-xs leading-5 text-white/45">{t('agentPortal.applyDescription')}</p></div></div>
+      </div>
+      <div className="space-y-3 bg-[#F8FAFC] p-5 sm:p-6">
         <Field label={t('agentPortal.fullName')} value={form.fullName} onChange={value => setForm(current => ({ ...current, fullName: value }))} />
         <Field label={t('agentPortal.region')} value={form.region} onChange={value => setForm(current => ({ ...current, region: value }))} />
         <Field label={t('agentPortal.promotionChannel')} value={form.promotionChannel} placeholder={t('agentPortal.promotionPlaceholder')} onChange={value => setForm(current => ({ ...current, promotionChannel: value }))} />
         <Field label={t('agentPortal.whatsappPhone')} value={form.whatsappPhone} onChange={value => setForm(current => ({ ...current, whatsappPhone: value }))} />
-        <label className="block"><span className="mb-1 block text-[11px] font-bold text-stone-400">{t('agentPortal.applicationMessageOptional')}</span><textarea value={form.message} onChange={event => setForm(current => ({ ...current, message: event.target.value }))} rows={3} className={inputClass} /></label>
-        <label className="flex items-start gap-3 rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-600"><input type="checkbox" checked={form.consent} onChange={event => setForm(current => ({ ...current, consent: event.target.checked }))} className="mt-1" /><span>{t('agentPortal.applyConsent')}</span></label>
+        <label className="block"><span className="mb-1.5 block text-[11px] font-bold text-slate-500">{t('agentPortal.applicationMessageOptional')}</span><textarea value={form.message} onChange={event => setForm(current => ({ ...current, message: event.target.value }))} rows={3} className={inputClass} /></label>
+        <label className="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 text-xs leading-5 text-slate-600"><input type="checkbox" checked={form.consent} onChange={event => setForm(current => ({ ...current, consent: event.target.checked }))} className="mt-1 accent-[#A78345]" /><span>{t('agentPortal.applyConsent')}</span></label>
         <button type="button" disabled={submitting || !form.consent} onClick={apply} className="w-full rounded-full bg-[#C7A46A] py-4 text-sm font-bold text-white disabled:opacity-50">{t('agentPortal.submitApplication')}</button>
       </div>
       <Feedback error={error} notice={notice} />
@@ -254,7 +309,7 @@ export function AgentPortal({ user }: AgentPortalProps) {
 }
 
 function Field({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (value: string) => void }) {
-  return <label className="block"><span className="mb-1 block text-[11px] font-bold text-stone-400">{label}</span><input value={value} placeholder={placeholder} onChange={event => onChange(event.target.value)} className={inputClass} /></label>;
+  return <label className="block"><span className="mb-1.5 block text-[11px] font-bold text-slate-500">{label}</span><input value={value} placeholder={placeholder} onChange={event => onChange(event.target.value)} className={inputClass} /></label>;
 }
 
 function Metric({ label, value, dark, icon }: { label: string; value: string; dark?: boolean; icon?: React.ReactNode }) {

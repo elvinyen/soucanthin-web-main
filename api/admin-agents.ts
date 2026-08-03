@@ -13,7 +13,7 @@ import {
 } from './_agent-utils';
 
 type AdminAgentInput = {
-  action?: 'approve' | 'reject' | 'request_changes' | 'resend_code' | 'bulk_create' | 'set_status' | 'delete_agent' | 'save_rule' | 'delete_rule' | 'adjust_commission' | 'review_payout';
+  action?: 'approve' | 'reject' | 'request_changes' | 'resend_code' | 'bulk_create' | 'set_status' | 'delete_agent' | 'save_rule' | 'delete_rule' | 'adjust_commission' | 'review_payout' | 'review_profile_change';
   applicationId?: string;
   agentId?: string;
   status?: string;
@@ -26,14 +26,16 @@ type AdminAgentInput = {
   amount?: number | string;
   payoutId?: string;
   payoutStatus?: string;
+  profileChangeId?: string;
+  profileChangeStatus?: string;
 };
 
-const ADMIN_ONLY_ACTIONS = new Set(['bulk_create', 'delete_agent', 'save_rule', 'delete_rule', 'adjust_commission', 'review_payout']);
+const ADMIN_ONLY_ACTIONS = new Set(['bulk_create', 'delete_agent', 'save_rule', 'delete_rule', 'adjust_commission', 'review_payout', 'review_profile_change']);
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const admin = await requireAdminRole(req, ['admin', 'customer_service']);
-    if ((req.method || 'GET') === 'GET') return await listAgentData(res);
+    if ((req.method || 'GET') === 'GET') return await listAgentData(res, admin.role);
     if (req.method !== 'POST') {
       res.setHeader?.('Allow', 'GET, POST');
       return res.status(405).json({ success: false, error: 'Method not allowed' });
@@ -50,6 +52,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (input.action === 'delete_rule') return await deleteRule(input, admin.id, res);
     if (input.action === 'adjust_commission') return await adjustCommission(input, admin.id, res);
     if (input.action === 'review_payout') return await reviewPayout(input, admin.id, res);
+    if (input.action === 'review_profile_change') return await reviewProfileChange(input, admin.id, res);
     throw new AdminError('不支持的操作');
   } catch (error) {
     const { statusCode, body } = jsonError(error);
@@ -57,14 +60,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 }
 
-async function listAgentData(res: ApiResponse) {
+async function listAgentData(res: ApiResponse, adminRole: string) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
-  const [applicationsRaw, agentsRaw, rulesRaw, payoutsRaw, ledgerRaw] = await Promise.all([
+  const [applicationsRaw, agentsRaw, rulesRaw, payoutsRaw, ledgerRaw, profileChangesRaw, attributionsRaw, auditRaw] = await Promise.all([
     supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_applications?select=*,users(name,display_phone)&order=created_at.desc&limit=200', { method: 'GET' }),
     supabaseRequest(supabaseUrl, serviceRoleKey, '/agents?select=*,users(name,display_phone)&order=created_at.desc&limit=500', { method: 'GET' }),
     supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_commission_rules?select=*&order=effective_from.desc&limit=100', { method: 'GET' }),
-    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_payouts?select=*,agents(agent_no,referral_code,users(name,display_phone))&order=created_at.desc&limit=200', { method: 'GET' }),
-    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_commission_ledger?select=agent_id,amount,status,entry_type', { method: 'GET' }),
+    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_payouts?select=*,agents(agent_no,referral_code,full_name,users(name,display_phone))&order=created_at.desc&limit=200', { method: 'GET' }),
+    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_commission_ledger?select=*&order=created_at.desc&limit=500', { method: 'GET' }),
+    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_profile_change_requests?select=*&order=created_at.desc&limit=200', { method: 'GET' }),
+    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_order_attributions?select=*,orders(order_no)&order=created_at.desc&limit=500', { method: 'GET' }),
+    supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_audit_logs?select=*,admin_users(display_name,username)&order=created_at.desc&limit=300', { method: 'GET' }),
   ]);
   const applications = (Array.isArray(applicationsRaw) ? applicationsRaw as any[] : []).map(row => ({ ...mapApplication(row as AgentApplicationRow), userName: row.users?.name || row.full_name, displayPhone: row.users?.display_phone || row.whatsapp_phone }));
   const ledger = Array.isArray(ledgerRaw) ? ledgerRaw as any[] : [];
@@ -81,13 +87,24 @@ async function listAgentData(res: ApiResponse) {
     balances.set(row.agent_id, current);
   }
   const agents = (Array.isArray(agentsRaw) ? agentsRaw as any[] : []).map(row => ({
-    id: row.id, agentNo: row.agent_no, userId: row.user_id, name: row.users?.name || '', displayPhone: row.users?.display_phone || '', referralCode: row.referral_code,
+    id: row.id, agentNo: row.agent_no, userId: row.user_id, name: row.full_name || row.users?.name || '', displayPhone: row.whatsapp_phone || row.users?.display_phone || '', referralCode: row.referral_code,
+    region: row.region || '', promotionChannel: row.promotion_channel || '',
     status: row.status, commissionRate: row.commission_rate == null ? null : Number(row.commission_rate), source: row.source, activatedAt: row.activated_at,
     balance: Object.fromEntries(Object.entries(balances.get(row.id) || { pending: 0, available: 0, paid: 0 }).map(([key, value]) => [key, roundMoney(value)])),
   }));
   const rules = (Array.isArray(rulesRaw) ? rulesRaw as any[] : []).map(row => ({ id: row.id, agentId: row.agent_id || null, name: row.name, commissionRate: Number(row.commission_rate), minOrderAmount: Number(row.min_order_amount), active: row.active, effectiveFrom: row.effective_from, effectiveUntil: row.effective_until || null }));
-  const payouts = (Array.isArray(payoutsRaw) ? payoutsRaw as any[] : []).map(row => ({ id: row.id, payoutNo: row.payout_no, agentId: row.agent_id, agentNo: row.agents?.agent_no || '', name: row.agents?.users?.name || '', displayPhone: row.agents?.users?.display_phone || '', amount: Number(row.amount), paymentMethod: row.payment_method, paymentDetails: row.payment_details || {}, status: row.status, requestedAt: row.requested_at, reviewNote: row.review_note || '' }));
-  return res.status(200).json({ success: true, applications, agents, rules, payouts });
+  const agentById = new Map(agents.map(row => [row.id, row]));
+  const payouts = (Array.isArray(payoutsRaw) ? payoutsRaw as any[] : []).map(row => ({ id: row.id, payoutNo: row.payout_no, agentId: row.agent_id, agentNo: row.agents?.agent_no || '', name: row.agents?.full_name || row.agents?.users?.name || '', displayPhone: row.agents?.users?.display_phone || '', amount: Number(row.amount), paymentMethod: row.payment_method, paymentDetails: adminRole === 'admin' ? row.payment_details || {} : maskPaymentDetails(row.payment_details), status: row.status, requestedAt: row.requested_at, reviewNote: row.review_note || '' }));
+  const profileChanges = (Array.isArray(profileChangesRaw) ? profileChangesRaw as any[] : []).map(row => ({ id: row.id, requestNo: row.request_no, agentId: row.agent_id, agentNo: agentById.get(row.agent_id)?.agentNo || '', currentName: agentById.get(row.agent_id)?.name || '', beforeData: row.before_data || {}, requestedData: row.requested_data || {}, reason: row.reason || '', status: row.status, reviewNote: row.review_note || '', createdAt: row.created_at, reviewedAt: row.reviewed_at || null }));
+  const orders = (Array.isArray(attributionsRaw) ? attributionsRaw as any[] : []).map(row => ({ id: row.id, orderId: row.order_id, orderNo: row.orders?.order_no || '', agentId: row.agent_id, agentNo: agentById.get(row.agent_id)?.agentNo || '', name: agentById.get(row.agent_id)?.name || '', eligibleAmount: Number(row.eligible_amount), commissionRate: Number(row.commission_rate), commissionAmount: Number(row.commission_amount), status: row.status, createdAt: row.created_at }));
+  const ledgerEntries = ledger.map(row => ({ id: row.id, agentId: row.agent_id, agentNo: agentById.get(row.agent_id)?.agentNo || '', name: agentById.get(row.agent_id)?.name || '', orderId: row.order_id || null, entryType: row.entry_type, amount: Number(row.amount), status: row.status, note: row.note || '', createdAt: row.created_at }));
+  const auditLogs = (Array.isArray(auditRaw) ? auditRaw as any[] : []).map(row => ({ id: row.id, action: row.action, entityType: row.entity_type, entityId: row.entity_id || null, operator: row.admin_users?.display_name || row.admin_users?.username || '系统', note: row.note || '', beforeData: row.before_data, afterData: row.after_data, createdAt: row.created_at }));
+  return res.status(200).json({ success: true, applications, agents, rules, payouts, profileChanges, orders, ledgerEntries, auditLogs });
+}
+
+function maskPaymentDetails(details: any) {
+  const account = String(details?.accountNumber || '');
+  return { bankName: details?.bankName || '', accountName: details?.accountName || '', accountNumber: account ? `****${account.slice(-4)}` : '' };
 }
 
 async function approveApplication(input: AdminAgentInput, adminId: string, res: ApiResponse) {
@@ -123,12 +140,14 @@ async function reviewApplication(input: AdminAgentInput, adminId: string, res: A
 async function bulkCreateAgents(input: AdminAgentInput, adminId: string, res: ApiResponse) {
   const entries = Array.isArray(input.entries) ? input.entries.slice(0, 200) : [];
   if (!entries.length) throw new AdminError('请提供至少一个手机号');
-  const results: { phone: string; success: boolean; agentNo?: string; referralCode?: string; error?: string }[] = [];
+  const results: { phone: string; name?: string; success: boolean; agentNo?: string; referralCode?: string; error?: string }[] = [];
   for (const entry of entries) {
     const rawPhone = String(entry.phone || '');
     try {
+      const realName = cleanAgentText(entry.name, 60);
+      if (!realName) throw new Error('姓名为必填项，不能使用随机名称');
       const phone = normalizeMalaysiaPhone(rawPhone);
-      const user = await findOrCreateAdminUser(phone.phone, phone.displayPhone, cleanAgentText(entry.name, 60) || `代理${phone.phone.slice(-4)}`, adminId);
+      const user = await findOrCreateAdminUser(phone.phone, phone.displayPhone, realName, adminId);
       const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
       const existing = await supabaseRequest(supabaseUrl, serviceRoleKey, `/agents?user_id=eq.${encodeURIComponent(user.id)}&select=id,agent_no,referral_code&limit=1`, { method: 'GET' });
       if (Array.isArray(existing) && existing.length) throw new Error('该手机号已经是代理');
@@ -136,10 +155,10 @@ async function bulkCreateAgents(input: AdminAgentInput, adminId: string, res: Ap
       const referralCode = generateReferralCode();
       const commissionRate = entry.commissionRate === undefined || entry.commissionRate === '' ? null : Number(entry.commissionRate);
       if (commissionRate !== null && (!Number.isFinite(commissionRate) || commissionRate < 0 || commissionRate > 100)) throw new Error('佣金比例不正确');
-      const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/agents', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ agent_no: agentNo, user_id: user.id, referral_code: referralCode, commission_rate: commissionRate, source: entries.length > 1 ? 'admin_import' : 'admin_manual', created_by_admin_id: adminId }) });
+      const created = await supabaseRequest(supabaseUrl, serviceRoleKey, '/agents', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ agent_no: agentNo, user_id: user.id, referral_code: referralCode, full_name: realName, whatsapp_phone: phone.displayPhone, commission_rate: commissionRate, source: entries.length > 1 ? 'admin_import' : 'admin_manual', created_by_admin_id: adminId }) });
       const agent = Array.isArray(created) ? created[0] as { id?: string } : null;
       await audit(adminId, 'manual_create_agent', 'agent', agent?.id || null, null, { phone: phone.displayPhone, agentNo, referralCode });
-      results.push({ phone: phone.displayPhone, success: true, agentNo, referralCode });
+      results.push({ phone: phone.displayPhone, name: realName, success: true, agentNo, referralCode });
     } catch (error) {
       results.push({ phone: rawPhone, success: false, error: error instanceof Error ? error.message : '创建失败' });
     }
@@ -225,11 +244,36 @@ async function reviewPayout(input: AdminAgentInput, adminId: string, res: ApiRes
   return res.status(200).json({ success: true });
 }
 
+async function reviewProfileChange(input: AdminAgentInput, adminId: string, res: ApiResponse) {
+  const id = cleanAgentText(input.profileChangeId, 80);
+  const status = String(input.profileChangeStatus || '');
+  const note = cleanAgentText(input.note, 500);
+  if (!id || !['approved', 'rejected', 'changes_requested'].includes(status)) throw new AdminError('资料审核状态不正确');
+  if (status !== 'approved' && !note) throw new AdminError('请填写审核说明');
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const rows = await supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_profile_change_requests?id=eq.${encodeURIComponent(id)}&select=*&limit=1`, { method: 'GET' });
+  const request = Array.isArray(rows) ? rows[0] as any : null;
+  if (!request || !['pending', 'changes_requested'].includes(request.status)) throw new AdminError('该资料申请当前不能审核', 409);
+  const now = new Date().toISOString();
+  if (status === 'approved') {
+    const next = request.requested_data || {};
+    if (!next.fullName || !next.region || !next.promotionChannel || !next.whatsappPhone) throw new AdminError('待审核资料不完整');
+    await Promise.all([
+      supabaseRequest(supabaseUrl, serviceRoleKey, `/agents?id=eq.${encodeURIComponent(request.agent_id)}`, { method: 'PATCH', body: JSON.stringify({ full_name: cleanAgentText(next.fullName, 60), region: cleanAgentText(next.region, 80), promotion_channel: cleanAgentText(next.promotionChannel, 120), whatsapp_phone: cleanAgentText(next.whatsappPhone, 30) }) }),
+      supabaseRequest(supabaseUrl, serviceRoleKey, `/users?id=eq.${encodeURIComponent(request.user_id)}`, { method: 'PATCH', body: JSON.stringify({ name: cleanAgentText(next.fullName, 60) }) }),
+    ]);
+  }
+  await supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_profile_change_requests?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status, reviewed_by: adminId, reviewed_at: now, review_note: note || null }) });
+  await audit(adminId, 'review_agent_profile_change', 'agent_profile_change', id, request.before_data, { status, requestedData: request.requested_data, note });
+  return res.status(200).json({ success: true, status });
+}
+
 async function findOrCreateAdminUser(phone: string, displayPhone: string, name: string, adminId: string) {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
   const rows = await supabaseRequest(supabaseUrl, serviceRoleKey, `/users?phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`, { method: 'GET' });
   const existing = Array.isArray(rows) ? rows[0] as UserRecord | undefined : undefined;
   if (existing) {
+    if (existing.name !== name) await supabaseRequest(supabaseUrl, serviceRoleKey, `/users?id=eq.${encodeURIComponent(existing.id)}`, { method: 'PATCH', body: JSON.stringify({ name }) });
     await ensureWallet(existing.id);
     return existing;
   }

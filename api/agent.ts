@@ -14,7 +14,7 @@ import {
 } from './_agent-utils';
 
 type AgentInput = {
-  action?: 'apply' | 'activate' | 'bind_referral' | 'request_payout';
+  action?: 'apply' | 'activate' | 'bind_referral' | 'request_payout' | 'request_profile_change';
   fullName?: string;
   region?: string;
   promotionChannel?: string;
@@ -27,6 +27,7 @@ type AgentInput = {
   paymentMethod?: string;
   paymentDetails?: Record<string, string>;
   language?: string;
+  reason?: string;
 };
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -43,11 +44,48 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (input.action === 'activate') return await activateAgent(user.id, input, res);
     if (input.action === 'bind_referral') return await bindReferral(user.id, input, res);
     if (input.action === 'request_payout') return await requestPayout(user.id, input, res);
+    if (input.action === 'request_profile_change') return await requestProfileChange(user.id, input, res);
     return res.status(400).json({ success: false, error: '操作不正确' });
   } catch (error) {
     const message = normalizeAgentError(error);
     return res.status(message.statusCode).json({ success: false, error: message.message });
   }
+}
+
+async function requestProfileChange(userId: string, input: AgentInput, res: ApiResponse) {
+  const requestedData = {
+    fullName: cleanAgentText(input.fullName, 60),
+    region: cleanAgentText(input.region, 80),
+    promotionChannel: cleanAgentText(input.promotionChannel, 120),
+    whatsappPhone: normalizeMalaysiaPhone(String(input.whatsappPhone || '')).displayPhone,
+  };
+  if (!requestedData.fullName || !requestedData.region || !requestedData.promotionChannel || !requestedData.whatsappPhone) {
+    throw new Error('请完整填写姓名、地区、推广渠道和 WhatsApp 手机号');
+  }
+  const reason = cleanAgentText(input.reason, 300);
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
+  const rows = await supabaseRequest(supabaseUrl, serviceRoleKey, `/agents?user_id=eq.${encodeURIComponent(userId)}&select=id,full_name,region,promotion_channel,whatsapp_phone,status&limit=1`, { method: 'GET' });
+  const agent = Array.isArray(rows) ? rows[0] as any : null;
+  if (!agent || agent.status === 'terminated') throw new Error('当前代理状态不能修改资料');
+  const openRows = await supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_profile_change_requests?agent_id=eq.${encodeURIComponent(agent.id)}&status=in.(pending,changes_requested)&select=id,request_no,status&limit=1`, { method: 'GET' });
+  const open = Array.isArray(openRows) ? openRows[0] as any : null;
+  const beforeData = { fullName: agent.full_name || '', region: agent.region || '', promotionChannel: agent.promotion_channel || '', whatsappPhone: agent.whatsapp_phone || '' };
+  if (JSON.stringify(beforeData) === JSON.stringify(requestedData)) throw new Error('资料没有发生变化');
+  if (open?.status === 'pending') return res.status(409).json({ success: false, error: '已有待审核的资料修改申请' });
+  if (open?.status === 'changes_requested') {
+    await supabaseRequest(supabaseUrl, serviceRoleKey, `/agent_profile_change_requests?id=eq.${encodeURIComponent(open.id)}&user_id=eq.${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ before_data: beforeData, requested_data: requestedData, reason: reason || null, status: 'pending', reviewed_by: null, reviewed_at: null, review_note: null }),
+    });
+    return res.status(200).json({ success: true, requestNo: open.request_no });
+  }
+  const requestNo = `APC${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+  await supabaseRequest(supabaseUrl, serviceRoleKey, '/agent_profile_change_requests', {
+    method: 'POST',
+    body: JSON.stringify({ request_no: requestNo, agent_id: agent.id, user_id: userId, before_data: beforeData, requested_data: requestedData, reason: reason || null }),
+  });
+  await sendTelegramNotification(`🪪 代理资料修改待审核\n申请编号：${requestNo}\n姓名：${requestedData.fullName}\n手机号：${requestedData.whatsappPhone}`).catch(() => undefined);
+  return res.status(201).json({ success: true, requestNo });
 }
 
 async function applyForAgent(user: { id: string; display_phone: string; name?: string | null }, input: AgentInput, res: ApiResponse) {

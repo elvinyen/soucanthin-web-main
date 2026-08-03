@@ -77,7 +77,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   const [error, setError] = useState('');
   const [profileForm, setProfileForm] = useState({ name: '', email: '', birthday: '' });
   const [profilePhone, setProfilePhone] = useState('');
-  const [phoneReqid, setPhoneReqid] = useState('');
+  const [phoneChallengeId, setPhoneChallengeId] = useState('');
   const [phoneCode, setPhoneCode] = useState('');
   const [phoneCooldown, setPhoneCooldown] = useState(0);
   const [walletBalance, setWalletBalance] = useState(session.wallet?.balance || 0);
@@ -113,7 +113,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
       birthday: session.user?.birthday || '',
     });
     setProfilePhone(session.user?.displayPhone || '');
-    setPhoneReqid('');
+    setPhoneChallengeId('');
     setPhoneCode('');
     setPhoneCooldown(0);
     setWalletBalance(session.wallet?.balance || 0);
@@ -153,8 +153,13 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
   };
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    onLogout();
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!res.ok) throw new Error(t('common.logout'));
+      onLogout();
+    } catch {
+      showError(t('userCenter.logoutFailed', { defaultValue: '退出登录失败，请检查网络后重试' }));
+    }
   };
 
   const showError = (message: string) => {
@@ -178,7 +183,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
           ...profileForm,
           ...(phoneChanged ? {
             phone: profilePhone,
-            phoneReqid,
+            phoneChallengeId,
             phoneCode,
           } : {}),
         }),
@@ -187,7 +192,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
       if (!res.ok || !payload.success) throw new Error(payload.error || t('userCenter.profileSaveFailed'));
       await onRefresh();
       if (payload.user?.displayPhone) setProfilePhone(payload.user.displayPhone);
-      setPhoneReqid('');
+      setPhoneChallengeId('');
       setPhoneCode('');
       showNotice(t('userCenter.profileSaved'));
     } catch (err) {
@@ -203,11 +208,11 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
       const res = await fetch('/api/auth/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: profilePhone }),
+        body: JSON.stringify({ phone: profilePhone, purpose: 'update_phone' }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.success) throw new Error(payload.error || t('auth.sendFailed'));
-      setPhoneReqid(payload.reqid);
+      setPhoneChallengeId(payload.challengeId);
       setProfilePhone(payload.displayPhone);
       setPhoneCode('');
       setPhoneCooldown(60);
@@ -398,7 +403,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                   <ArrowLeft size={20} />
                 </button>
               )}
-              <h1 className="serif flex-1 text-2xl font-bold text-[#2D2D2D]">{isPageRoot ? t('user.mine') : t(activeMeta.labelKey)}</h1>
+              <h1 className={`flex-1 font-bold text-[#2D2D2D] ${activeTab === 'agent' ? 'text-xl tracking-tight' : 'serif text-2xl'}`}>{isPageRoot ? t('user.mine') : t(activeMeta.labelKey)}</h1>
               <LanguageSelector />
             </header>
             <div className="h-16" aria-hidden="true" />
@@ -433,7 +438,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
             />
           ) : (
           <>
-          <div className={`mb-6 p-5 ${glassPanel}`}>
+          {activeTab !== 'agent' && <div className={`mb-6 p-5 ${glassPanel}`}>
             <div className="flex items-center gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-100 bg-[#F7F7F7] text-[#C8A97E] shadow-sm">
                 <ActiveIcon size={22} />
@@ -443,7 +448,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                 <p className="mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-stone-400">{getDisplayName(session.user.name, t)}</p>
               </div>
             </div>
-          </div>
+          </div>}
 
           {activeTab === 'profile' && (
             <section className="space-y-4">
@@ -462,7 +467,7 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
                     type="tel"
                     onChange={(value) => {
                       setProfilePhone(value);
-                      setPhoneReqid('');
+                      setPhoneChallengeId('');
                       setPhoneCode('');
                     }}
                   />
@@ -784,7 +789,9 @@ const UserCenter: React.FC<UserCenterProps> = ({ isOpen, session, initialTab, on
           )}
 
           {activeTab === 'agent' && session.user && (
-            <AgentPortal user={session.user} />
+            <div className="pt-5 sm:pt-6">
+              <AgentPortal user={session.user} />
+            </div>
           )}
 
           {activeTab === 'settings' && (

@@ -1,13 +1,13 @@
 import type { ApiRequest, ApiResponse } from './_order-utils';
 import { getSupabaseConfig, supabaseRequest } from './_order-utils';
-import { getAuthenticatedUser, mapUser, normalizeMalaysiaPhone, parseJsonBody, verifyMoceanOtp } from './_auth-utils';
+import { getAuthenticatedUser, mapUser, normalizeMalaysiaPhone, parseJsonBody, verifyOtpChallenge } from './_auth-utils';
 
 type ProfileBody = {
   name?: string | null;
   email?: string | null;
   birthday?: string | null;
   phone?: string | null;
-  phoneReqid?: string | null;
+  phoneChallengeId?: string | null;
   phoneCode?: string | null;
 };
 
@@ -26,7 +26,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const email = String(body.email || '').trim();
     const birthday = String(body.birthday || '').trim();
     const phoneInput = String(body.phone || '').trim();
-    const phoneReqid = String(body.phoneReqid || '').trim();
+    const phoneChallengeId = String(body.phoneChallengeId || '').trim();
     const phoneCode = String(body.phoneCode || '').trim();
 
     if (name.length > 60) throw new Error('用户名称不能超过 60 个字符');
@@ -43,8 +43,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (phoneInput) {
       const { phone, displayPhone } = normalizeMalaysiaPhone(phoneInput);
       if (phone !== user.phone) {
-        if (!phoneReqid) throw new Error('请先获取新手机号码验证码');
-        if (!/^\d{4,6}$/.test(phoneCode)) throw new Error('请输入正确的验证码');
+        if (!phoneChallengeId) throw new Error('请先获取新手机号码验证码');
+        if (!/^\d{6}$/.test(phoneCode)) throw new Error('请输入 6 位验证码');
 
         const existing = await supabaseRequest(
           supabaseUrl,
@@ -55,7 +55,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const existingUser = Array.isArray(existing) ? existing[0] as { id?: string } | undefined : undefined;
         if (existingUser?.id && existingUser.id !== user.id) throw new Error('该手机号码已被其他用户使用');
 
-        await verifyMoceanOtp(phoneReqid, phoneCode);
+        await verifyOtpChallenge({
+          challengeId: phoneChallengeId,
+          code: phoneCode,
+          purpose: 'update_phone',
+          userId: user.id,
+          expectedPhone: phone,
+        });
         updatePayload.phone = phone;
         updatePayload.display_phone = displayPhone;
       }

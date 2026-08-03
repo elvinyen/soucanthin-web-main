@@ -39,7 +39,7 @@ import KitchenBoard from './admin/KitchenBoard';
 import { DeliveryBoard } from './admin/DeliveryBoard';
 import { FinanceCenter } from './admin/FinanceCenter';
 import { CouponCenter } from './admin/CouponCenter';
-import { AgentCenter } from './admin/AgentCenter';
+import { AgentCenter, type AgentAdminPage } from './admin/AgentCenter';
 import { UserManagement } from './admin/UserManagement';
 import { AdminLocaleTranslator } from './admin/AdminLocaleTranslator';
 import { DeliverySettingsPanel } from './admin/DeliverySettingsPanel';
@@ -400,7 +400,7 @@ const sections = [
   { id: 'delivery' as const, label: '配送工作台', icon: Bike },
   { id: 'finance' as const, label: '财务中心', icon: CircleDollarSign },
   { id: 'coupons' as const, label: '营销中心', icon: Megaphone },
-  { id: 'agents' as const, label: '代理中心', icon: Handshake },
+  { id: 'agents' as const, label: '代理管理', icon: Handshake },
   { id: 'storeBranches' as const, label: '门店管理', icon: Store },
   { id: 'wallet' as const, label: '充值审核', icon: WalletCards },
   { id: 'accounts' as const, label: '账号管理', icon: ShieldCheck },
@@ -409,6 +409,33 @@ const sections = [
 ];
 
 const ADMIN_LANGUAGE_STORAGE_KEY = 'soucanthin.admin.language';
+
+const agentAdminNavItems: { id: AgentAdminPage; label: string }[] = [
+  { id: 'overview', label: '代理总览' },
+  { id: 'applications', label: '代理申请审核' },
+  { id: 'profile-changes', label: '代理资料审核' },
+  { id: 'agents', label: '代理列表' },
+  { id: 'orders', label: '推广订单' },
+  { id: 'commissions', label: '佣金管理' },
+  { id: 'payouts', label: '提现审核' },
+  { id: 'audit-logs', label: '代理操作日志' },
+];
+
+const agentAdminEnglishLabels: Record<AgentAdminPage, string> = {
+  overview: 'Overview',
+  applications: 'Application Review',
+  'profile-changes': 'Profile Review',
+  agents: 'Agent List',
+  orders: 'Referral Orders',
+  commissions: 'Commission Management',
+  payouts: 'Payout Review',
+  'audit-logs': 'Agent Audit Logs',
+};
+
+function agentPageLabel(page: AgentAdminPage, language: AdminLanguage) {
+  if (language === 'en') return agentAdminEnglishLabels[page];
+  return agentAdminNavItems.find(item => item.id === page)?.label || '代理总览';
+}
 
 const adminCopy = {
   zh: {
@@ -438,7 +465,7 @@ function initialAdminSection(): AdminSection {
   if (pathname === '/admin/delivery') return 'delivery';
   if (pathname === '/admin/finance') return 'finance';
   if (pathname === '/admin/coupons') return 'coupons';
-  if (pathname === '/admin/agents') return 'agents';
+  if (pathname === '/admin/agents' || pathname.startsWith('/admin/agents/')) return 'agents';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   if (pathname === '/admin/orders') return 'orders';
   if (pathname === '/admin/users') return 'users';
@@ -515,6 +542,8 @@ const AdminDashboard: React.FC = () => {
   const [isCategoryEditorOpen, setIsCategoryEditorOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [menuNavOpen, setMenuNavOpen] = useState(false);
+  const [agentNavOpen, setAgentNavOpen] = useState(() => window.location.pathname.startsWith('/admin/agents'));
+  const [agentPage, setAgentPage] = useState<AgentAdminPage>(() => agentPageForPath(window.location.pathname));
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [orderStatus, setOrderStatus] = useState<OrderStatus | 'all'>('all');
@@ -750,13 +779,15 @@ const AdminDashboard: React.FC = () => {
         : 'orders';
       if (section !== nextSection) setSection(nextSection);
       const nextPath = pathForSection(nextSection);
-      if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
+      if (nextSection === 'agents') setAgentPage(agentPageForPath(pathname));
+      if (pathname !== nextPath && !(nextSection === 'agents' && pathname.startsWith('/admin/agents'))) window.history.replaceState({}, '', nextPath);
       return;
     }
     const pathSection = sectionForPath(pathname);
     if (pathSection && pathSection !== section) {
       setSection(pathSection);
     }
+    if (pathSection === 'agents') setAgentPage(agentPageForPath(pathname));
   }, [authenticated, auth?.admin, section]);
 
   const refreshAuth = async () => {
@@ -837,6 +868,15 @@ const AdminDashboard: React.FC = () => {
     const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
     const nextPath = pathForSection(nextSection);
     if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
+  };
+
+  const selectAgentPage = (nextPage: AgentAdminPage) => {
+    if (!availableSections.some(item => item.id === 'agents')) return;
+    setSection('agents');
+    setAgentPage(nextPage);
+    setAgentNavOpen(true);
+    const nextPath = pathForAgentPage(nextPage);
+    if (window.location.pathname !== nextPath) window.history.replaceState({}, '', nextPath);
   };
 
   const changeAdminLanguage = (nextLanguage: AdminLanguage) => {
@@ -1759,7 +1799,17 @@ const AdminDashboard: React.FC = () => {
               )}
             </div>
           )}
-          {availableSections.filter(item => item.id !== 'menuItems' && item.id !== 'menuCategories').map(item => {
+          {availableSections.some(item => item.id === 'agents') && (
+            <div className="space-y-1">
+              <button type="button" onClick={() => sidebarCollapsed ? selectAgentPage('overview') : setAgentNavOpen(open => !open)} title={sidebarCollapsed ? '代理管理' : undefined} className={`relative flex h-12 w-full items-center rounded-[14px] px-3 text-sm font-bold transition ${sidebarCollapsed ? 'justify-center' : 'gap-3'} ${section === 'agents' ? 'bg-[#F1F5F9] text-[#111827]' : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-slate-950'}`}>
+                {section === 'agents' && !sidebarCollapsed && <span className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}
+                <Handshake size={18} />
+                {!sidebarCollapsed && <><span className="flex-1 text-left">代理管理</span><ChevronDown size={15} className={`text-slate-400 transition-transform ${agentNavOpen ? 'rotate-180' : ''}`} /></>}
+              </button>
+              {!sidebarCollapsed && agentNavOpen && <div className="ml-4 grid gap-1 border-l border-slate-200 pl-3">{agentAdminNavItems.map(item => <button key={item.id} type="button" onClick={() => selectAgentPage(item.id)} className={`relative flex min-h-9 items-center rounded-xl px-3 py-2 text-left text-[12px] font-bold transition ${section === 'agents' && agentPage === item.id ? 'bg-[#F1F5F9] text-[#111827]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950'}`}>{section === 'agents' && agentPage === item.id && <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-[#C7A46A]" />}{item.label}</button>)}</div>}
+            </div>
+          )}
+          {availableSections.filter(item => item.id !== 'menuItems' && item.id !== 'menuCategories' && item.id !== 'agents').map(item => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
@@ -1798,7 +1848,10 @@ const AdminDashboard: React.FC = () => {
         <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-[22px] font-bold leading-8 text-slate-950">{sectionLabel(section, adminLanguage)}</h2>
+              <h2 className="flex min-w-0 items-center gap-2 text-[22px] font-bold leading-8 text-slate-950">
+                <span className="truncate">{section === 'agents' ? (adminLanguage === 'en' ? 'Agent Management' : '代理管理') : sectionLabel(section, adminLanguage)}</span>
+                {section === 'agents' && <><span className="shrink-0 text-slate-300">/</span><span className="truncate text-[#9B7B50]">{agentPageLabel(agentPage, adminLanguage)}</span></>}
+              </h2>
               {section !== 'kitchen' && section !== 'delivery' && section !== 'wallet' && (
                 <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
                   {lastUpdatedAt[section] ? `${copy.updatedAt} ${lastUpdatedAt[section]?.toLocaleTimeString(adminLanguage === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : copy.autoSync}
@@ -2067,7 +2120,7 @@ const AdminDashboard: React.FC = () => {
           )}
 
           {section === 'agents' && auth.admin && (
-            <AgentCenter adminRole={auth.admin.role} onNotice={showNotice} />
+            <AgentCenter adminRole={auth.admin.role} onNotice={showNotice} page={agentPage} />
           )}
 
           {section === 'storeBranches' && (
@@ -4319,8 +4372,18 @@ function sectionForPath(pathname: string): AdminSection | null {
   if (pathname === '/admin/users') return 'users';
   if (pathname === '/admin/store-branches') return 'storeBranches';
   if (pathname === '/admin/system-settings') return 'systemSettings';
+  if (pathname === '/admin/agents' || pathname.startsWith('/admin/agents/')) return 'agents';
   const section = pathname.slice('/admin/'.length) as AdminSection;
   return sections.some(item => item.id === section) ? section : null;
+}
+
+function pathForAgentPage(page: AgentAdminPage) {
+  return page === 'overview' ? '/admin/agents' : `/admin/agents/${page}`;
+}
+
+function agentPageForPath(pathname: string): AgentAdminPage {
+  const segment = pathname.replace(/\/+$/, '').slice('/admin/agents/'.length);
+  return agentAdminNavItems.some(item => item.id === segment) ? segment as AgentAdminPage : 'overview';
 }
 
 function labelAdminRole(role: AdminRole) {

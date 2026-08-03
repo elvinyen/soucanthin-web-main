@@ -4,35 +4,27 @@ import {
   findOrCreateUser,
   getWallet,
   mapUser,
-  normalizeMalaysiaPhone,
   parseJsonBody,
   setSessionCookie,
-  verifyMoceanOtp,
+  verifyOtpChallenge,
 } from './_auth-utils';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  res.setHeader?.('Cache-Control', 'no-store');
   if (req.method && req.method !== 'POST') {
     res.setHeader?.('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   try {
-    const body = parseJsonBody<{ phone?: string; reqid?: string; code?: string }>(req.body);
-    const { phone, displayPhone } = normalizeMalaysiaPhone(body.phone || '');
+    const body = parseJsonBody<{ challengeId?: string; code?: string }>(req.body);
     const code = String(body.code || '').trim();
-    const reqid = String(body.reqid || '').trim();
+    const challengeId = String(body.challengeId || '').trim();
 
-    if (!reqid) return res.status(400).json({ success: false, error: '缺少验证码请求编号' });
-    if (!/^\d{4,6}$/.test(code)) return res.status(400).json({ success: false, error: '请输入正确的验证码' });
+    if (!challengeId) return res.status(400).json({ success: false, error: '缺少验证码请求编号' });
+    if (!/^\d{6}$/.test(code)) return res.status(400).json({ success: false, error: '请输入 6 位验证码' });
 
-    try {
-      await verifyMoceanOtp(reqid, code);
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        error: error instanceof Error ? error.message : '验证码不正确或已过期',
-      });
-    }
+    const { phone, displayPhone } = await verifyOtpChallenge({ challengeId, code, purpose: 'login' });
 
     const user = await findOrCreateUser(phone, displayPhone);
     const token = await createSession(user.id);

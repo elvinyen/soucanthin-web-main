@@ -160,6 +160,9 @@ http://localhost:3000/admin
 ## 代理系统
 
 - 登录会员可在“个人中心 → 代理合作”提交申请，并通过 WhatsApp 携带申请编号联系客服。
+- 代理申请、审核状态、资料补充和一次性代理码激活统一保留在会员个人中心；激活后通过“进入代理中心”打开 `/agent`。
+- `/agent` 是独立代理工作台，继续使用会员手机号 OTP 和同域 HttpOnly Session，提供推广工具、推广订单、佣金明细、提现记录与账户信息。
+- 未登录用户在 `/agent` 使用申请时绑定的手机号登录；非代理或未激活用户会被引导返回个人中心，暂停或终止的代理只能查看历史数据。
 - 后台 `/admin/agents` 支持申请审核、一次性代理码、手机号批量注册、代理启停、佣金规则、佣金调账和提现审核。
 - 一次性代理码绑定申请人与手机号，72 小时有效，连续错误 5 次后锁定，数据库只保存 HMAC 哈希。
 - 推广链接使用 `?ref=推广码`；推荐关系在被推荐用户登录后绑定，禁止自我推荐且不会覆盖已有归属。
@@ -169,10 +172,12 @@ http://localhost:3000/admin
 ## 会员与钱包
 
 - Header 右侧用户图标会打开手机号 OTP 登录；OTP 通过 Mocean Verify API 发送和校验。
+- OTP 请求会在服务端保存为一次性 challenge，并绑定手机号、用途和修改手机号时的当前账号；同一手机号和客户端均有小时/每日限流。
+- 会员 Session 使用 HttpOnly Cookie，有效期 30 天，每个账号最多保留 5 个活动 Session。
 - 登录成功后可进入个人中心查看资料、钱包、订单、地址、优惠券和设置。
 - 下单仍支持免登录；如果用户已登录，订单会自动关联到个人中心。
 - 钱包充值支持 Stripe 自动入账，以及 TNG 截图提交后由 Telegram 审核链接通过或拒绝。
-- 执行 `supabase-schema.sql` 后会新增 `users`、`user_sessions`、`wallets`、`wallet_transactions`、`user_addresses`、`coupons`、`user_coupons` 以及钱包充值入账函数。
+- 新数据库执行最新版 `supabase-schema.sql`；已有数据库必须先执行 `supabase-auth-security.sql`，再部署新版 API。脚本会新增 `otp_challenges`，并限制会员、Session、钱包和地址表只能由服务端 `service_role` 访问。
 
 本地测试 Stripe webhook：
 
