@@ -3,7 +3,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>深夜食汤 | Soup Can Thin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -48,6 +48,40 @@
         }
         .animate-whatsapp-pulse {
             animation: whatsappPulse 3.8s ease-out infinite;
+        }
+
+        [data-admin-shell],
+        [data-admin-shell] main,
+        [data-admin-shell] section,
+        [data-admin-shell] article,
+        [data-admin-shell] form {
+            min-width: 0;
+        }
+        [data-admin-shell] button,
+        [data-admin-shell] a,
+        [data-admin-shell] input,
+        [data-admin-shell] select,
+        [data-admin-shell] textarea {
+            touch-action: manipulation;
+        }
+        [data-admin-shell] [class*="overflow-auto"],
+        [data-admin-shell] [class*="overflow-x-auto"],
+        [data-admin-shell] [class*="overflow-y-auto"] {
+            -webkit-overflow-scrolling: touch;
+        }
+
+        @media (max-width: 767px) {
+            [data-admin-shell] input:not([type="checkbox"]):not([type="radio"]),
+            [data-admin-shell] select,
+            [data-admin-shell] textarea {
+                font-size: 16px;
+            }
+            [data-admin-shell] table {
+                max-width: none;
+            }
+            [data-admin-shell] [class*="fixed"][class*="inset-0"] {
+                padding-bottom: env(safe-area-inset-bottom);
+            }
         }
     </style>
 </head>

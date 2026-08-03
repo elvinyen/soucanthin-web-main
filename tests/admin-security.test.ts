@@ -63,3 +63,15 @@ test('schema provides append-only unified admin audit logs', () => {
   assert.match(schema, /branch_scope text not null default 'assigned'/);
   assert.match(schema, /branch_scope_snapshot/);
 });
+
+test('kitchen availability is branch-scoped and separate from permanent menu activation', () => {
+  const schemaPath = fileURLToPath(new URL('../supabase-schema.sql', import.meta.url));
+  const schema = readFileSync(schemaPath, 'utf8');
+  const kitchenMenuPath = fileURLToPath(new URL('../api/kitchen-menu.ts', import.meta.url));
+  const kitchenMenu = readFileSync(kitchenMenuPath, 'utf8');
+  assert.match(schema, /accepting_orders boolean not null default true/);
+  assert.match(schema, /create table if not exists public\.branch_menu_availability/);
+  assert.match(schema, /primary key \(branch_id, menu_item_id\)/);
+  assert.match(kitchenMenu, /requireAdminRole\(req, \['admin', 'kitchen'\]\)/);
+  assert.doesNotMatch(kitchenMenu, /active:\s*input\.soldOut/);
+});

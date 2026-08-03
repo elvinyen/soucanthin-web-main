@@ -17,6 +17,7 @@ import {
   LogOut,
   MoreHorizontal,
   Megaphone,
+  Menu as MenuIcon,
   Handshake,
   Minus,
   Plus,
@@ -541,6 +542,7 @@ const AdminDashboard: React.FC = () => {
   const [editingCategory, setEditingCategory] = useState<MenuCategoryRow | null>(null);
   const [isCategoryEditorOpen, setIsCategoryEditorOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [menuNavOpen, setMenuNavOpen] = useState(false);
   const [agentNavOpen, setAgentNavOpen] = useState(() => window.location.pathname.startsWith('/admin/agents'));
   const [agentPage, setAgentPage] = useState<AgentAdminPage>(() => agentPageForPath(window.location.pathname));
@@ -610,6 +612,20 @@ const AdminDashboard: React.FC = () => {
     window.localStorage.setItem(ADMIN_LANGUAGE_STORAGE_KEY, adminLanguage);
     document.documentElement.lang = adminLanguage === 'en' ? 'en' : 'zh-CN';
   }, [adminLanguage]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -865,6 +881,7 @@ const AdminDashboard: React.FC = () => {
   const selectSection = (nextSection: AdminSection) => {
     if (!availableSections.some(item => item.id === nextSection)) return;
     setSection(nextSection);
+    setMobileNavOpen(false);
     const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
     const nextPath = pathForSection(nextSection);
     if (pathname !== nextPath) window.history.replaceState({}, '', nextPath);
@@ -875,6 +892,7 @@ const AdminDashboard: React.FC = () => {
     setSection('agents');
     setAgentPage(nextPage);
     setAgentNavOpen(true);
+    setMobileNavOpen(false);
     const nextPath = pathForAgentPage(nextPage);
     if (window.location.pathname !== nextPath) window.history.replaceState({}, '', nextPath);
   };
@@ -1844,11 +1862,59 @@ const AdminDashboard: React.FC = () => {
         </div>
       </aside>
 
-      <main className={`${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
-        <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label={adminLanguage === 'en' ? 'Admin navigation' : '后台导航'}>
+          <button type="button" className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)} aria-label="关闭导航" />
+          <aside className="absolute inset-y-0 left-0 flex w-[min(88vw,360px)] flex-col overflow-hidden bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-950 text-white"><ShieldCheck size={20} /></span>
+                <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">SCT ADMIN</p><p className="truncate text-base font-black text-slate-950">{auth.admin?.displayName || auth.admin?.username}</p></div>
+              </div>
+              <button type="button" onClick={() => setMobileNavOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600" aria-label="关闭导航"><X size={18} /></button>
+            </div>
+            <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+              <div className="grid gap-1.5">
+                {availableSections.map(item => {
+                  const Icon = item.icon;
+                  const active = section === item.id;
+                  if (item.id === 'menuItems') return (
+                    <div key={item.id}>
+                      <button type="button" onClick={() => setMenuNavOpen(open => !open)} aria-expanded={menuNavOpen} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 text-left text-sm font-bold transition ${section === 'menuItems' || section === 'menuCategories' ? 'bg-slate-100 text-slate-950' : 'text-slate-600 hover:bg-slate-50'}`}><Soup size={18} /><span className="min-w-0 flex-1 truncate">{copy.menuManagement}</span><ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${menuNavOpen ? 'rotate-180' : ''}`} /></button>
+                      {menuNavOpen && <div className="ml-6 mt-1 grid gap-1 border-l border-slate-200 pl-3">
+                        <button type="button" onClick={() => selectSection('menuItems')} className={`flex min-h-10 items-center rounded-xl px-3 text-left text-sm font-bold ${section === 'menuItems' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950'}`}>{copy.itemManagement}</button>
+                        <button type="button" onClick={() => selectSection('menuCategories')} className={`flex min-h-10 items-center rounded-xl px-3 text-left text-sm font-bold ${section === 'menuCategories' ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950'}`}>{copy.categoryManagement}</button>
+                      </div>}
+                    </div>
+                  );
+                  if (item.id === 'menuCategories') return null;
+                  if (item.id === 'agents') return (
+                    <div key={item.id}>
+                      <button type="button" onClick={() => setAgentNavOpen(open => !open)} aria-expanded={agentNavOpen} className={`flex min-h-12 w-full items-center gap-3 rounded-2xl px-4 text-left text-sm font-bold transition ${section === 'agents' ? 'bg-slate-100 text-slate-950' : 'text-slate-600 hover:bg-slate-50'}`}><Handshake size={18} /><span className="min-w-0 flex-1 truncate">{adminLanguage === 'en' ? 'Agent Management' : '代理管理'}</span><ChevronDown size={16} className={`shrink-0 text-slate-400 transition-transform ${agentNavOpen ? 'rotate-180' : ''}`} /></button>
+                      {agentNavOpen && <div className="ml-6 mt-1 grid gap-1 border-l border-slate-200 pl-3">
+                        {agentAdminNavItems.map(agentItem => <button key={agentItem.id} type="button" onClick={() => selectAgentPage(agentItem.id)} className={`flex min-h-10 items-center rounded-xl px-3 text-left text-sm font-bold ${section === 'agents' && agentPage === agentItem.id ? 'bg-slate-950 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-950'}`}>{agentPageLabel(agentItem.id, adminLanguage)}</button>)}
+                      </div>}
+                    </div>
+                  );
+                  return <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`flex min-h-12 items-center gap-3 rounded-2xl px-4 text-left text-sm font-bold ${active ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-50'}`}><Icon size={18} /><span className="min-w-0 flex-1 truncate">{sectionLabel(item.id, adminLanguage)}</span>{active && <Check size={16} />}</button>;
+                })}
+              </div>
+            </nav>
+            <div className="grid grid-cols-2 gap-2 border-t border-slate-200 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+              <button type="button" onClick={() => { setMobileNavOpen(false); setPasswordDialogOpen(true); }} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-slate-100 text-sm font-bold text-slate-700"><KeyRound size={17} />修改密码</button>
+              <button type="button" onClick={logout} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-red-50 text-sm font-bold text-red-600"><LogOut size={17} />{copy.logout}</button>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <main className={`min-w-0 ${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
+        <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 className="flex min-w-0 items-center gap-2 text-[22px] font-bold leading-8 text-slate-950">
+            <div className="flex min-w-0 items-center gap-3">
+              <button type="button" onClick={() => { if (section === 'menuItems' || section === 'menuCategories') setMenuNavOpen(true); if (section === 'agents') setAgentNavOpen(true); setMobileNavOpen(true); }} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label={adminLanguage === 'en' ? 'Open navigation' : '打开后台导航'}><MenuIcon size={20} /></button>
+              <div className="min-w-0 flex-1">
+              <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold leading-7 text-slate-950 sm:text-[22px] sm:leading-8">
                 <span className="truncate">{section === 'agents' ? (adminLanguage === 'en' ? 'Agent Management' : '代理管理') : sectionLabel(section, adminLanguage)}</span>
                 {section === 'agents' && <><span className="shrink-0 text-slate-300">/</span><span className="truncate text-[#9B7B50]">{agentPageLabel(agentPage, adminLanguage)}</span></>}
               </h2>
@@ -1857,6 +1923,7 @@ const AdminDashboard: React.FC = () => {
                   {lastUpdatedAt[section] ? `${copy.updatedAt} ${lastUpdatedAt[section]?.toLocaleTimeString(adminLanguage === 'en' ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : copy.autoSync}
                 </p>
               )}
+              </div>
             </div>
             {(section === 'menuItems' || section === 'menuCategories') && (
               <div className="hidden items-center gap-2 lg:flex">
@@ -1866,14 +1933,6 @@ const AdminDashboard: React.FC = () => {
                 <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-[#64748B]">下架 {menuStats.inactive}</span>
               </div>
             )}
-            <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-              <button type="button" onClick={() => setPasswordDialogOpen(true)} className="flex shrink-0 items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-slate-600"><KeyRound size={14} />修改密码</button>
-              {availableSections.map(item => (
-                <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold ${section === item.id ? 'bg-slate-950 text-white' : 'bg-white text-slate-500'}`}>
-                  {sectionLabel(item.id, adminLanguage)}
-                </button>
-              ))}
-            </div>
           </div>
         </header>
 
@@ -1907,7 +1966,7 @@ const AdminDashboard: React.FC = () => {
                       <option value="inactive">下架</option>
                     </select>
                     <div className="flex justify-end lg:col-span-3 xl:col-span-1">
-                      <button type="button" onClick={startCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition sm:min-w-[128px]">
+                      <button type="button" onClick={startCreate} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition sm:w-auto sm:min-w-[128px]">
                         <Plus size={17} />
                         新增菜品
                       </button>
@@ -1982,7 +2041,7 @@ const AdminDashboard: React.FC = () => {
                       </table>
                     </div>
                   </div>
-                  <div className="grid gap-2 bg-[#F8FAFC] p-2 md:hidden">
+                  <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto bg-[#F8FAFC] p-2 md:hidden">
                     {filteredMenuItems.map(item => (
                       <React.Fragment key={item.id}>
                         <MenuItemMobileCard
@@ -3638,7 +3697,20 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdm
             <option value="inactive">已停用</option>
           </select>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:hidden">
+          <div className="grid gap-3">
+            {filteredBranches.map(branch => (
+              <article key={branch.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-black text-slate-950">{branch.name}</h3><p className="mt-1 text-xs text-slate-400">{branch.id} · 排序 {branch.sort_order}</p></div><button type="button" disabled={!canAdminister} onClick={() => canAdminister && onToggleActive(branch)} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold disabled:cursor-default ${branch.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{branch.active ? '营业中' : '已停用'}</button></div>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{branch.address}</p>
+                <p className="mt-2 text-xs text-slate-400">坐标：{formatCoordinates(branch)}</p>
+                <button type="button" onClick={() => onEdit(branch)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-bold text-white"><Pencil size={15} />查看与编辑</button>
+              </article>
+            ))}
+            {filteredBranches.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的门店</div>}
+          </div>
+        </div>
+        <div className="hidden min-h-0 flex-1 overflow-auto md:block">
           <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[20%]" />
@@ -3761,7 +3833,19 @@ function AccountManager({ accounts, branches, form, setForm, error, editorOpen, 
             <option value="all">全部状态</option><option value="active">启用</option><option value="inactive">停用</option>
           </select>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:hidden">
+          <div className="grid gap-3">
+            {filteredAccounts.map(account => (
+              <article key={account.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-black text-slate-950">{account.username}</h3><p className="mt-1 truncate text-xs text-slate-500">{account.displayName || '未设置显示名称'}</p></div><button type="button" onClick={() => onToggleActive(account)} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${account.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{account.active ? '启用' : '停用'}</button></div>
+                <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-slate-200"><div className="bg-slate-50 p-3"><p className="text-[10px] text-slate-400">角色</p><div className="mt-1"><Badge tone={toneForAdminRole(account.role)}>{labelAdminRole(account.role)}</Badge></div></div><div className="bg-slate-50 p-3"><p className="text-[10px] text-slate-400">所属门店</p><p className="mt-1 truncate text-xs font-bold text-slate-700">{account.branchScope === 'all' ? '所有门店' : account.assignedBranchId ? branches.find(branch => branch.id === account.assignedBranchId)?.name || account.assignedBranchId : '未分配'}</p></div></div>
+                <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => onEdit(account)} className="flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-100 text-sm font-bold text-slate-700"><Pencil size={15} />编辑</button><button type="button" onClick={() => onDelete(account)} className="flex h-10 items-center justify-center gap-2 rounded-xl bg-red-50 text-sm font-bold text-red-600"><Trash2 size={15} />删除</button></div>
+              </article>
+            ))}
+            {filteredAccounts.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的后台账号</div>}
+          </div>
+        </div>
+        <div className="hidden min-h-0 flex-1 overflow-auto md:block">
           <table className="w-full min-w-[920px] table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[25%]" /><col className="w-[15%]" /><col className="w-[18%]" /><col className="w-[12%]" /><col className="w-[16%]" /><col className="w-[14%]" />
@@ -3868,7 +3952,16 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
             <option value="inactive">停用</option>
           </select>
         </div>
-        <div className="max-h-[calc(100vh-230px)] overflow-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {filteredCategories.map(category => (
+            <article key={category.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-black text-slate-950">{category.label}</h3><p className="mt-1 text-xs text-slate-500">{category.item_count} 个菜品 · 排序 {category.sort_order}</p></div><button type="button" onClick={() => onToggleActive(category)} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${category.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{category.active ? '启用' : '停用'}</button></div>
+              <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => onEdit(category)} className="flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-100 text-sm font-bold text-slate-700"><Pencil size={15} />编辑</button><button type="button" onClick={() => onDelete(category)} className="flex h-10 items-center justify-center gap-2 rounded-xl bg-red-50 text-sm font-bold text-red-600"><Trash2 size={15} />删除</button></div>
+            </article>
+          ))}
+          {filteredCategories.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的分类</div>}
+        </div>
+        <div className="hidden max-h-[calc(100vh-230px)] overflow-auto md:block">
           <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[30%]" />

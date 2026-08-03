@@ -71,6 +71,8 @@
   "businessHours": {
     "closedTitle": "目前是非营业时间",
     "closedDescription": "Cheras 门店目前休息中，点餐功能暂时关闭。欢迎在营业时间内回来下单。",
+    "pausedTitle": "门店暂时停止接单",
+    "pausedDescription": "厨房目前暂时无法接受新订单，请稍后再试。",
     "hours": "每日 5:00 PM–4:00 AM",
     "acknowledge": "我知道了"
   },

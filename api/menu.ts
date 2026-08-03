@@ -2,6 +2,8 @@ import type { MenuItem, MenuOptionGroup } from '../data/menu';
 import type { MenuTranslation } from '../data/menuTranslations';
 import type { LanguageCode } from '../types/i18n';
 import { ApiRequest, ApiResponse, getSupabaseConfig, supabaseRequest } from './_order-utils';
+import { WEBSITE_STORE_BRANCH } from '../businessHours';
+import { getBranchSoldOutItemIds, getStoreOperationalStatus } from './_store-operations';
 
 type MenuItemRow = {
   id: number;
@@ -41,8 +43,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const lang = normalizeLanguage(readLangFromUrl(req.url));
+    const branchId = readBranchFromUrl(req.url);
     const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
-    const [rows, categories, translations] = await Promise.all([
+    const [rows, categories, translations, branchSoldOutIds, store] = await Promise.all([
       supabaseRequest(
         supabaseUrl,
         serviceRoleKey,
@@ -61,6 +64,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         '/menu_item_translations?select=item_id,lang,name,description,detail,category_label,tags,option_groups',
         { method: 'GET' },
       ),
+      getBranchSoldOutItemIds(branchId),
+      getStoreOperationalStatus(branchId),
     ]);
     const categoryLabels = new Map<number, string>(
       (Array.isArray(categories) ? categories : []).map(category => [
@@ -72,7 +77,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     return res.status(200).json({
       success: true,
-      items: (Array.isArray(rows) ? rows : []).map(row => mapMenuItem(row, lang, categoryLabels, translationsByItem)),
+      store,
+      items: (Array.isArray(rows) ? rows : []).map(row => mapMenuItem(row, lang, categoryLabels, translationsByItem, branchSoldOutIds)),
     });
   } catch (error) {
     return res.status(500).json({
@@ -87,6 +93,7 @@ function mapMenuItem(
   lang: LanguageCode,
   categoryLabels: Map<number, string>,
   translationsByItem: Map<number, Map<LanguageCode, MenuTranslation>>,
+  branchSoldOutIds: Set<number>,
 ): MenuItem {
   const translation = getTranslation(translationsByItem.get(Number(row.id)), lang);
   const category = categoryLabels.get(Number(row.category_id)) || '';
@@ -109,8 +116,13 @@ function mapMenuItem(
     ),
     recommended: Boolean(row.recommended),
     displayLabel,
-    soldOut: Boolean(row.sold_out),
+    soldOut: Boolean(row.sold_out) || branchSoldOutIds.has(Number(row.id)),
   };
+}
+
+function readBranchFromUrl(url?: string) {
+  if (!url) return WEBSITE_STORE_BRANCH.id;
+  return new URL(url, 'http://localhost').searchParams.get('branchId') || WEBSITE_STORE_BRANCH.id;
 }
 
 function readLangFromUrl(url?: string) {

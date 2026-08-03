@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bell, CheckCircle2, Clock3, CookingPot, KeyRound, LogOut, MoreHorizontal, PackageCheck, RefreshCw, Settings, Utensils, WifiOff } from 'lucide-react';
+import { AlertTriangle, Bell, Check, CheckCircle2, ClipboardList, Clock3, CookingPot, KeyRound, LogOut, MoreHorizontal, PackageCheck, PauseCircle, RefreshCw, Search, Settings, Utensils, WifiOff, X } from 'lucide-react';
 
 type OrderStatus =
   | 'pending_confirm'
@@ -14,6 +14,8 @@ type OrderStatus =
   | 'cancelled';
 
 type KitchenTab = 'waiting' | 'cooking' | 'completed';
+type KitchenView = 'orders' | 'menu';
+type MenuFilter = 'all' | 'available' | 'sold_out';
 type KitchenTone = 'orange' | 'blue' | 'green' | 'red' | 'muted';
 type KitchenIcon = React.ComponentType<{ size?: number; className?: string }>;
 
@@ -36,6 +38,25 @@ type KitchenOrderRow = {
   }[];
 };
 
+type KitchenMenuItem = {
+  id: number;
+  code?: string | null;
+  name: string;
+  image?: string | null;
+  soldOut: boolean;
+  globallySoldOut?: boolean;
+};
+
+type KitchenStoreStatus = {
+  branchId: string;
+  branchName: string;
+  configured: boolean;
+  scheduledOpen: boolean;
+  acceptingOrders: boolean;
+  open: boolean;
+  pauseReason?: string | null;
+};
+
 type KitchenBoardProps = {
   api: <T,>(path: string, init?: RequestInit) => Promise<T>;
   onLogout: () => void;
@@ -46,6 +67,7 @@ type KitchenBoardProps = {
 
 export default function KitchenBoard({ api, onLogout, onChangePassword, userName, standalone = false }: KitchenBoardProps) {
   const [orders, setOrders] = useState<KitchenOrderRow[]>([]);
+  const [view, setView] = useState<KitchenView>('orders');
   const [activeTab, setActiveTab] = useState<KitchenTab>('waiting');
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [networkError, setNetworkError] = useState(false);
@@ -53,6 +75,15 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(() => new Set());
   const [actionOrderId, setActionOrderId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [menuItems, setMenuItems] = useState<KitchenMenuItem[]>([]);
+  const [store, setStore] = useState<KitchenStoreStatus | null>(null);
+  const [menuFilter, setMenuFilter] = useState<MenuFilter>('all');
+  const [menuSearch, setMenuSearch] = useState('');
+  const [menuLoading, setMenuLoading] = useState(false);
+  const [menuError, setMenuError] = useState('');
+  const [updatingItemId, setUpdatingItemId] = useState<number | null>(null);
+  const [storeUpdating, setStoreUpdating] = useState(false);
+  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const knownWaitingIdsRef = useRef<Set<string> | null>(null);
   const lastSuccessRef = useRef(Date.now());
@@ -66,6 +97,12 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
     .sort((a, b) => new Date(b.kitchenCompletedAt || b.createdAt).getTime() - new Date(a.kitchenCompletedAt || a.createdAt).getTime())
     .slice(0, 10);
   const timeoutCount = waitingOrders.filter(isKitchenOrderTimeout).length + cookingOrders.filter(isKitchenOrderTimeout).length;
+  const filteredMenuItems = menuItems.filter(item => {
+    const statusMatches = menuFilter === 'all'
+      || (menuFilter === 'sold_out' ? item.soldOut : !item.soldOut);
+    const query = menuSearch.trim().toLowerCase();
+    return statusMatches && (!query || `${item.code || ''} ${item.name}`.toLowerCase().includes(query));
+  });
 
   const loadKitchenOrders = async () => {
     try {
@@ -108,6 +145,29 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
     }, 3000);
     return () => window.clearInterval(interval);
   }, [soundEnabled]);
+
+  const loadKitchenMenu = async (quiet = false) => {
+    if (!quiet) setMenuLoading(true);
+    try {
+      const payload = await api<{ success: true; items: KitchenMenuItem[]; store: KitchenStoreStatus }>('/api/kitchen/menu');
+      setMenuItems(payload.items || []);
+      setStore(payload.store || null);
+      setMenuError('');
+    } catch (err) {
+      setMenuError(err instanceof Error ? err.message : 'Menu sync failed');
+    } finally {
+      if (!quiet) setMenuLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view !== 'menu') return;
+    void loadKitchenMenu();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadKitchenMenu(true);
+    }, 15_000);
+    return () => window.clearInterval(interval);
+  }, [view]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -189,6 +249,39 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
     }
   };
 
+  const setItemSoldOut = async (item: KitchenMenuItem, soldOut: boolean) => {
+    setMenuError('');
+    setUpdatingItemId(item.id);
+    try {
+      await api('/api/kitchen/menu', {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'set-item-availability', itemId: item.id, soldOut }),
+      });
+      setMenuItems(current => current.map(row => row.id === item.id ? { ...row, soldOut } : row));
+    } catch (err) {
+      setMenuError(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setUpdatingItemId(current => current === item.id ? null : current);
+    }
+  };
+
+  const setStoreAccepting = async (acceptingOrders: boolean, reason?: string) => {
+    setMenuError('');
+    setStoreUpdating(true);
+    try {
+      const payload = await api<{ success: true; store: KitchenStoreStatus }>('/api/kitchen/menu', {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'set-store-accepting', acceptingOrders, reason }),
+      });
+      setStore(payload.store);
+      setPauseDialogOpen(false);
+    } catch (err) {
+      setMenuError(err instanceof Error ? err.message : 'Store update failed');
+    } finally {
+      setStoreUpdating(false);
+    }
+  };
+
   const mobileTabs = [
     { id: 'waiting' as const, title: 'Wait', count: waitingOrders.length, orders: waitingOrders, tone: 'orange' as const, icon: Clock3 },
     { id: 'cooking' as const, title: 'Cook', count: cookingOrders.length, orders: cookingOrders, tone: 'blue' as const, icon: CookingPot },
@@ -258,7 +351,7 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
                 </button>}
                 <button
                   type="button"
-                  onClick={() => void loadKitchenOrders()}
+                  onClick={() => view === 'menu' ? void loadKitchenMenu() : void loadKitchenOrders()}
                   className="flex h-14 w-full items-center justify-between rounded-2xl px-3 text-left transition hover:bg-slate-50"
                 >
                   <span className="flex items-center gap-2 text-sm font-black text-slate-800">
@@ -267,6 +360,42 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
                   </span>
                   <span className="text-slate-400">3s</span>
                 </button>
+                {store && (
+                  <div className="mt-2 border-t border-slate-100 pt-2">
+                    <div className="flex items-center justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Store orders</p>
+                        <p className="mt-1 truncate text-sm font-black text-slate-700">{store.branchName}</p>
+                      </div>
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${store.acceptingOrders ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    </div>
+                    {store.acceptingOrders ? (
+                      <button
+                        type="button"
+                        disabled={storeUpdating}
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          setPauseDialogOpen(true);
+                        }}
+                        className="flex h-12 w-full items-center gap-2 rounded-2xl px-3 text-left text-sm font-black text-slate-500 transition hover:bg-amber-50 hover:text-amber-800 disabled:opacity-50"
+                      >
+                        <PauseCircle size={18} /> Pause new orders
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={storeUpdating}
+                        onClick={() => {
+                          setSettingsOpen(false);
+                          void setStoreAccepting(true);
+                        }}
+                        className="flex h-12 w-full items-center gap-2 rounded-2xl px-3 text-left text-sm font-black text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={18} /> Resume new orders
+                      </button>
+                    )}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={onLogout}
@@ -282,6 +411,26 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
           </div>
         </div>
 
+        <div className="mt-4 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setView('orders')}
+            aria-pressed={view === 'orders'}
+            className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition ${view === 'orders' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+          >
+            <ClipboardList size={20} /> Orders
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('menu')}
+            aria-pressed={view === 'menu'}
+            className={`flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black transition ${view === 'menu' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+          >
+            <Utensils size={20} /> Menu
+          </button>
+        </div>
+
+        {view === 'orders' && <>
         <div className="mt-4 hidden grid-cols-4 gap-2 md:grid">
           <KitchenStat label="Waiting" value={waitingOrders.length} tone="orange" icon={Clock3} />
           <KitchenStat label="Cooking" value={cookingOrders.length} tone="blue" icon={CookingPot} />
@@ -311,9 +460,64 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
             </React.Fragment>
           ))}
         </div>
+        </>}
+
+        {view === 'menu' && (
+          <div className="mt-3 grid gap-3">
+            <div className={`flex min-h-11 items-center justify-between gap-3 rounded-2xl border px-3.5 ${store?.acceptingOrders === false ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${store?.open ? 'bg-emerald-500' : store?.acceptingOrders === false ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                <p className="truncate text-sm font-black text-slate-700">{store?.branchName || 'Store'}</p>
+                <span className={`shrink-0 text-xs font-black uppercase ${store?.open ? 'text-emerald-700' : store?.acceptingOrders === false ? 'text-amber-800' : 'text-slate-500'}`}>
+                  {store?.open ? 'Taking orders' : store?.acceptingOrders === false ? 'Orders paused' : 'Outside hours'}
+                </span>
+              </div>
+              {store?.acceptingOrders === false && (
+                  <button
+                    type="button"
+                    disabled={storeUpdating}
+                    onClick={() => void setStoreAccepting(true)}
+                    className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-slate-950 px-3 text-xs font-black text-white disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={16} /> Resume
+                  </button>
+              )}
+            </div>
+
+            {menuError && <div className="flex min-h-11 items-center rounded-2xl bg-red-100 px-4 text-sm font-black text-red-700">{menuError}</div>}
+
+            <label className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 shadow-sm">
+              <Search size={19} className="shrink-0 text-slate-400" />
+              <input
+                value={menuSearch}
+                onChange={event => setMenuSearch(event.target.value)}
+                placeholder="Search food or code"
+                className="min-w-0 flex-1 bg-transparent text-sm font-bold text-slate-900 outline-none placeholder:text-slate-400"
+              />
+            </label>
+            <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1">
+              {([
+                ['all', 'All', menuItems.length],
+                ['available', 'Available', menuItems.filter(item => !item.soldOut).length],
+                ['sold_out', 'Sold Out', menuItems.filter(item => item.soldOut).length],
+              ] as const).map(([id, label, count]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setMenuFilter(id)}
+                  aria-pressed={menuFilter === id}
+                  className={`h-10 rounded-xl px-1.5 text-xs font-black transition ${menuFilter === id ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+                >
+                  {label} {count}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="p-4 sm:p-5">
+        {view === 'orders' && <>
         <div className="md:hidden">
           <KitchenColumn
             title={activeMobileTab.title}
@@ -345,7 +549,131 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
             </React.Fragment>
           ))}
         </div>
+        </>}
+
+        {view === 'menu' && (
+          <KitchenMenuGrid
+            items={filteredMenuItems}
+            loading={menuLoading}
+            updatingItemId={updatingItemId}
+            onSetSoldOut={setItemSoldOut}
+          />
+        )}
       </main>
+
+      {pauseDialogOpen && (
+        <PauseOrdersDialog
+          busy={storeUpdating}
+          onCancel={() => setPauseDialogOpen(false)}
+          onConfirm={reason => void setStoreAccepting(false, reason)}
+        />
+      )}
+    </div>
+  );
+}
+
+function KitchenMenuGrid({ items, loading, updatingItemId, onSetSoldOut }: {
+  items: KitchenMenuItem[];
+  loading: boolean;
+  updatingItemId: number | null;
+  onSetSoldOut: (item: KitchenMenuItem, soldOut: boolean) => void;
+}) {
+  if (loading && items.length === 0) {
+    return <div className="grid min-h-72 place-items-center"><RefreshCw className="animate-spin text-slate-400" size={28} /></div>;
+  }
+  if (items.length === 0) {
+    return <div className="rounded-[22px] border border-dashed border-slate-300 bg-white px-4 py-14 text-center text-base font-black text-slate-400">No matching food</div>;
+  }
+  return (
+    <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      {items.map(item => {
+        const busy = updatingItemId === item.id;
+        return (
+          <article key={item.id} className={`flex min-h-[88px] items-center gap-3 rounded-[18px] border bg-white p-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)] ${item.soldOut ? 'border-red-100' : 'border-slate-200'}`}>
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[14px] bg-slate-100">
+              {item.image
+                ? <img src={item.image} alt="" className="h-full w-full object-cover" />
+                : <div className="grid h-full w-full place-items-center text-slate-300"><Utensils size={24} /></div>}
+            </div>
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="min-w-0 flex-1">
+                {item.code && <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-500">{item.code}</span>}
+                <h2 className="mt-1 line-clamp-2 text-sm font-black leading-[18px] text-slate-950">{item.name}</h2>
+              </div>
+              <button
+                type="button"
+                disabled={busy || Boolean(item.globallySoldOut)}
+                onClick={() => onSetSoldOut(item, !item.soldOut)}
+                aria-label={`${item.name}: ${item.soldOut ? 'Sold out' : 'Available'}`}
+                className={`flex h-11 w-[106px] shrink-0 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-black transition disabled:opacity-60 ${item.soldOut ? 'bg-red-600 text-white shadow-sm' : 'border border-emerald-200 bg-emerald-50 text-emerald-700'}`}
+              >
+                {busy ? <RefreshCw size={15} className="animate-spin" /> : item.soldOut ? <X size={16} /> : <Check size={16} />}
+                {busy ? 'Updating' : item.globallySoldOut ? 'Disabled' : item.soldOut ? 'Sold out' : 'Available'}
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+function PauseOrdersDialog({ busy, onCancel, onConfirm }: {
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('Kitchen busy');
+  const reasons = [
+    ['Kitchen busy', 'Kitchen busy'],
+    ['Food finished', 'Food finished'],
+    ['Closing early', 'Closing early'],
+    ['Emergency', 'Emergency'],
+  ];
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [busy, onCancel]);
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section role="dialog" aria-modal="true" aria-labelledby="pause-orders-title" className="w-full max-w-sm rounded-[28px] bg-white p-5 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700"><PauseCircle size={25} /></div>
+          <div>
+            <h2 id="pause-orders-title" className="text-xl font-black text-slate-950">Pause new orders?</h2>
+            <p className="mt-1 text-sm font-bold leading-5 text-slate-500">Customers will not be able to place new orders.</p>
+          </div>
+        </div>
+        <p className="mt-5 text-xs font-black uppercase tracking-wide text-slate-400">Choose reason</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {reasons.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setReason(value)}
+              aria-pressed={reason === value}
+              className={`min-h-12 rounded-2xl border px-3 text-sm font-black ${reason === value ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-600'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button type="button" disabled={busy} onClick={onCancel} className="h-12 rounded-2xl border border-slate-200 text-sm font-black text-slate-600 disabled:opacity-50">Cancel</button>
+          <button type="button" disabled={busy} onClick={() => onConfirm(reason)} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-amber-500 text-sm font-black text-white disabled:opacity-50">
+            {busy && <RefreshCw size={17} className="animate-spin" />} Pause Orders
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

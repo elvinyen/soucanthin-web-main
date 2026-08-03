@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 
 const apiRoutes: Record<string, string> = {
   '/api/menu': '/api/menu.ts',
+  '/api/store-status': '/api/store-status.ts',
   '/api/address-autocomplete': '/api/address-autocomplete.ts',
   '/api/address-place-details': '/api/address-place-details.ts',
   '/api/delivery-quote': '/api/delivery-quote.ts',
@@ -45,6 +46,7 @@ const apiRoutes: Record<string, string> = {
   '/api/admin/orders': '/api/admin-orders.ts',
   '/api/admin/store-branches': '/api/admin-store-branches.ts',
   '/api/kitchen/orders': '/api/kitchen-orders.ts',
+  '/api/kitchen/menu': '/api/kitchen-menu.ts',
   '/api/kitchen/status': '/api/kitchen-orders.ts',
   '/api/kitchen/orders/start': '/api/kitchen-orders.ts',
   '/api/kitchen/orders/complete': '/api/kitchen-orders.ts',

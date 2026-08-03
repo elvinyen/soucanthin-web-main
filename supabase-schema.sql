@@ -244,10 +244,19 @@ create table if not exists public.store_branches (
   latitude numeric(10, 7),
   longitude numeric(10, 7),
   active boolean not null default true,
+  accepting_orders boolean not null default true,
+  pause_reason text,
+  paused_at timestamptz,
+  paused_by uuid references public.admin_users(id) on delete set null,
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.store_branches add column if not exists accepting_orders boolean not null default true;
+alter table public.store_branches add column if not exists pause_reason text;
+alter table public.store_branches add column if not exists paused_at timestamptz;
+alter table public.store_branches add column if not exists paused_by uuid references public.admin_users(id) on delete set null;
 
 insert into public.store_branches (id, name, address, latitude, longitude, active, sort_order)
 values
@@ -262,6 +271,18 @@ on conflict (id) do update set
 
 create index if not exists store_branches_active_sort_idx on public.store_branches (active, sort_order, id);
 alter table public.store_branches enable row level security;
+
+create table if not exists public.branch_menu_availability (
+  branch_id text not null references public.store_branches(id) on delete cascade,
+  menu_item_id integer not null references public.menu_items(id) on delete cascade,
+  sold_out boolean not null default false,
+  updated_by uuid references public.admin_users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  primary key (branch_id, menu_item_id)
+);
+create index if not exists branch_menu_availability_branch_sold_out_idx
+  on public.branch_menu_availability (branch_id, sold_out, menu_item_id);
+alter table public.branch_menu_availability enable row level security;
 
 alter table public.admin_users add column if not exists assigned_branch_id text references public.store_branches(id) on delete set null;
 alter table public.admin_users add column if not exists branch_scope text not null default 'assigned';

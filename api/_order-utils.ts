@@ -211,11 +211,23 @@ export async function validateMenuItemsAvailable(order: Order) {
   const itemIds = Array.from(new Set(rawItemIds));
 
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
-  const rows = await supabaseRequest(
-    supabaseUrl,
-    serviceRoleKey,
-    `/menu_items?id=in.(${itemIds.map(id => encodeURIComponent(String(id))).join(',')})&select=id,item_code,name,price,active,sold_out,option_groups`,
-    { method: 'GET' },
+  const branchId = order.assignedBranch?.id || order.deliveryQuote?.branchId || 'cheras';
+  const [rows, branchAvailabilityRows] = await Promise.all([
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/menu_items?id=in.(${itemIds.map(id => encodeURIComponent(String(id))).join(',')})&select=id,item_code,name,price,active,sold_out,option_groups`,
+      { method: 'GET' },
+    ),
+    supabaseRequest(
+      supabaseUrl,
+      serviceRoleKey,
+      `/branch_menu_availability?branch_id=eq.${encodeURIComponent(branchId)}&menu_item_id=in.(${itemIds.map(id => encodeURIComponent(String(id))).join(',')})&sold_out=eq.true&select=menu_item_id`,
+      { method: 'GET' },
+    ),
+  ]);
+  const branchSoldOutIds = new Set(
+    (Array.isArray(branchAvailabilityRows) ? branchAvailabilityRows : []).map(row => Number((row as { menu_item_id: number }).menu_item_id)),
   );
   const itemsById = new Map(
     (Array.isArray(rows) ? rows : []).map(row => {
@@ -239,10 +251,12 @@ export async function validateMenuItemsAvailable(order: Order) {
   );
   const unavailable = itemIds
     .map(id => itemsById.get(id))
-    .find(item => !item || item.active === false || item.sold_out === true);
+    .find(item => !item || item.active === false || item.sold_out === true || branchSoldOutIds.has(Number(item.id)));
 
   if (unavailable) {
-    return unavailable.sold_out ? `「${unavailable.name || '菜品'}」已售罄，请从购物车移除后再下单` : `「${unavailable.name || '菜品'}」已下架，请从购物车移除后再下单`;
+    return unavailable.sold_out || branchSoldOutIds.has(Number(unavailable.id))
+      ? `「${unavailable.name || '菜品'}」已售罄，请从购物车移除后再下单`
+      : `「${unavailable.name || '菜品'}」已下架，请从购物车移除后再下单`;
   }
 
   for (const orderItem of order.items) {

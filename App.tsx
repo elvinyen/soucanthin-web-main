@@ -59,6 +59,7 @@ const App: React.FC = () => {
   const [userCenterNotice, setUserCenterNotice] = useState('');
   const [appNotice, setAppNotice] = useState('');
   const [storeOpen, setStoreOpen] = useState(() => isStoreOpen());
+  const [storePaused, setStorePaused] = useState(false);
   const [isBusinessHoursModalOpen, setIsBusinessHoursModalOpen] = useState(() => !isStoreOpen());
   const closeBusinessHoursModal = useCallback(() => setIsBusinessHoursModalOpen(false), []);
 
@@ -159,8 +160,22 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const updateStoreStatus = () => {
-      const nextStoreOpen = isStoreOpen();
+    let mounted = true;
+    const updateStoreStatus = async () => {
+      let nextStoreOpen = isStoreOpen();
+      let nextStorePaused = false;
+      try {
+        const response = await fetch('/api/store-status', { cache: 'no-store' });
+        const payload = await response.json();
+        if (response.ok && payload.success && payload.store) {
+          nextStoreOpen = Boolean(payload.store.open);
+          nextStorePaused = Boolean(payload.store.scheduledOpen && !payload.store.acceptingOrders);
+        }
+      } catch {
+        // Keep the local business-hours fallback when status sync is unavailable.
+      }
+      if (!mounted) return;
+      setStorePaused(nextStorePaused);
       setStoreOpen(currentStoreOpen => {
         if (currentStoreOpen && !nextStoreOpen) setIsBusinessHoursModalOpen(true);
         return nextStoreOpen;
@@ -170,8 +185,12 @@ const App: React.FC = () => {
       }
     };
 
+    void updateStoreStatus();
     const timer = window.setInterval(updateStoreStatus, 30_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -471,6 +490,7 @@ const App: React.FC = () => {
       <BusinessHoursModal
         isOpen={isBusinessHoursModalOpen}
         onClose={closeBusinessHoursModal}
+        temporarilyPaused={storePaused}
       />
     </div>
   );

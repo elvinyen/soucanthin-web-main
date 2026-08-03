@@ -71,6 +71,8 @@
   "businessHours": {
     "closedTitle": "We are currently closed",
     "closedDescription": "Our Cheras branch is resting and online ordering is unavailable. Please return during opening hours.",
+    "pausedTitle": "Orders are temporarily paused",
+    "pausedDescription": "The kitchen is temporarily unable to accept new orders. Please try again a little later.",
     "hours": "Daily, 5:00 PM–4:00 AM",
     "acknowledge": "Got it"
   },

@@ -5,9 +5,10 @@ import { useTranslation } from 'react-i18next';
 interface BusinessHoursModalProps {
   isOpen: boolean;
   onClose: () => void;
+  temporarilyPaused?: boolean;
 }
 
-export function BusinessHoursModal({ isOpen, onClose }: BusinessHoursModalProps) {
+export function BusinessHoursModal({ isOpen, onClose, temporarilyPaused = false }: BusinessHoursModalProps) {
   const { t } = useTranslation();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -50,10 +51,10 @@ export function BusinessHoursModal({ isOpen, onClose }: BusinessHoursModalProps)
           <Clock3 size={30} />
         </div>
         <h2 id="business-hours-title" className="serif mt-5 text-2xl font-bold text-[#2D2D2D]">
-          {t('businessHours.closedTitle')}
+          {t(temporarilyPaused ? 'businessHours.pausedTitle' : 'businessHours.closedTitle')}
         </h2>
         <p id="business-hours-description" className="mt-3 text-sm leading-6 text-stone-500">
-          {t('businessHours.closedDescription')}
+          {t(temporarilyPaused ? 'businessHours.pausedDescription' : 'businessHours.closedDescription')}
         </p>
 
         <div className="mt-6 rounded-2xl bg-stone-50 p-4 text-left">

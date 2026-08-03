@@ -258,7 +258,28 @@ export function UserManagement({ api, adminRole, onNotice }: {
 
         {error && <div className="mx-4 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:hidden">
+          <div className="grid gap-3">
+            {users.map(user => (
+              <article key={user.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-slate-950 text-sm font-black text-white">{(user.name || '用').slice(0, 1).toUpperCase()}</span>
+                  <div className="min-w-0 flex-1"><p className="truncate font-black text-slate-950">{user.name || '未命名用户'}</p><p className="mt-1 text-xs text-slate-500">{user.displayPhone || user.phone}</p></div>
+                  <p className="shrink-0 text-base font-black text-emerald-700">RM {Number(user.walletBalance).toFixed(2)}</p>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-xl bg-slate-200 text-center">
+                  <div className="bg-slate-50 px-2 py-2.5"><p className="text-[10px] text-slate-400">来源</p><p className="mt-1 truncate text-xs font-bold text-slate-700">{user.source === 'admin_created' ? '后台创建' : '自主注册'}</p></div>
+                  <div className="bg-slate-50 px-2 py-2.5"><p className="text-[10px] text-slate-400">订单</p><p className="mt-1 text-xs font-black text-slate-700">{user.orderCount}</p></div>
+                  <div className="bg-slate-50 px-2 py-2.5"><p className="text-[10px] text-slate-400">累计消费</p><p className="mt-1 truncate text-xs font-black text-slate-700">RM {Number(user.totalSpent).toFixed(2)}</p></div>
+                </div>
+                <button type="button" onClick={() => void loadDetail(user.id)} className="mt-3 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-slate-950 text-sm font-bold text-white">查看详情<ChevronRight size={15} /></button>
+              </article>
+            ))}
+            {!users.length && !loading && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-16 text-center text-sm font-bold text-slate-400">没有找到用户</div>}
+          </div>
+        </div>
+
+        <div className="hidden min-h-0 flex-1 overflow-auto md:block">
           <table className="w-full min-w-[960px] border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 shadow-[inset_0_-1px_0_#e2e8f0]">
               <tr>

@@ -71,6 +71,8 @@
   "businessHours": {
     "closedTitle": "Hiện tại cửa hàng đã đóng cửa",
     "closedDescription": "Chi nhánh Cheras hiện đang nghỉ và tạm ngưng đặt món trực tuyến. Vui lòng quay lại trong giờ mở cửa.",
+    "pausedTitle": "Tạm ngưng nhận đơn",
+    "pausedDescription": "Hiện tại bếp chưa thể nhận đơn mới. Vui lòng thử lại sau.",
     "hours": "Hằng ngày, 17:00–04:00",
     "acknowledge": "Đã hiểu"
   },
