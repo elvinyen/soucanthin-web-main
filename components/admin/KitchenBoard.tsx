@@ -295,7 +295,7 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
   const activeMobileTab = mobileTabs.find(tab => tab.id === activeTab) || mobileTabs[0];
 
   return (
-    <div className={`${standalone ? 'min-h-screen' : 'min-h-[calc(100vh-105px)]'} bg-[#F7F8FA] text-slate-950`}>
+    <div className={`${standalone ? 'min-h-dvh' : 'min-h-0'} bg-[#F7F8FA] text-slate-950`}>
       <header className={`sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur-xl sm:px-5 ${standalone ? '' : 'rounded-t-[20px] border'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2.5">

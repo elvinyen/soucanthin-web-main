@@ -252,12 +252,18 @@ const App: React.FC = () => {
 
   // Prevent body scroll when cart drawer is open
   useEffect(() => {
-    if (isCartOpen || isAuthOpen || isUserCenterOpen || isBusinessHoursModalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
+    if (isAdminRoute || isAgentRoute) {
+      document.body.style.removeProperty('overflow');
+      return;
     }
-  }, [isCartOpen, isAuthOpen, isUserCenterOpen, isBusinessHoursModalOpen]);
+
+    const previousOverflow = document.body.style.overflow;
+    const shouldLockScroll = isCartOpen || isAuthOpen || isUserCenterOpen || isBusinessHoursModalOpen;
+    document.body.style.overflow = shouldLockScroll ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isAdminRoute, isAgentRoute, isCartOpen, isAuthOpen, isUserCenterOpen, isBusinessHoursModalOpen]);
 
   const handleUserClick = () => {
     if (session.authenticated) {

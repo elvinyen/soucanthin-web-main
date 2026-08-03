@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowDown,
@@ -515,6 +515,7 @@ const AdminDashboard: React.FC = () => {
   });
   const [notice, setNotice] = useState('');
   const noticeTimerRef = useRef<number | null>(null);
+  const contentScrollRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -600,6 +601,8 @@ const AdminDashboard: React.FC = () => {
     soldOut: menuItems.filter(item => getMenuSalesStatus(item) === 'sold_out').length,
     inactive: menuItems.filter(item => getMenuSalesStatus(item) === 'inactive').length,
   };
+  const isMenuSection = section === 'menuItems' || section === 'menuCategories';
+  const usesViewportLayout = isMenuSection || section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs';
   const markSectionUpdated = (target: AdminSection) => {
     setLastUpdatedAt(current => ({ ...current, [target]: new Date() }));
   };
@@ -626,6 +629,10 @@ const AdminDashboard: React.FC = () => {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [mobileNavOpen]);
+
+  useLayoutEffect(() => {
+    contentScrollRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [section, agentPage]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -1908,15 +1915,16 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      <main className={`min-w-0 ${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'} ${section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs' ? 'flex h-dvh min-h-0 flex-col overflow-hidden' : ''}`}>
-        <header className="sticky top-0 z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3 lg:px-8">
+      <main className={`flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden ${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'}`}>
+        <header className="relative z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <button type="button" onClick={() => { if (section === 'menuItems' || section === 'menuCategories') setMenuNavOpen(true); if (section === 'agents') setAgentNavOpen(true); setMobileNavOpen(true); }} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label={adminLanguage === 'en' ? 'Open navigation' : '打开后台导航'}><MenuIcon size={20} /></button>
               <div className="min-w-0 flex-1">
               <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold leading-7 text-slate-950 sm:text-[22px] sm:leading-8">
-                <span className="truncate">{section === 'agents' ? (adminLanguage === 'en' ? 'Agent Management' : '代理管理') : sectionLabel(section, adminLanguage)}</span>
+                <span className="truncate">{section === 'agents' ? (adminLanguage === 'en' ? 'Agent Management' : '代理管理') : isMenuSection ? copy.menuManagement : sectionLabel(section, adminLanguage)}</span>
                 {section === 'agents' && <><span className="shrink-0 text-slate-300">/</span><span className="truncate text-[#9B7B50]">{agentPageLabel(agentPage, adminLanguage)}</span></>}
+                {isMenuSection && <><span className="shrink-0 text-slate-300">/</span><span className="truncate text-[#9B7B50]">{sectionLabel(section, adminLanguage)}</span></>}
               </h2>
               {section !== 'kitchen' && section !== 'delivery' && section !== 'wallet' && (
                 <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
@@ -1936,9 +1944,9 @@ const AdminDashboard: React.FC = () => {
           </div>
         </header>
 
-        <div className={section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs'
+        <div ref={contentScrollRef} className={usesViewportLayout
           ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 lg:p-6'
-          : 'grid min-h-[calc(100vh-57px)] gap-3 p-3 sm:p-5 lg:p-6'}>
+          : 'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-3 sm:p-5 lg:p-6'}>
           {notice && <div role="status" className="fixed left-1/2 top-4 z-[200] flex h-auto w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 shadow-[0_16px_45px_rgba(15,23,42,0.16)]"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-50"><Check size={16} /></span><span className="min-w-0 flex-1 leading-5">{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="关闭通知" className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={15} /></button></div>}
           {error && (
             <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
@@ -1948,9 +1956,9 @@ const AdminDashboard: React.FC = () => {
           )}
 
           {section === 'menuItems' && (
-            <section className="grid h-[calc(100vh-81px)] min-w-0 sm:h-[calc(100vh-97px)] lg:h-[calc(100vh-105px)]">
+            <section className="flex min-h-0 min-w-0 flex-1">
                 <div className="flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-                  <div className="grid gap-3 border-b border-[#E5E7EB] bg-white p-4 lg:grid-cols-[minmax(320px,1fr)_170px_150px] lg:items-center xl:grid-cols-[minmax(360px,1fr)_180px_160px_auto]">
+                  <div className="grid shrink-0 gap-3 border-b border-[#E5E7EB] bg-white p-4 lg:grid-cols-[minmax(320px,1fr)_170px_150px] lg:items-center xl:grid-cols-[minmax(360px,1fr)_180px_160px_auto]">
                     <div className="relative min-w-0">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
                       <input value={menuSearch} onChange={event => setMenuSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMenuItems()} className="h-11 w-full rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] pl-10 pr-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]" placeholder="搜索菜名、编码、英文名" />
@@ -2065,7 +2073,7 @@ const AdminDashboard: React.FC = () => {
             </section>
           )}
           {section === 'menuCategories' && (
-            <section className="min-w-0">
+            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
                 <CategoryManager
                   categories={menuCategories}
                   form={categoryForm}
