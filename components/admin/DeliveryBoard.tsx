@@ -204,13 +204,13 @@ export function DeliveryBoard({ api }: DeliveryBoardProps) {
   };
 
   return (
-    <section className="min-w-0">
-      <div className="mb-3 inline-flex rounded-xl border border-slate-200 bg-white p-1">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="mb-3 inline-flex shrink-0 self-start rounded-xl border border-slate-200 bg-white p-1">
         <button type="button" onClick={() => setBoardMode('orders')} className={`rounded-lg px-4 py-2 text-xs font-black ${boardMode === 'orders' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}>配送订单</button>
         <button type="button" onClick={() => setBoardMode('approvals')} className={`rounded-lg px-4 py-2 text-xs font-black ${boardMode === 'approvals' ? 'bg-slate-950 text-white' : 'text-slate-500'}`}>超范围申请</button>
       </div>
-      {boardMode === 'approvals' ? <DeliveryApprovalPanel api={api} /> : <>
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {boardMode === 'approvals' ? <div className="min-h-0 flex-1 overflow-y-auto overscroll-none"><DeliveryApprovalPanel api={api} /></div> : <>
+      <div className="mb-3 grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
         {tabs.map(tab => {
           const Icon = tab.icon;
           const count = groupedOrders[tab.id].length;
@@ -231,7 +231,7 @@ export function DeliveryBoard({ api }: DeliveryBoardProps) {
         })}
       </div>
 
-      <div className="mb-3 flex min-h-11 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500">
+      <div className="mb-3 flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-xs text-slate-500">
         <span>{lastSyncAt ? `最后同步 ${lastSyncAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : '正在同步配送订单'}</span>
         <button type="button" onClick={() => void loadOrders()} className="inline-flex items-center gap-1.5 font-bold text-slate-700 hover:text-slate-950">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />刷新
@@ -239,11 +239,12 @@ export function DeliveryBoard({ api }: DeliveryBoardProps) {
       </div>
 
       {error && (
-        <div className="mb-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+        <div className="mb-3 flex shrink-0 items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
           <AlertTriangle size={17} className="mt-0.5 shrink-0" />{error}
         </div>
       )}
 
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
       <div className="lg:hidden">
         <DeliveryColumn
           tab={activeTab}
@@ -268,6 +269,7 @@ export function DeliveryBoard({ api }: DeliveryBoardProps) {
             />
           </React.Fragment>
         ))}
+      </div>
       </div>
 
       {assignmentOrder && (

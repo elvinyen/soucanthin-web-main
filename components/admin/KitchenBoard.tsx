@@ -296,7 +296,7 @@ export default function KitchenBoard({ api, onLogout, onChangePassword, userName
 
   return (
     <div className={`${standalone ? 'min-h-dvh' : 'min-h-0'} bg-[#F7F8FA] text-slate-950`}>
-      <header className={`sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur-xl sm:px-5 ${standalone ? '' : 'rounded-t-[20px] border'}`}>
+      <header data-admin-page-header className={`sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 px-4 py-4 backdrop-blur-xl sm:px-5 ${standalone ? '' : 'rounded-t-[20px] border'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">

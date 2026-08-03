@@ -602,7 +602,7 @@ const AdminDashboard: React.FC = () => {
     inactive: menuItems.filter(item => getMenuSalesStatus(item) === 'inactive').length,
   };
   const isMenuSection = section === 'menuItems' || section === 'menuCategories';
-  const usesViewportLayout = isMenuSection || section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs';
+  const usesViewportLayout = isMenuSection || section === 'orders' || section === 'delivery' || section === 'users' || section === 'customerOrder' || section === 'storeBranches' || section === 'accounts' || section === 'coupons' || section === 'systemSettings' || section === 'auditLogs';
   const markSectionUpdated = (target: AdminSection) => {
     setLastUpdatedAt(current => ({ ...current, [target]: new Date() }));
   };
@@ -629,6 +629,16 @@ const AdminDashboard: React.FC = () => {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [mobileNavOpen]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    document.documentElement.classList.add('admin-scroll-lock');
+    document.body.classList.add('admin-scroll-lock');
+    return () => {
+      document.documentElement.classList.remove('admin-scroll-lock');
+      document.body.classList.remove('admin-scroll-lock');
+    };
+  }, [authenticated]);
 
   useLayoutEffect(() => {
     contentScrollRef.current?.scrollTo({ top: 0, left: 0 });
@@ -1752,7 +1762,7 @@ const AdminDashboard: React.FC = () => {
 
   if (auth.admin?.role === 'kitchen') {
     return (
-      <div data-admin-shell>
+      <div data-admin-shell className="h-dvh overflow-y-auto overscroll-none bg-[#F7F8FA]">
         <AdminLocaleTranslator language={adminLanguage} />
         <KitchenBoard
           api={api}
@@ -1916,7 +1926,7 @@ const AdminDashboard: React.FC = () => {
       )}
 
       <main className={`flex h-dvh min-h-0 min-w-0 flex-col overflow-hidden ${sidebarCollapsed ? 'lg:pl-24' : 'lg:pl-64'}`}>
-        <header className="relative z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3 lg:px-8">
+        <header data-admin-page-header className="relative z-20 shrink-0 border-b border-[#E5E7EB] bg-[#F6F8FB]/92 px-3 py-2.5 backdrop-blur-xl sm:px-6 sm:py-3 lg:px-8">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <button type="button" onClick={() => { if (section === 'menuItems' || section === 'menuCategories') setMenuNavOpen(true); if (section === 'agents') setAgentNavOpen(true); setMobileNavOpen(true); }} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm lg:hidden" aria-label={adminLanguage === 'en' ? 'Open navigation' : '打开后台导航'}><MenuIcon size={20} /></button>
@@ -1946,7 +1956,7 @@ const AdminDashboard: React.FC = () => {
 
         <div ref={contentScrollRef} className={usesViewportLayout
           ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3 sm:p-5 lg:p-6'
-          : 'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-3 sm:p-5 lg:p-6'}>
+          : 'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-none p-3 sm:p-5 lg:p-6'}>
           {notice && <div role="status" className="fixed left-1/2 top-4 z-[200] flex h-auto w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 shadow-[0_16px_45px_rgba(15,23,42,0.16)]"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-50"><Check size={16} /></span><span className="min-w-0 flex-1 leading-5">{notice}</span><button type="button" onClick={() => setNotice('')} aria-label="关闭通知" className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={15} /></button></div>}
           {error && (
             <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
@@ -1957,31 +1967,33 @@ const AdminDashboard: React.FC = () => {
 
           {section === 'menuItems' && (
             <section className="flex min-h-0 min-w-0 flex-1">
-                <div className="flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+                <div className="flex min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#E5E7EB] bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
                   <div className="grid shrink-0 gap-3 border-b border-[#E5E7EB] bg-white p-4 lg:grid-cols-[minmax(320px,1fr)_170px_150px] lg:items-center xl:grid-cols-[minmax(360px,1fr)_180px_160px_auto]">
                     <div className="relative min-w-0">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
                       <input value={menuSearch} onChange={event => setMenuSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMenuItems()} className="h-11 w-full rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] pl-10 pr-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]" placeholder="搜索菜名、编码、英文名" />
                     </div>
-                    <select value={menuCategoryFilter} onChange={event => setMenuCategoryFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] px-3 text-sm font-bold text-[#334155] outline-none transition focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]">
-                      <option value="all">全部分类</option>
-                      {menuCategories.map(category => <option key={category.id} value={category.id}>{category.label}</option>)}
-                    </select>
-                    <select value={menuStatusFilter} onChange={event => setMenuStatusFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] px-3 text-sm font-bold text-[#334155] outline-none transition focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)]">
-                      <option value="all">全部状态</option>
-                      <option value="active">可售</option>
-                      <option value="sold_out">售罄</option>
-                      <option value="inactive">下架</option>
-                    </select>
-                    <div className="flex justify-end lg:col-span-3 xl:col-span-1">
-                      <button type="button" onClick={startCreate} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white transition sm:w-auto sm:min-w-[128px]">
-                        <Plus size={17} />
-                        新增菜品
-                      </button>
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] gap-2 lg:contents">
+                      <select aria-label="菜品分类" value={menuCategoryFilter} onChange={event => setMenuCategoryFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] px-2 text-sm font-bold text-[#334155] outline-none transition focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)] sm:px-3">
+                        <option value="all">全部分类</option>
+                        {menuCategories.map(category => <option key={category.id} value={category.id}>{category.label}</option>)}
+                      </select>
+                      <select aria-label="销售状态" value={menuStatusFilter} onChange={event => setMenuStatusFilter(event.target.value)} className="h-11 min-w-0 rounded-xl border border-[#DDE2E8] bg-[#F8FAFC] px-2 text-sm font-bold text-[#334155] outline-none transition focus:border-[#C7A46A] focus:bg-white focus:shadow-[0_0_0_3px_rgba(199,164,106,0.14)] sm:px-3">
+                        <option value="all">全部状态</option>
+                        <option value="active">可售</option>
+                        <option value="sold_out">售罄</option>
+                        <option value="inactive">下架</option>
+                      </select>
+                      <div className="flex min-w-0 justify-end lg:col-span-3 xl:col-span-1">
+                        <button type="button" onClick={startCreate} title="新增菜品" aria-label="新增菜品" className="flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-bold text-white transition lg:w-auto lg:min-w-[128px] lg:px-5">
+                          <Plus size={17} />
+                          <span className="hidden lg:inline">新增菜品</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <div className="hidden min-h-0 flex-1 overflow-x-auto md:block">
-                    <div className="h-full min-w-[1160px] overflow-y-auto">
+                    <div data-scroll-stable className="h-full min-w-[1160px] overflow-y-auto">
                       <table className="w-full table-fixed border-collapse text-sm">
                         <colgroup>
                           <col className="w-[9%]" />
@@ -2049,7 +2061,7 @@ const AdminDashboard: React.FC = () => {
                       </table>
                     </div>
                   </div>
-                  <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto bg-[#F8FAFC] p-2 md:hidden">
+                  <div data-scroll-stable className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto bg-[#F8FAFC] p-2 md:hidden">
                     {filteredMenuItems.map(item => (
                       <React.Fragment key={item.id}>
                         <MenuItemMobileCard
@@ -2073,7 +2085,7 @@ const AdminDashboard: React.FC = () => {
             </section>
           )}
           {section === 'menuCategories' && (
-            <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <section className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
                 <CategoryManager
                   categories={menuCategories}
                   form={categoryForm}
@@ -2091,8 +2103,8 @@ const AdminDashboard: React.FC = () => {
           )}
 
           {section === 'orders' && (
-            <Panel>
-              <div className="flex flex-col gap-3 border-b border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
+            <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex shrink-0 flex-col gap-3 border-b border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex flex-wrap gap-2">
                   {orderStatusOptions.map(item => (
                     <button key={item.value} type="button" onClick={() => setOrderStatus(item.value)} className={`rounded-full px-3 py-2 text-xs font-bold ${orderStatus === item.value ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-950'}`}>
@@ -2105,7 +2117,7 @@ const AdminDashboard: React.FC = () => {
                   刷新
                 </button>
               </div>
-              <div className="divide-y divide-slate-100">
+              <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto overscroll-none">
                 {orders.map(order => (
                   <div key={order.id} className="grid gap-4 p-4 md:grid-cols-[1fr_auto] md:items-center">
                     <button type="button" onClick={() => loadOrderDetail(order.id)} className="min-w-0 text-left">
@@ -3236,7 +3248,7 @@ function MenuItemMobileCard({ item, open, onToggle, onQuickStatus, onEdit, onMov
   onClose: () => void;
 }) {
   return (
-    <article className="rounded-2xl border border-[#E5E7EB] bg-white p-3 shadow-sm">
+    <article className="w-full min-w-0 rounded-2xl border border-[#E5E7EB] bg-white p-3 shadow-sm">
       <div className="flex gap-3">
         <img src={item.image_url} alt={item.name} className="h-16 w-16 shrink-0 rounded-[14px] bg-slate-100 object-cover" />
         <div className="min-w-0 flex-1">
@@ -3946,8 +3958,8 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
   });
 
   return (
-    <div className="relative">
-      <Panel className="overflow-hidden">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-black text-slate-950">菜单分类</h2><p className="mt-1 text-xs text-slate-500">管理分类名称、展示顺序和启用状态</p></div><button type="button" onClick={onCreate} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white"><Plus size={17} />新增分类</button></div>
         <div className="grid gap-3 border-b border-slate-100 bg-white p-4 md:grid-cols-[minmax(260px,1fr)_180px] md:items-center">
           <div className="relative">
@@ -3960,7 +3972,8 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
             <option value="inactive">停用</option>
           </select>
         </div>
-        <div className="grid gap-3 p-3 md:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 md:hidden">
+          <div className="grid gap-3">
           {filteredCategories.map(category => (
             <article key={category.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-black text-slate-950">{category.label}</h3><p className="mt-1 text-xs text-slate-500">{category.item_count} 个菜品 · 排序 {category.sort_order}</p></div><button type="button" onClick={() => onToggleActive(category)} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${category.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{category.active ? '启用' : '停用'}</button></div>
@@ -3968,8 +3981,9 @@ function CategoryManager({ categories, form, setForm, editingCategory, editorOpe
             </article>
           ))}
           {filteredCategories.length === 0 && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的分类</div>}
+          </div>
         </div>
-        <div className="hidden max-h-[calc(100vh-230px)] overflow-auto md:block">
+        <div className="hidden min-h-0 flex-1 overflow-auto md:block">
           <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
             <colgroup>
               <col className="w-[30%]" />

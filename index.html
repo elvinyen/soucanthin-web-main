@@ -57,6 +57,27 @@
         [data-admin-shell] form {
             min-width: 0;
         }
+        html.admin-scroll-lock,
+        body.admin-scroll-lock {
+            height: 100%;
+            overflow: hidden;
+            overscroll-behavior: none;
+        }
+        body.admin-scroll-lock {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+        }
+        [data-admin-shell] {
+            overscroll-behavior: none;
+        }
+        [data-admin-page-header] {
+            flex: 0 0 auto;
+            transform: translateZ(0);
+        }
+        [data-scroll-stable] {
+            scrollbar-gutter: stable;
+        }
         [data-admin-shell] button,
         [data-admin-shell] a,
         [data-admin-shell] input,

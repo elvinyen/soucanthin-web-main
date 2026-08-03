@@ -61,15 +61,29 @@ export function AuditLogCenter({ api }: Props) {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
-      <div className="grid gap-3 border-b border-slate-200 p-4 lg:grid-cols-[minmax(260px,1fr)_180px_180px_150px_auto]">
+      <div className="grid shrink-0 gap-3 border-b border-slate-200 p-4 lg:grid-cols-[minmax(260px,1fr)_180px_180px_150px_auto]">
         <label className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索操作者、操作、对象或 IP" className={inputClass + ' pl-10'} /></label>
-        <select value={role} onChange={event => setRole(event.target.value)} className={inputClass}><option value="all">全部角色</option><option value="admin">管理员</option><option value="customer_service">运营助理</option><option value="kitchen">厨房工人</option></select>
-        <select value={module} onChange={event => setModule(event.target.value)} className={inputClass}><option value="all">全部模块</option>{modules.map(item => <option key={item} value={item}>{moduleLabel(item)}</option>)}</select>
-        <select value={result} onChange={event => setResult(event.target.value)} className={inputClass}><option value="all">全部结果</option><option value="true">成功</option><option value="false">失败</option></select>
-        <button type="button" onClick={load} disabled={loading} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />刷新</button>
+        <div className="grid grid-cols-2 gap-2 lg:contents">
+          <select aria-label="角色筛选" value={role} onChange={event => setRole(event.target.value)} className={inputClass}><option value="all">全部角色</option><option value="admin">管理员</option><option value="customer_service">运营助理</option><option value="kitchen">厨房工人</option></select>
+          <select aria-label="模块筛选" value={module} onChange={event => setModule(event.target.value)} className={inputClass}><option value="all">全部模块</option>{modules.map(item => <option key={item} value={item}>{moduleLabel(item)}</option>)}</select>
+          <select aria-label="结果筛选" value={result} onChange={event => setResult(event.target.value)} className={inputClass}><option value="all">全部结果</option><option value="true">成功</option><option value="false">失败</option></select>
+          <button type="button" onClick={load} disabled={loading} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} />刷新</button>
+        </div>
       </div>
       {error && <div className="m-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 md:hidden">
+        <div className="grid gap-3">
+          {visible.map(log => <article key={log.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <button type="button" onClick={() => setExpanded(current => current === log.id ? null : log.id)} className="w-full p-4 text-left">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-black text-slate-950">{moduleLabel(log.module)} · {log.action}</p><p className="mt-1 text-xs text-slate-500">{log.display_name_snapshot || log.username_snapshot} · {roleLabel(log.role_snapshot)}</p></div>{log.success ? <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircle2 size={14} />成功</span> : <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-red-600"><XCircle size={14} />失败 {log.status_code}</span>}</div>
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-400"><span>{new Date(log.created_at).toLocaleString('zh-CN', { hour12: false })}</span><span className="flex items-center gap-1">详情{expanded === log.id ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</span></div>
+            </button>
+            {expanded === log.id && <div className="grid gap-3 border-t border-slate-100 bg-slate-50 p-4"><Detail title="请求路径" value={`${log.http_method} ${log.request_path}`} /><Detail title="对象" value={log.target_id || '—'} /><Detail title="门店" value={log.branch_scope_snapshot === 'all' ? '所有门店' : log.branch_id_snapshot || '未分配'} /><Detail title="IP" value={log.ip_address || '—'} /><Detail title="请求 ID" value={log.request_id} /><Detail title="设备" value={log.user_agent || '—'} />{log.error_message && <Detail title="错误" value={log.error_message} />}<div><p className="mb-1 text-xs font-bold text-slate-500">请求数据（敏感字段已过滤）</p><pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-slate-950 p-3 text-xs text-slate-100">{JSON.stringify(log.request_data, null, 2)}</pre></div></div>}
+          </article>)}
+          {!visible.length && !loading && <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-16 text-center text-slate-400"><ShieldAlert className="mx-auto mb-2" size={28} />暂无符合条件的操作记录</div>}
+        </div>
+      </div>
+      <div className="hidden min-h-0 flex-1 overflow-auto md:block">
         <table className="w-full min-w-[980px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">时间</th><th className="px-4 py-3">操作者</th><th className="px-4 py-3">模块 / 操作</th><th className="px-4 py-3">对象</th><th className="px-4 py-3">门店</th><th className="px-4 py-3">结果</th><th className="px-4 py-3">IP</th><th className="w-14 px-4 py-3" /></tr></thead>
           <tbody className="divide-y divide-slate-100">

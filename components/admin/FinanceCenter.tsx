@@ -183,8 +183,10 @@ export function FinanceCenter({ api, admin, onNotice }: FinanceCenterProps) {
 
   return (
     <div className="mx-auto w-full max-w-[1500px] space-y-4 pb-24 sm:space-y-5 sm:pb-8">
-      <AdminTabs label="财务中心页面" value={tab} onChange={setTab} items={[{ id: 'today', label: '今日收支', count: payload.summary.pendingCount }, { id: 'ledger', label: '收支明细' }, { id: 'analysis', label: '经营分析' }]} />
-      {canChooseBranch && <div className="flex justify-end"><label className="relative w-full sm:w-56"><Store className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><select value={branchId} onChange={event => setBranchId(event.target.value)} aria-label="选择门店" className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A]"><option value="">全部门店</option>{payload.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label></div>}
+      <div className="sticky top-0 z-20 bg-[#F6F8FB] pb-1">
+        <AdminTabs label="财务中心页面" value={tab} onChange={setTab} items={[{ id: 'today', label: '今日收支', count: payload.summary.pendingCount }, { id: 'ledger', label: '收支明细' }, { id: 'analysis', label: '经营分析' }]} />
+        {canChooseBranch && <div className="mt-3 flex justify-end"><label className="relative w-full sm:w-56"><Store className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} /><select value={branchId} onChange={event => setBranchId(event.target.value)} aria-label="选择门店" className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-sm font-bold text-slate-700 outline-none focus:border-[#C7A46A]"><option value="">全部门店</option>{payload.branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label></div>}
+      </div>
 
       {error && !entryOpen && <ErrorNotice message={error} />}
 
