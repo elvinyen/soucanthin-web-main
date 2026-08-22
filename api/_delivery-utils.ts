@@ -1,4 +1,5 @@
 import type { Order } from '../types/order';
+import { isStoreOpen, STORE_CLOSE_MINUTE, STORE_OPEN_MINUTE } from '../businessHours';
 import { getSupabaseConfig, roundMoney, supabaseRequest } from './_order-utils';
 
 export type DeliveryQuoteCode = 'GEOCODE_FAILED' | 'OUT_OF_RANGE' | 'ROUTE_FAILED' | 'QUOTE_EXPIRED' | 'APPROVAL_REQUIRED';
@@ -23,6 +24,9 @@ type StoreBranchRecord = {
   latitude?: number | null;
   longitude?: number | null;
   active: boolean;
+  accepting_orders?: boolean | null;
+  opening_minute?: number | null;
+  closing_minute?: number | null;
 };
 
 type LatLng = {
@@ -155,13 +159,24 @@ async function getActiveBranches(apiKey: string) {
   const rows = await supabaseRequest(
     supabaseUrl,
     serviceRoleKey,
-    '/store_branches?active=eq.true&select=id,name,address,latitude,longitude,active&order=sort_order.asc,id.asc',
+    '/store_branches?active=eq.true&select=id,name,address,latitude,longitude,active,accepting_orders,opening_minute,closing_minute&order=sort_order.asc,id.asc',
     { method: 'GET' },
   );
 
-  const branches = Array.isArray(rows) ? rows as StoreBranchRecord[] : [];
+  const branches = (Array.isArray(rows) ? rows as StoreBranchRecord[] : []).filter(isBranchAcceptingOrders);
   const resolvedBranches = await Promise.all(branches.map(branch => ensureBranchCoordinates(branch, apiKey)));
   return resolvedBranches.filter(branch => Number.isFinite(branch.latitude) && Number.isFinite(branch.longitude));
+}
+
+function isBranchAcceptingOrders(branch: StoreBranchRecord) {
+  const openingMinute = normalizeMinute(branch.opening_minute, STORE_OPEN_MINUTE);
+  const closingMinute = normalizeMinute(branch.closing_minute, STORE_CLOSE_MINUTE);
+  return branch.accepting_orders !== false && isStoreOpen(new Date(), openingMinute, closingMinute);
+}
+
+function normalizeMinute(value: number | null | undefined, fallback: number) {
+  const minute = Number(value);
+  return Number.isInteger(minute) && minute >= 0 && minute < 1440 ? minute : fallback;
 }
 
 async function ensureBranchCoordinates(branch: StoreBranchRecord, apiKey: string) {

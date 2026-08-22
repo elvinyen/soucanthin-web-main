@@ -7,7 +7,7 @@ const SOCIAL_LINKS = {
   whatsapp: import.meta.env.VITE_WHATSAPP_URL || '',
 };
 
-const SiteFooter: React.FC = () => {
+const SiteFooter: React.FC<{ businessHours?: string }> = ({ businessHours }) => {
   const { t } = useTranslation();
   const services = t('footer.services', { returnObjects: true }) as string[];
 
@@ -38,7 +38,7 @@ const SiteFooter: React.FC = () => {
           <div className="space-y-4">
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-widest text-[#C8A97E]">{t('footer.hours')}</h4>
-              <p className="text-sm text-stone-400">5:00 PM–4:00 AM</p>
+              <p className="text-sm text-stone-400">{businessHours || '17:00–04:00'}</p>
             </div>
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-widest text-[#C8A97E]">{t('footer.location')}</h4>

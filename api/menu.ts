@@ -2,8 +2,7 @@ import type { MenuItem, MenuOptionGroup } from '../data/menu';
 import type { MenuTranslation } from '../data/menuTranslations';
 import type { LanguageCode } from '../types/i18n';
 import { ApiRequest, ApiResponse, getSupabaseConfig, supabaseRequest } from './_order-utils';
-import { WEBSITE_STORE_BRANCH } from '../businessHours';
-import { getBranchSoldOutItemIds, getStoreOperationalStatus } from './_store-operations';
+import { getBranchSoldOutItemIds, getStoreOperationalStatus, getWebsiteStoreOperationalStatus } from './_store-operations';
 
 type MenuItemRow = {
   id: number;
@@ -43,9 +42,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const lang = normalizeLanguage(readLangFromUrl(req.url));
-    const branchId = readBranchFromUrl(req.url);
+    const requestedBranchId = readBranchFromUrl(req.url);
+    const store = requestedBranchId ? await getStoreOperationalStatus(requestedBranchId) : await getWebsiteStoreOperationalStatus();
+    const branchId = store.branchId;
     const { supabaseUrl, serviceRoleKey } = getSupabaseConfig();
-    const [rows, categories, translations, branchSoldOutIds, store] = await Promise.all([
+    const [rows, categories, translations, branchSoldOutIds] = await Promise.all([
       supabaseRequest(
         supabaseUrl,
         serviceRoleKey,
@@ -65,7 +66,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         { method: 'GET' },
       ),
       getBranchSoldOutItemIds(branchId),
-      getStoreOperationalStatus(branchId),
     ]);
     const categoryLabels = new Map<number, string>(
       (Array.isArray(categories) ? categories : []).map(category => [
@@ -121,8 +121,8 @@ function mapMenuItem(
 }
 
 function readBranchFromUrl(url?: string) {
-  if (!url) return WEBSITE_STORE_BRANCH.id;
-  return new URL(url, 'http://localhost').searchParams.get('branchId') || WEBSITE_STORE_BRANCH.id;
+  if (!url) return undefined;
+  return new URL(url, 'http://localhost').searchParams.get('branchId') || undefined;
 }
 
 function readLangFromUrl(url?: string) {

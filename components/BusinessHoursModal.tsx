@@ -6,9 +6,10 @@ interface BusinessHoursModalProps {
   isOpen: boolean;
   onClose: () => void;
   temporarilyPaused?: boolean;
+  hours?: string;
 }
 
-export function BusinessHoursModal({ isOpen, onClose, temporarilyPaused = false }: BusinessHoursModalProps) {
+export function BusinessHoursModal({ isOpen, onClose, temporarilyPaused = false, hours }: BusinessHoursModalProps) {
   const { t } = useTranslation();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -60,7 +61,7 @@ export function BusinessHoursModal({ isOpen, onClose, temporarilyPaused = false 
         <div className="mt-6 rounded-2xl bg-stone-50 p-4 text-left">
           <div className="flex items-center gap-3 text-sm font-semibold text-[#2D2D2D]">
             <Clock3 size={17} className="flex-none text-[#C8A97E]" />
-            <span>{t('businessHours.hours')}</span>
+            <span>{hours || t('businessHours.hours')}</span>
           </div>
         </div>
 

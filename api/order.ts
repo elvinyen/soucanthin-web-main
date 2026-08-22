@@ -24,8 +24,7 @@ import { getAuthenticatedUser, getWallet } from './_auth-utils';
 import { applyValidatedDeliveryToOrder, consumeDeliveryApproval } from './_delivery-policy';
 import { DeliveryQuoteError } from './_delivery-utils';
 import { attributeOrderToAgent } from './_agent-utils';
-import { WEBSITE_STORE_BRANCH } from '../businessHours';
-import { getStoreOperationalStatus } from './_store-operations';
+import { getWebsiteStoreOperationalStatus } from './_store-operations';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method && req.method !== 'POST') {
@@ -33,13 +32,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const storeStatus = await getStoreOperationalStatus(WEBSITE_STORE_BRANCH.id).catch(() => null);
+  const storeStatus = await getWebsiteStoreOperationalStatus().catch(() => null);
   if (!storeStatus?.open) {
     return res.status(403).json({
       success: false,
       code: 'STORE_CLOSED',
       error: storeStatus?.scheduledOpen === false
-        ? '本店营业时间为每日 5:00 PM–4:00 AM，请在营业时间内点餐。'
+        ? `本店营业时间为${storeStatus?.schedule || '每日 17:00–04:00'}，请在营业时间内点餐。`
         : '门店目前暂停接单，请稍后再试。',
     });
   }
@@ -48,7 +47,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     order = parseOrderBody(req.body);
-    order.assignedBranch = { ...WEBSITE_STORE_BRANCH };
+    order.assignedBranch = { id: storeStatus.branchId, name: storeStatus.branchName };
   } catch {
     return res.status(400).json({ success: false, error: 'Invalid JSON body' });
   }

@@ -222,6 +222,8 @@ type StoreBranchRow = {
   longitude?: number | null;
   active: boolean;
   sort_order: number;
+  opening_minute: number;
+  closing_minute: number;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -310,6 +312,8 @@ type StoreBranchFormState = {
   longitude: string;
   active: boolean;
   sort_order: string;
+  opening_time: string;
+  closing_time: string;
 };
 
 type CustomerFormState = {
@@ -360,6 +364,8 @@ const emptyStoreBranchForm: StoreBranchFormState = {
   longitude: '',
   active: true,
   sort_order: '0',
+  opening_time: '17:00',
+  closing_time: '04:00',
 };
 
 const emptyCustomerForm: CustomerFormState = {
@@ -1253,6 +1259,8 @@ const AdminDashboard: React.FC = () => {
       longitude: branch.longitude === null || branch.longitude === undefined ? '' : String(branch.longitude),
       active: branch.active,
       sort_order: String(branch.sort_order ?? 0),
+      opening_time: minuteToTime(branch.opening_minute),
+      closing_time: minuteToTime(branch.closing_minute),
     });
     setIsStoreBranchEditorOpen(true);
   };
@@ -1290,6 +1298,8 @@ const AdminDashboard: React.FC = () => {
         ...(auth.admin?.role === 'admin' ? {
           active: storeBranchForm.active,
           sort_order: Number(storeBranchForm.sort_order || 0),
+          opening_minute: timeToMinute(storeBranchForm.opening_time),
+          closing_minute: timeToMinute(storeBranchForm.closing_time),
         } : {}),
       };
       const existingLatitude = existing?.latitude === null || existing?.latitude === undefined ? '' : String(existing.latitude);
@@ -2603,6 +2613,21 @@ function formatCoordinates(branch: Pick<StoreBranchRow, 'latitude' | 'longitude'
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
 }
 
+function minuteToTime(minute: number | null | undefined) {
+  const normalized = Number.isInteger(minute) && Number(minute) >= 0 && Number(minute) < 1440 ? Number(minute) : 0;
+  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
+}
+
+function timeToMinute(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return Number.NaN;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function formatBranchSchedule(branch: Pick<StoreBranchRow, 'opening_minute' | 'closing_minute'>) {
+  return `${minuteToTime(branch.opening_minute)}–${minuteToTime(branch.closing_minute)}`;
+}
+
 function createEmptyTranslations(): Record<TranslationLang, MenuTranslationForm> {
   return {
     en: createEmptyTranslationForm(),
@@ -3723,7 +3748,7 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdm
               <article key={branch.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-black text-slate-950">{branch.name}</h3><p className="mt-1 text-xs text-slate-400">{branch.id} · 排序 {branch.sort_order}</p></div><button type="button" disabled={!canAdminister} onClick={() => canAdminister && onToggleActive(branch)} className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold disabled:cursor-default ${branch.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}>{branch.active ? '营业中' : '已停用'}</button></div>
                 <p className="mt-3 text-sm leading-6 text-slate-600">{branch.address}</p>
-                <p className="mt-2 text-xs text-slate-400">坐标：{formatCoordinates(branch)}</p>
+                <p className="mt-2 text-xs text-slate-400">营业时间：{formatBranchSchedule(branch)} · 坐标：{formatCoordinates(branch)}</p>
                 <button type="button" onClick={() => onEdit(branch)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-bold text-white"><Pencil size={15} />查看与编辑</button>
               </article>
             ))}
@@ -3733,16 +3758,18 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdm
         <div className="hidden min-h-0 flex-1 overflow-auto md:block">
           <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
             <colgroup>
-              <col className="w-[20%]" />
-              <col className="w-[38%]" />
+              <col className="w-[18%]" />
+              <col className="w-[32%]" />
+              <col className="w-[14%]" />
               <col className="w-[12%]" />
               <col className="w-[10%]" />
-              <col className="w-[20%]" />
+              <col className="w-[14%]" />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs text-slate-500 shadow-[inset_0_-1px_0_#E5E7EB]">
               <tr>
                 <th className="px-5 py-3 text-left font-bold">门店名称</th>
                 <th className="px-4 py-3 text-left font-bold">地址</th>
+                <th className="px-4 py-3 text-center font-bold">营业时间</th>
                 <th className="px-4 py-3 text-center font-bold">状态</th>
                 <th className="px-4 py-3 text-center font-bold">排序</th>
                 <th className="px-4 py-3 text-center font-bold">操作</th>
@@ -3756,6 +3783,7 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdm
                     <p className="mt-1 text-xs text-slate-400">{branch.id} · {branch.updated_at ? formatDate(branch.updated_at) : '-'}</p>
                   </td>
                   <td className="px-4 py-3 text-left align-middle text-slate-600"><p className="line-clamp-2 leading-5">{branch.address}</p></td>
+                  <td className="px-4 py-4 text-center align-middle text-xs font-bold text-slate-600">{formatBranchSchedule(branch)}</td>
                   <td className="px-4 py-4 text-center align-middle">
                     <button type="button" disabled={!canAdminister} onClick={event => { event.stopPropagation(); if (canAdminister) onToggleActive(branch); }} className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold disabled:cursor-default ${branch.active ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}><span className={`h-2 w-2 rounded-full ${branch.active ? 'bg-emerald-500' : 'bg-slate-400'}`} />{branch.active ? '营业中' : '已停用'}</button>
                   </td>
@@ -3767,7 +3795,7 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdm
               ))}
               {filteredBranches.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的门店</td>
+                  <td colSpan={6} className="px-4 py-14 text-center text-sm font-bold text-slate-400">没有符合条件的门店</td>
                 </tr>
               )}
             </tbody>
@@ -3789,7 +3817,7 @@ function StoreBranchManager({ branches, form, setForm, error, editorOpen, canAdm
                 <Input label="门店名称" value={form.name} onChange={value => update('name', value)} placeholder="PUDU 区" required />
                 <TextArea label="门店地址" value={form.address} onChange={value => update('address', value)} required />
                 <div className="grid gap-3 sm:grid-cols-2"><Input label="纬度" value={form.latitude} onChange={value => update('latitude', value)} type="number" placeholder="可留空自动解析" /><Input label="经度" value={form.longitude} onChange={value => update('longitude', value)} type="number" placeholder="可留空自动解析" /></div>
-                {canAdminister && <><Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" /><Toggle label={form.active ? '门店营业中' : '门店已停用'} checked={form.active} onChange={value => update('active', value)} /></>}
+                {canAdminister && <><div className="grid gap-3 sm:grid-cols-2"><Input label="开始营业时间" value={form.opening_time} onChange={value => update('opening_time', value)} type="time" required /><Input label="结束营业时间" value={form.closing_time} onChange={value => update('closing_time', value)} type="time" required /></div><p className="-mt-2 text-xs text-slate-500">按马来西亚时间每日循环；结束时间早于开始时间表示次日结束。</p><Input label="排序" value={form.sort_order} onChange={value => update('sort_order', value)} type="number" /><Toggle label={form.active ? '门店营业中' : '门店已停用'} checked={form.active} onChange={value => update('active', value)} /></>}
               </div>
               <div className="mt-auto grid grid-cols-2 gap-3 border-t border-slate-200 p-5"><button type="button" onClick={onCancel} className="h-11 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50">取消</button><button type="submit" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-bold text-white"><Save size={16} />{editing ? '保存更改' : '创建门店'}</button></div>
             </form>

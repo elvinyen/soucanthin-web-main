@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2, MessageCircle, Clock3 } from 'lucide-react';
+import { X, Minus, Plus, ShoppingBag, ShoppingCart, ReceiptText, User, Phone, Hash, MapPin, MessageSquare, ArrowLeft, ChevronDown, ChevronRight, Upload, Download, WalletCards, CreditCard, Copy, CheckCircle2, Bike, Utensils, Building2, MessageCircle, Clock3 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CartLine } from '../data/menu';
 import { Order, OrderType, PaymentMethod, ReceiptImage } from '../types/order';
@@ -39,6 +39,8 @@ type PaymentConfig = {
   };
 };
 type DeliveryQuote = {
+  branchId: string;
+  branchName: string;
   deliveryFee: number;
   distanceKm: number;
   durationMin: number;
@@ -48,6 +50,8 @@ type DeliveryQuote = {
   quoteSource: 'lalamove' | 'fallback';
 };
 type ManualDeliveryInfo = {
+  branchId: string;
+  branchName: string;
   maxDistanceKm: number;
   distanceKm: number;
   durationMin: number;
@@ -67,6 +71,7 @@ type DeliveryApproval = {
   approvalExpiresAt?: string | null;
 };
 type DeliveryQuoteStatus = 'idle' | 'loading' | 'success' | 'manual_required' | 'error';
+type DeliveryStore = { branchId: string; branchName: string; schedule: string; open: boolean };
 
 const isValidPhone = (value: string) => /^[0-9+\-\s()]{8,20}$/.test(value.trim());
 const ONLINE_PAYMENT_ENABLED = false;
@@ -166,6 +171,9 @@ const Cart: React.FC<CartProps> = ({
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [deliveryQuoteStatus, setDeliveryQuoteStatus] = useState<DeliveryQuoteStatus>('idle');
   const [deliveryQuoteError, setDeliveryQuoteError] = useState('');
+  const [deliveryStores, setDeliveryStores] = useState<DeliveryStore[]>([]);
+  const [selectedDeliveryBranchId, setSelectedDeliveryBranchId] = useState('');
+  const [isDeliveryStoreListOpen, setIsDeliveryStoreListOpen] = useState(false);
   const [manualDeliveryInfo, setManualDeliveryInfo] = useState<ManualDeliveryInfo | null>(null);
   const [deliveryApproval, setDeliveryApproval] = useState<DeliveryApproval | null>(null);
   const [approvalSubmitting, setApprovalSubmitting] = useState(false);
@@ -203,6 +211,8 @@ const Cart: React.FC<CartProps> = ({
       setDeliveryQuote(null);
       setDeliveryQuoteStatus('idle');
       setDeliveryQuoteError('');
+      setSelectedDeliveryBranchId('');
+      setIsDeliveryStoreListOpen(false);
       setManualDeliveryInfo(null);
       setContactedCustomerService(false);
       setPaymentMethod('wallet');
@@ -290,6 +300,18 @@ const Cart: React.FC<CartProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    fetch('/api/store-status', { cache: 'no-store' })
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('Store status request failed')))
+      .then(payload => {
+        if (payload.success && Array.isArray(payload.stores)) {
+          setDeliveryStores(payload.stores.filter((store: DeliveryStore) => store.open));
+        }
+      })
+      .catch(() => setDeliveryStores([]));
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!isOpen || orderType !== 'takeaway') {
       setDeliveryQuote(null);
       setDeliveryQuoteStatus('idle');
@@ -318,13 +340,15 @@ const Cart: React.FC<CartProps> = ({
         const res = await fetch('/api/delivery-quote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ address: normalizedAddress }),
+          body: JSON.stringify({ address: normalizedAddress, branchId: selectedDeliveryBranchId || undefined }),
           signal: controller.signal,
         });
         const payload = await res.json();
 
         if (res.ok && payload.success && payload.deliverability === 'manual_confirmation_required') {
           setManualDeliveryInfo({
+            branchId: String(payload.branchId || ''),
+            branchName: String(payload.branchName || ''),
             maxDistanceKm: Number(payload.maxDistanceKm || 20),
             distanceKm: Number(payload.distanceKm || 0),
             durationMin: Number(payload.durationMin || 0),
@@ -335,6 +359,8 @@ const Cart: React.FC<CartProps> = ({
 
         if (res.ok && payload.success && payload.deliverable) {
           setDeliveryQuote({
+            branchId: String(payload.branchId || ''),
+            branchName: String(payload.branchName || ''),
             deliveryFee: Number(payload.deliveryFee || 0),
             distanceKm: Number(payload.distanceKm || 0),
             durationMin: Number(payload.durationMin || 0),
@@ -360,7 +386,7 @@ const Cart: React.FC<CartProps> = ({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [address, isOpen, orderType, t]);
+  }, [address, isOpen, orderType, selectedDeliveryBranchId, t]);
 
   const handleAnimationEnd = () => {
     if (!isOpen) {
@@ -389,6 +415,8 @@ const Cart: React.FC<CartProps> = ({
       ? Number(deliveryApproval?.approvedDeliveryFee || 0)
       : deliveryQuote?.deliveryFee || 0
     : 0;
+  const deliveryBranchId = selectedDeliveryBranchId || deliveryQuote?.branchId || manualDeliveryInfo?.branchId || '';
+  const deliveryBranchName = deliveryQuote?.branchName || manualDeliveryInfo?.branchName || '';
   const serviceCharge = 0;
   const total = subtotal + deliveryFee + serviceCharge;
   const couponOptions = (session.coupons || []).map(coupon => ({
@@ -910,6 +938,33 @@ const Cart: React.FC<CartProps> = ({
                             </div>
                           ) : (
                             <div className="space-y-3 rounded-2xl bg-stone-50/70 p-3">
+                              <div className="overflow-hidden rounded-2xl border border-stone-100 bg-white">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsDeliveryStoreListOpen(open => !open)}
+                                  className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left transition active:bg-stone-50"
+                                  aria-expanded={isDeliveryStoreListOpen}
+                                >
+                                  <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[#FBF7F0] text-[#C8A97E]"><Building2 size={16} /></span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="flex items-center gap-2"><span className="text-sm font-semibold text-[#2D2D2D]">配送门店</span>{!selectedDeliveryBranchId && <span className="rounded-full bg-[#FBF7F0] px-2 py-0.5 text-[10px] font-semibold text-[#A87D47]">系统推荐</span>}</span>
+                                    <span className={`mt-0.5 block truncate text-[11px] ${deliveryBranchName ? 'text-stone-500' : 'text-stone-400'}`}>{deliveryBranchName || (deliveryQuoteStatus === 'loading' ? '正在为您推荐可配送门店…' : address.trim() ? '选择门店后将重新计算配送费用' : '请选择配送地址后为您推荐')}</span>
+                                  </span>
+                                  <ChevronDown size={17} className={`flex-none text-stone-300 transition-transform ${isDeliveryStoreListOpen ? 'rotate-180' : ''}`} />
+                                </button>
+                                {isDeliveryStoreListOpen && (
+                                  <div className="border-t border-stone-100 bg-stone-50/70 p-2">
+                                    {deliveryStores.length > 0 ? deliveryStores.map(store => {
+                                      const selected = store.branchId === deliveryBranchId;
+                                      return <button key={store.branchId} type="button" onClick={() => { setSelectedDeliveryBranchId(store.branchId); setIsDeliveryStoreListOpen(false); }} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left last:mb-0 ${selected ? 'bg-white shadow-sm ring-1 ring-[#C8A97E]/45' : 'hover:bg-white'}`}>
+                                        <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border ${selected ? 'border-[#C8A97E] bg-[#C8A97E] text-white' : 'border-stone-300 bg-white'}`}>{selected && <CheckCircle2 size={13} />}</span>
+                                        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-[#2D2D2D]">{store.branchName}</span><span className="mt-0.5 block text-[10px] text-stone-400">营业时间 {store.schedule}</span></span>
+                                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">可配送</span>
+                                      </button>;
+                                    }) : <p className="px-3 py-3 text-xs text-stone-400">暂时无法读取可配送门店</p>}
+                                  </div>
+                                )}
+                              </div>
                               <button
                                 type="button"
                                 onClick={() => setIsAddressDrawerOpen(true)}

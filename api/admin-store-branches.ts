@@ -10,6 +10,8 @@ type StoreBranchInput = {
   longitude?: number | string | null;
   active?: boolean;
   sort_order?: number | string;
+  opening_minute?: number | string;
+  closing_minute?: number | string;
 };
 
 type StoreBranchRow = {
@@ -20,11 +22,13 @@ type StoreBranchRow = {
   longitude?: number | string | null;
   active: boolean;
   sort_order: number;
+  opening_minute?: number | null;
+  closing_minute?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
 
-const BRANCH_SELECT = 'id,name,address,latitude,longitude,active,sort_order,created_at,updated_at';
+const BRANCH_SELECT = 'id,name,address,latitude,longitude,active,sort_order,opening_minute,closing_minute,created_at,updated_at';
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
@@ -65,6 +69,8 @@ async function createBranch(req: ApiRequest, res: ApiResponse) {
       address: '',
       active: true,
       sort_order: 0,
+      opening_minute: 1020,
+      closing_minute: 240,
     }),
     id,
   };
@@ -102,7 +108,7 @@ async function listBranches(res: ApiResponse, admin: Awaited<ReturnType<typeof r
 
 async function updateBranch(req: ApiRequest, res: ApiResponse, admin: Awaited<ReturnType<typeof requireAdminRole>>) {
   const input = parseAdminBody<StoreBranchInput>(req.body);
-  if (admin.role !== 'admin' && (input.active !== undefined || input.sort_order !== undefined)) {
+  if (admin.role !== 'admin' && (input.active !== undefined || input.sort_order !== undefined || input.opening_minute !== undefined || input.closing_minute !== undefined)) {
     throw new AdminError('运营助理只能修改门店名称、地址和坐标', 403);
   }
   const id = String(input.id || '').trim();
@@ -192,7 +198,23 @@ function normalizeBranchPayload(input: StoreBranchInput, existing: StoreBranchRo
     payload.sort_order = sortOrder;
   }
 
+  const hasOpeningMinute = input.opening_minute !== undefined;
+  const hasClosingMinute = input.closing_minute !== undefined;
+  if (hasOpeningMinute || hasClosingMinute) {
+    const openingMinute = hasOpeningMinute ? normalizeMinute(input.opening_minute, '开始营业时间') : Number(existing.opening_minute ?? 1020);
+    const closingMinute = hasClosingMinute ? normalizeMinute(input.closing_minute, '结束营业时间') : Number(existing.closing_minute ?? 240);
+    if (openingMinute === closingMinute) throw new AdminError('开始和结束营业时间不能相同');
+    if (hasOpeningMinute) payload.opening_minute = openingMinute;
+    if (hasClosingMinute) payload.closing_minute = closingMinute;
+  }
+
   return payload;
+}
+
+function normalizeMinute(value: StoreBranchInput['opening_minute'], label: string) {
+  const minute = Number(value);
+  if (!Number.isInteger(minute) || minute < 0 || minute >= 24 * 60) throw new AdminError(`${label}无效`);
+  return minute;
 }
 
 function normalizeCoordinate(value: StoreBranchInput['latitude'], label: string, min: number, max: number) {
@@ -213,6 +235,8 @@ function mapBranch(branch: StoreBranchRow) {
     longitude: branch.longitude === null || branch.longitude === undefined ? null : Number(branch.longitude),
     active: branch.active,
     sort_order: branch.sort_order,
+    opening_minute: Number(branch.opening_minute ?? 1020),
+    closing_minute: Number(branch.closing_minute ?? 240),
     created_at: branch.created_at || null,
     updated_at: branch.updated_at || null,
   };

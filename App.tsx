@@ -22,7 +22,7 @@ import type { CartLine } from './data/menu';
 import type { BottomTab } from './components/Footer';
 import type { OrderType } from './types/order';
 import { BusinessHoursModal } from './components/BusinessHoursModal';
-import { isStoreOpen } from './businessHours';
+import { formatStoreSchedule, isStoreOpen } from './businessHours';
 
 type MainView = 'home' | 'menu' | 'orders' | 'mine';
 
@@ -60,6 +60,7 @@ const App: React.FC = () => {
   const [appNotice, setAppNotice] = useState('');
   const [storeOpen, setStoreOpen] = useState(() => isStoreOpen());
   const [storePaused, setStorePaused] = useState(false);
+  const [storeSchedule, setStoreSchedule] = useState(() => formatStoreSchedule());
   const [isBusinessHoursModalOpen, setIsBusinessHoursModalOpen] = useState(() => !isStoreOpen());
   const closeBusinessHoursModal = useCallback(() => setIsBusinessHoursModalOpen(false), []);
 
@@ -170,6 +171,7 @@ const App: React.FC = () => {
         if (response.ok && payload.success && payload.store) {
           nextStoreOpen = Boolean(payload.store.open);
           nextStorePaused = Boolean(payload.store.scheduledOpen && !payload.store.acceptingOrders);
+          if (typeof payload.store.schedule === 'string') setStoreSchedule(payload.store.schedule);
         }
       } catch {
         // Keep the local business-hours fallback when status sync is unavailable.
@@ -351,7 +353,7 @@ const App: React.FC = () => {
                  <CharitySection />
               </section>
             </div>
-            <SiteFooter />
+            <SiteFooter businessHours={storeSchedule.replace(/^每日\s*/, '')} />
           </>
         )}
 
@@ -497,6 +499,7 @@ const App: React.FC = () => {
         isOpen={isBusinessHoursModalOpen}
         onClose={closeBusinessHoursModal}
         temporarilyPaused={storePaused}
+        hours={storeSchedule}
       />
     </div>
   );

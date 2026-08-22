@@ -248,6 +248,8 @@ create table if not exists public.store_branches (
   pause_reason text,
   paused_at timestamptz,
   paused_by uuid references public.admin_users(id) on delete set null,
+  opening_minute integer not null default 1020 check (opening_minute >= 0 and opening_minute < 1440),
+  closing_minute integer not null default 240 check (closing_minute >= 0 and closing_minute < 1440),
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -257,6 +259,8 @@ alter table public.store_branches add column if not exists accepting_orders bool
 alter table public.store_branches add column if not exists pause_reason text;
 alter table public.store_branches add column if not exists paused_at timestamptz;
 alter table public.store_branches add column if not exists paused_by uuid references public.admin_users(id) on delete set null;
+alter table public.store_branches add column if not exists opening_minute integer not null default 1020 check (opening_minute >= 0 and opening_minute < 1440);
+alter table public.store_branches add column if not exists closing_minute integer not null default 240 check (closing_minute >= 0 and closing_minute < 1440);
 
 insert into public.store_branches (id, name, address, latitude, longitude, active, sort_order)
 values
